@@ -1,0 +1,19 @@
+# Local environment overrides
+.env
+
+infra/busybox
+infra/rootfs
+infra/disk.qcow2
+infra/initrd.img
+
+# Test build directory
+infra/testcases/build/
+infra/testcases/.*
+infra/testcases/compile_commands.json
+
+# Build artifacts
+**.cmd
+**.mod
+**.o
+**.ko
+**.order
