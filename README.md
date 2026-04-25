@@ -74,6 +74,9 @@ make qemu-test QEMU_TIMEOUT=30
 | `KERNEL_PATH` | `..` (auto) | Kernel source tree. Override only for unusual layouts. |
 | `ARCH` | `arm64` | Target architecture: `arm64`, `x86_64`, or `riscv64`. Picks QEMU binary, kernel image path, console device. |
 | `QEMU_TIMEOUT` | `30` | Wallclock cap for `make qemu-test`. `0` is rejected. |
+| `NUMA_MEMORY` | `1G` | Per-NUMA-node memory. Total = `NUMA_MEMORY` × `NUMA_NODES`. |
+| `SMP` | `8` | Total vCPUs. Split evenly across NUMA nodes; must be divisible by `NUMA_NODES`. |
+| `NUMA_NODES` | `2` | NUMA node count. `1` = single-node (no `-numa`). `>1` = one socket per node. |
 | `QEMU` | auto | Override path to `qemu-system-<arch>`. |
 | `QEMU_OPTS` | empty | Extra QEMU args, e.g. `-device vfio-pci,host=XX:XX.X`. |
 
@@ -91,8 +94,9 @@ Cross-compile freely (e.g. `ARCH=x86_64` on an arm64 host) — `make verify` war
 
 | | |
 |---|---|
-| Memory | 1 GB (`memory-backend-memfd`) |
-| CPUs | 8 (TCG by default; `host` under KVM) |
+| Memory | `NUMA_MEMORY` per node × `NUMA_NODES` (default 2 GB with `NUMA_NODES=2`) |
+| CPUs | `SMP` total, split evenly across NUMA nodes (default 8) |
+| NUMA | `NUMA_NODES` nodes, one socket per node (default 2) |
 | Machine | `virt` (arm64/riscv64) / `q35` (x86_64) |
 | Console | Serial only (`-nographic -serial mon:stdio`) |
 | Block | Optional 512 MB NVMe (`disk.qcow2` → `/dev/nvme0n1`) |

@@ -53,6 +53,9 @@ kernel/                              # kernel source root
 | `KERNEL_PATH` | Kernel source root | Auto-detected as `..` from `qemu-e2e/`; override only for unusual layouts |
 | `ARCH` | Target arch | `arm64` (default), `x86_64`, `riscv64` — picks QEMU binary, kernel image path, console device |
 | `QEMU_TIMEOUT` | `qemu-test` wallclock cap (s) | `0` is rejected; pick 30–120 for CI, longer if KVM is off and tests are heavy |
+| `NUMA_MEMORY` | Per-NUMA-node memory | Total guest memory = `NUMA_MEMORY` × `NUMA_NODES` |
+| `SMP` | Total vCPUs | Split evenly across NUMA nodes; must be divisible by `NUMA_NODES` |
+| `NUMA_NODES` | NUMA node count | `1` = single-node (no `-numa`); `>1` = one socket per node |
 | `QEMU` | Override QEMU binary | Useful for cross-arch or out-of-tree QEMU builds |
 | `QEMU_OPTS` | Extra QEMU args | E.g. `-device vfio-pci,host=XX:XX.X` for passthrough |
 

@@ -55,10 +55,46 @@ if [ -f "$DISK" ]; then
     DISK_OPT+="-device nvme,drive=ssd0,serial=nvme-ssd-0"
 fi
 
-# Memory configuration - 1GB for testing
-VM_MEMORY="1G"
-MEMORY_BACKEND="-object memory-backend-memfd,id=mem,size=$VM_MEMORY,share=off"
-MACHINE="virt,memory-backend=mem"
+# Memory / CPU / NUMA configuration (overridable via .env)
+# NUMA_MEMORY is per-NUMA-node; total guest memory = NUMA_MEMORY * NUMA_NODES.
+NUMA_MEMORY="${NUMA_MEMORY:-1G}"
+SMP="${SMP:-8}"
+NUMA_NODES="${NUMA_NODES:-1}"
+
+if [ "$NUMA_NODES" -gt 1 ]; then
+    if [ $(( SMP % NUMA_NODES )) -ne 0 ]; then
+        echo "ERROR: SMP ($SMP) not divisible by NUMA_NODES ($NUMA_NODES)"
+        exit 1
+    fi
+    PER_NODE_CPUS=$(( SMP / NUMA_NODES ))
+
+    # Multiply the numeric prefix; keep the unit suffix (G/M)
+    case "$NUMA_MEMORY" in
+        *G|*g) TOTAL_MEM="$(( ${NUMA_MEMORY%[Gg]} * NUMA_NODES ))G" ;;
+        *M|*m) TOTAL_MEM="$(( ${NUMA_MEMORY%[Mm]} * NUMA_NODES ))M" ;;
+        *)     TOTAL_MEM="$(( NUMA_MEMORY * NUMA_NODES ))" ;;
+    esac
+
+    # NUMA: align one socket per node so QEMU stops warning about
+    # CPUs from the same socket being assigned to different nodes.
+    SMP_TOPO="${SMP},sockets=${NUMA_NODES},cores=${PER_NODE_CPUS},threads=1"
+
+    MEMORY_BACKEND=""
+    NUMA_OPTS=""
+    for i in $(seq 0 $((NUMA_NODES - 1))); do
+        MEMORY_BACKEND+="-object memory-backend-memfd,id=mem${i},size=${NUMA_MEMORY},share=off "
+        cpu_start=$(( i * PER_NODE_CPUS ))
+        cpu_end=$(( cpu_start + PER_NODE_CPUS - 1 ))
+        NUMA_OPTS+="-numa node,nodeid=${i},memdev=mem${i},cpus=${cpu_start}-${cpu_end} "
+    done
+    MACHINE="virt"
+else
+    MEMORY_BACKEND="-object memory-backend-memfd,id=mem,size=$NUMA_MEMORY,share=off"
+    MACHINE="virt,memory-backend=mem"
+    NUMA_OPTS=""
+    TOTAL_MEM="$NUMA_MEMORY"
+    SMP_TOPO="$SMP"
+fi
 
 # CPU configuration
 if [ "${QEMU_KVM:-}" = "1" ]; then
@@ -70,7 +106,6 @@ else
     KVM_OPTS=""
     ACCEL_STATUS="TCG"
 fi
-SMP="8"
 
 # Graphics (serial only for testing)
 CONSOLE="-nographic -serial mon:stdio"
@@ -104,8 +139,9 @@ echo "  Initrd: $INITRD"
 if [ -n "$DISK_OPT" ]; then
     echo "  Disk:   $DISK (512MB NVMe block device)"
 fi
-echo "  Memory: $VM_MEMORY"
+echo "  Memory: $TOTAL_MEM (per-node: $NUMA_MEMORY x $NUMA_NODES)"
 echo "  CPUs: $SMP"
+echo "  NUMA nodes: $NUMA_NODES"
 echo "  Accelerator: $ACCEL_STATUS"
 echo "  Auto-test: ${AUTO_TEST:-0}"
 if [ -n "$QEMU_DEBUG" ]; then
@@ -133,10 +169,11 @@ set +e
 $QEMU_BIN \
     -machine $MACHINE \
     $MEMORY_BACKEND \
+    $NUMA_OPTS \
     $KVM_OPTS \
     -cpu $CPU \
-    -smp $SMP \
-    -m $VM_MEMORY \
+    -smp $SMP_TOPO \
+    -m $TOTAL_MEM \
     -kernel "$KERNEL" \
     -initrd "$INITRD" \
     -append "console=$CONSOLE_DEV root=/dev/ram0 rw=1 init=/init loglevel=8${AUTO_TEST_FLAG}" \
