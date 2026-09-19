@@ -48,7 +48,7 @@ jobs:
         run: |
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            wget tar bzip2 gzip file make gcc libc6-dev curl ca-certifications \
+            wget tar bzip2 gzip file make gcc libc6-dev curl ca-certificates \
             cpio e2fsprogs jq \
             gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu \
             libc6-dev-arm64-cross libc6-dev-riscv64-cross
