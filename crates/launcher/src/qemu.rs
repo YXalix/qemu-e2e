@@ -8,6 +8,7 @@ use std::process::{Child, Command, Stdio};
 use common::Arch;
 
 use crate::numa::NumaTopology;
+pub use crate::{DataDisk, PmemSpec};
 
 /// 加速器：KVM 仅宿主与目标同构时可用（调用方校验），交叉架构回退 TCG。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,8 +25,9 @@ pub struct QemuInvocation {
     pub kernel: PathBuf,
     pub initrd: PathBuf,
     pub rootfs: PathBuf,
-    /// 可选 NVMe 测试盘（disk.qcow2 → /dev/nvme0n1）
-    pub disk: Option<PathBuf>,
+    /// 额外数据盘（virtio-blk，追加于 rootfs 之后 → /dev/vdb 起），
+    /// 如 tools.img（挂到 /tools 供 PATH 引用）。
+    pub data_disks: Vec<DataDisk>,
     pub accel: Accel,
     pub topo: NumaTopology,
     /// kernel cmdline 的 auto_test 开关
@@ -36,6 +38,11 @@ pub struct QemuInvocation {
     /// Some 时追加 chardev + virtio-serial-pci + virtserialport；None（缺省）
     /// argv 与 run-qemu.sh 基线逐字不变（冻结不变量 3）。
     pub agent_serial: Option<PathBuf>,
+    /// 持久内存组件（DT 途径）：Some 时主内存后端换成宿主文件（share=on，
+    /// pmem 区写入持久落盘）并追加 -dtb（补丁后的设备树，含 pmem-region
+    /// 节点）；None（缺省）argv 与基线逐字不变（冻结不变量 3）。
+    /// 仅单节点 NUMA 支持；x86_64 无 DT 由调用方拒绝。
+    pub pmem: Option<PmemSpec>,
     /// 原样透传（shell 展开语义：按空白切分）
     pub extra_opts: Vec<String>,
 }
@@ -53,7 +60,7 @@ impl QemuInvocation {
             kernel: kernel.into(),
             initrd: initrd.into(),
             rootfs: rootfs.into(),
-            disk: None,
+            data_disks: Vec::new(),
             accel: Accel::Tcg,
             topo: NumaTopology {
                 smp: 1,
@@ -63,6 +70,7 @@ impl QemuInvocation {
             auto_test: false,
             gdb_stub: false,
             agent_serial: None,
+            pmem: None,
             extra_opts: Vec::new(),
         }
     }
@@ -82,8 +90,15 @@ impl QemuInvocation {
         self
     }
 
-    pub fn disk(mut self, disk: Option<impl Into<PathBuf>>) -> Self {
-        self.disk = disk.map(Into::into);
+    /// 附加一个 virtio-blk 数据盘（按调用顺序出现在 /dev/vdb、/dev/vdc…）。
+    pub fn virtio_disk(mut self, disk: DataDisk) -> Self {
+        self.data_disks.push(disk);
+        self
+    }
+
+    /// 批量附加数据盘（接受 Option / 迭代器，空缺省不变）。
+    pub fn virtio_disks(mut self, disks: impl IntoIterator<Item = DataDisk>) -> Self {
+        self.data_disks.extend(disks);
         self
     }
 
@@ -104,6 +119,12 @@ impl QemuInvocation {
         self
     }
 
+    /// 附加持久内存设备（None = 缺省，argv 保持基线）。
+    pub fn pmem(mut self, spec: Option<PmemSpec>) -> Self {
+        self.pmem = spec;
+        self
+    }
+
     pub fn extra_opts(mut self, opts: &[String]) -> Self {
         self.extra_opts = opts.to_vec();
         self
@@ -115,7 +136,8 @@ impl QemuInvocation {
             .unwrap_or_else(|| self.arch.qemu_bin().to_string())
     }
 
-    /// 内核 cmdline（run-qemu.sh 冻结文本）。
+    /// 内核 cmdline（run-qemu.sh 冻结文本；pmem 组件追加 mem= 把 pmem 区
+    /// 从内核线性内存模型中排除，等价 x86 memmap= 语义）。
     pub fn cmdline(&self) -> String {
         let mut cmd = format!(
             "console={} root=/dev/vda rw init=/init loglevel=8",
@@ -124,18 +146,24 @@ impl QemuInvocation {
         if self.auto_test {
             cmd.push_str(" auto_test");
         }
+        if let Some(pmem) = &self.pmem {
+            cmd.push_str(&format!(" mem={}", pmem.mem_limit));
+        }
         cmd
     }
 
     /// 完整 argv，与 run-qemu.sh 的展开顺序逐字对齐：
     /// machine, memory-backend, numa, kvm, cpu, smp, m, kernel, initrd,
-    /// append, rootfs drive, nvme disk, extra, console, options, debug。
+    /// append, rootfs drive, data disks, extra, console, options, debug。
     pub fn argv(&self) -> Result<Vec<String>, String> {
         let total_mem = self.topo.total_memory()?;
         let mut args: Vec<String> = Vec::new();
 
         args.push("-machine".into());
         if self.topo.nodes > 1 {
+            if self.pmem.is_some() {
+                return Err("pmem 组件暂不支持 NUMA 多节点（保留单节点拓扑）".into());
+            }
             args.push(self.arch.machine().into());
         } else {
             args.push(format!("{},memory-backend=mem", self.arch.machine()));
@@ -154,6 +182,14 @@ impl QemuInvocation {
                 args.push("-numa".into());
                 args.push(format!("node,nodeid={i},memdev=mem{i},cpus={start}-{end}"));
             }
+        } else if let Some(pmem) = &self.pmem {
+            // 主内存换文件后端（share=on）：DT 挖出的 pmem 区即宿主文件
+            // backed，guest 写入持久落盘
+            args.push("-object".into());
+            args.push(format!(
+                "memory-backend-file,id=mem,mem-path={},size={total_mem},share=on",
+                pmem.ram_backend.display()
+            ));
         } else {
             args.push("-object".into());
             args.push(format!(
@@ -190,20 +226,25 @@ impl QemuInvocation {
         args.push("-append".into());
         args.push(self.cmdline());
 
+        if let Some(pmem) = &self.pmem {
+            // 补丁后的设备树（/memory 挖出 pmem 区 + 根节点 pmem-region），
+            // 替换 QEMU 生成版 —— of_pmem 据此注册 /dev/pmem0
+            args.push("-dtb".into());
+            args.push(pmem.dtb.display().to_string());
+        }
+
         args.push("-drive".into());
         args.push(format!(
             "file={},format=raw,if=virtio",
             self.rootfs.display()
         ));
 
-        if let Some(disk) = &self.disk {
-            args.push("-blockdev".into());
+        for disk in &self.data_disks {
+            args.push("-drive".into());
             args.push(format!(
-                "driver=qcow2,file.driver=file,file.filename={},node-name=ssd0,discard=unmap,file.discard=unmap,file.locking=off",
-                disk.display()
+                "file={},format=raw,if=virtio",
+                disk.path.display()
             ));
-            args.push("-device".into());
-            args.push("nvme,drive=ssd0,serial=nvme-ssd-0".into());
         }
 
         if let Some(sock) = &self.agent_serial {
@@ -249,7 +290,14 @@ impl QemuInvocation {
             ("Kernel image", &self.kernel),
             ("Initramfs", &self.initrd),
             ("Rootfs image", &self.rootfs),
-        ] {
+        ]
+        .into_iter()
+        .chain(
+            self.data_disks
+                .iter()
+                .map(|d| ("Data disk image", &d.path)),
+        )
+        {
             if !path.is_file() {
                 anyhow::bail!(
                     "{what} not found at {} (build the kernel / run `cargo xtask build` first)",
@@ -298,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn argv_matches_run_qemu_sh_multi_node() {
+    fn argv_frozen_baseline_multi_node() {
         let args = base_inv().auto_test(true).argv().unwrap();
         let joined = args.join(" ");
         assert!(joined.contains("-machine virt "));
@@ -341,19 +389,89 @@ mod tests {
     }
 
     #[test]
-    fn disk_and_gdb_and_extra_opts() {
+    fn virtio_disk_and_gdb_and_extra_opts() {
         let args = base_inv()
-            .disk(Some("/tmp/disk.qcow2"))
+            .virtio_disk(DataDisk::new("tools", "/tmp/tools.img"))
             .gdb_stub(true)
             .extra_opts(&["-device vfio-pci,host=00:01.0".to_string()])
             .argv()
             .unwrap();
         let joined = args.join(" ");
-        assert!(joined.contains(
-            "-blockdev driver=qcow2,file.driver=file,file.filename=/tmp/disk.qcow2,node-name=ssd0,discard=unmap,file.discard=unmap,file.locking=off -device nvme,drive=ssd0,serial=nvme-ssd-0"
-        ));
+        assert!(joined.contains("-drive file=/tmp/tools.img,format=raw,if=virtio"));
+        // NVMe 测试盘已移除：不再出现 blockdev/nvme 设备
+        assert!(!joined.contains("-blockdev"));
+        assert!(!joined.contains("nvme"));
         assert!(joined.contains("-s -S"));
         assert!(joined.contains("-device vfio-pci,host=00:01.0"));
+        // 顺序：数据盘紧跟 rootfs drive 之后、extra_opts 之前
+        let pos = |p: &str| args.iter().position(|a| a.contains(p)).unwrap();
+        assert!(pos("file=/tmp/rootfs.img") < pos("file=/tmp/tools.img"));
+    }
+
+    #[test]
+    fn multiple_data_disks_append_in_order() {
+        let args = base_inv()
+            .virtio_disk(DataDisk::new("tools", "/tmp/tools.img"))
+            .virtio_disk(DataDisk::new("data0", "/tmp/data0.img"))
+            .argv()
+            .unwrap();
+        let joined = args.join(" ");
+        assert!(joined
+            .contains("-drive file=/tmp/rootfs.img,format=raw,if=virtio -drive file=/tmp/tools.img,format=raw,if=virtio -drive file=/tmp/data0.img,format=raw,if=virtio"));
+    }
+
+    #[test]
+    fn data_disks_coexist_with_agent_serial() {
+        let args = base_inv()
+            .virtio_disk(DataDisk::new("tools", "/tmp/tools.img"))
+            .agent_serial("/tmp/virtuoso-agent.sock")
+            .argv()
+            .unwrap();
+        let pos = |p: &str| args.iter().position(|a| a.contains(p)).unwrap();
+        assert!(pos("-drive") < pos("-chardev"));
+    }
+
+    #[test]
+    fn no_data_disks_keeps_baseline_argv() {
+        // 冻结不变量 3：缺省（无数据盘）argv 与 run-qemu.sh 基线逐字一致
+        let args = base_inv().argv().unwrap();
+        let joined = args.join(" ");
+        assert_eq!(
+            joined.matches("-drive").count(),
+            1,
+            "只有 rootfs 一个 -drive"
+        );
+        assert!(!joined.contains("-blockdev"));
+        assert!(!joined.contains("nvdimm"), "缺省不得出现 nvdimm");
+    }
+
+    #[test]
+    fn pmem_swaps_ram_backend_adds_dtb_and_mem_limit() {
+        // 单节点：主内存换文件后端（share=on）+ -dtb + cmdline mem=
+        let inv = QemuInvocation::new(Arch::X86_64, "k", "i", "r")
+            .topo(NumaTopology::parse("4", "1", "2G").unwrap())
+            .pmem(Some(PmemSpec::new("256M", "1792M", "/tmp/ram.img", "/tmp/virt.dtb")));
+        let args = inv.argv().unwrap();
+        let joined = args.join(" ");
+        assert!(joined.contains("-machine virt,memory-backend=mem"));
+        assert!(!joined.contains("nvdimm"), "DT 途径不使用 QEMU nvdimm 设备");
+        assert!(joined
+            .contains("-object memory-backend-file,id=mem,mem-path=/tmp/ram.img,size=2G,share=on"));
+        assert!(joined.contains("-dtb /tmp/virt.dtb"));
+        assert!(joined.contains("mem=1792M"));
+        // 顺序：-dtb 跟在 -append 之后、-drive 之前
+        let pos = |p: &str| args.iter().position(|a| a.contains(p)).unwrap();
+        assert!(pos("-append") < pos("-dtb"));
+        assert!(pos("-dtb") < pos("-drive"));
+    }
+
+    #[test]
+    fn pmem_rejected_with_multi_node_numa() {
+        let err = base_inv()
+            .pmem(Some(PmemSpec::new("256M", "1792M", "/tmp/ram.img", "/tmp/virt.dtb")))
+            .argv()
+            .unwrap_err();
+        assert!(err.contains("NUMA"));
     }
 
     #[test]

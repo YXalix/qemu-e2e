@@ -15,7 +15,6 @@ pub fn run_parity(target: &str, force: bool, strict: bool) -> anyhow::Result<i32
             backend: None,
         },
         "initrd" => CliCommand::Build,
-        "disk" => CliCommand::Disk,
         "busybox" => CliCommand::BusyBox,
         "clean" => CliCommand::Clean,
         "qemu" => CliCommand::Shell {
@@ -41,7 +40,7 @@ pub fn run_parity(target: &str, force: bool, strict: bool) -> anyhow::Result<i32
         },
         other => {
             eprintln!("ERROR: unsupported parity target `{other}`");
-            eprintln!("  supported: verify initrd disk busybox clean qemu qemu-kvm qemu-debug qemu-test install-skill uninstall-skill");
+            eprintln!("  supported: verify initrd busybox clean qemu qemu-kvm qemu-debug qemu-test install-skill uninstall-skill");
             return Ok(2);
         }
     };

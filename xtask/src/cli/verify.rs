@@ -22,27 +22,28 @@ pub fn run_verify(
     let kernel_path = cfg.kernel_path().ok().map(|(kp, _)| kp);
     let kernel_img = kernel_path.as_ref().map(|p| p.join(arch.kernel_img()));
 
-    // modules.conf 声明的模块是否都能在内核树找到（WARN 级；输入收集在 builder）
-    let modules_conf = cfg.infra_dir.join("modules.conf");
+    // 组件 require 并集（boot 附加 + runtime）的模块是否都能在内核树找到
+    // （WARN 级；并集计算在 config 层）
+    let plan = cfg.component_plan();
+    let module_lines: Vec<String> = plan.all().cloned().collect();
     let modules =
-        builder::verify::module_presence(&modules_conf, kernel_path.as_deref(), &cfg.infra_dir);
+        builder::verify::module_presence(&module_lines, kernel_path.as_deref(), &cfg.infra_dir);
 
     let report = builder::verify::run_checks(
-        cfg.env.path.is_some(),
+        cfg.toml.is_some(),
         kernel_path.as_deref(),
         arch,
         host_arch.is_some_and(|h| h != arch),
         kernel_img.as_deref(),
         which(arch.qemu_bin()).then_some(arch.qemu_bin()),
-        cfg.env.get("QEMU").as_deref(),
+        cfg.qemu_override().as_deref(),
         &modules,
-        modules_conf.is_file(),
-        cfg.infra_dir
+        cfg.build_dir
             .join("busybox/bin")
             .join(format!("busybox-{}", arch.name()))
             .is_file(),
-        cfg.infra_dir.join("disk.qcow2").is_file(),
-        Some(&cfg.infra_dir.join("initrd.img")),
+        cfg.artifacts_dir.join("tools.img").is_file(),
+        Some(&cfg.artifacts_dir.join("initrd.img")),
     );
     print!("{}", report.render());
 
@@ -55,10 +56,7 @@ pub fn run_verify(
             arch,
             &kernel,
             kernel_config.as_deref(),
-            cfg.env
-                .get("FIRECRACKER_BIN")
-                .as_deref()
-                .unwrap_or("firecracker"),
+            &cfg.firecracker_bin(),
         );
         let mut fc_fail = 0;
         for chk in &checks {

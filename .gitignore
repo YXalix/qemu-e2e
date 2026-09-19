@@ -1,13 +1,6 @@
 # Local environment overrides
 .env
 
-infra/busybox
-infra/rootfs
-infra/initramfs
-infra/disk.qcow2
-infra/initrd.img
-infra/rootfs.img
-
 # Test build directory
 infra/testcases/build/
 infra/testcases/.*

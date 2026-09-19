@@ -1,4 +1,5 @@
-//! tools workspace 装载：VM 内常驻工具（std Rust + musl 静态）→ rootfs `/bin/`。
+//! tools workspace 装载：VM 内常驻工具（std Rust + musl 静态）→ tools.img
+//! 的 `/bin/`（外挂 virtio-blk 数据盘，挂 /tools 后由 PATH 引用）。
 //!
 //! 与 testcases 分类正交：工具不进 `/tests`、不被 init 自动发现、不参与
 //! 标记协议判定。构建走 `cargo build --release --target <arch musl triple>`
@@ -8,6 +9,9 @@
 //! 降级规则（显式 WARN，不是吞错；构建失败仍 bail）：
 //! - `tools/` 目录缺失 → 静默跳过（未采用 tools 的项目不受影响）；
 //! - cargo 缺失或 musl target 未随 toolchain 安装 → WARN 跳过。
+//!
+//! 返回 `Ok(true)` = 有工具装入（此时才产出 tools.img 与挂载 hook）；
+//! `Ok(false)` = 按上述规则跳过。
 
 use std::path::Path;
 
@@ -20,21 +24,21 @@ pub fn install(
     dest_bin: &Path,
     arch: common::Arch,
     progress: &mut Progress,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     if !rust_dir.join("Cargo.toml").is_file() {
-        return Ok(());
+        return Ok(false);
     }
     let triple = arch.rust_musl_triple();
     if !common::fsutil::which("cargo") {
         progress.line("  WARNING: tools skipped (cargo not found)");
-        return Ok(());
+        return Ok(false);
     }
     if !musl_target_installed(triple) {
         progress.line(&format!(
             "  WARNING: tools skipped (rust target {triple} not installed; \
              run `rustup target add {triple}` to enable)"
         ));
-        return Ok(());
+        return Ok(false);
     }
 
     progress.line("Building VM tools...");
@@ -71,7 +75,7 @@ pub fn install(
             bin_dir.display()
         );
     }
-    Ok(())
+    Ok(true)
 }
 
 /// musl target 是否已随 toolchain 安装（sysroot 的 rustlib 目录存在即视为可用）。

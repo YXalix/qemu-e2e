@@ -33,9 +33,10 @@ pub fn run_probe(
         None => 300,
     };
 
-    // ---- 构建（agent 随 rootfs 装入 /bin；musl target 缺失时 WARN 跳过，
-    // 后续握手超时会给出明确指引，而不是静默假通过）----
-    super::build::build_pair_for(&cfg, None)?;
+    // ---- 构建（probe 恒开 agent 通道：强制把 virtio_console 并入 runtime
+    // 模块清单，不依赖 [components.agent] 开关；agent 随 tools.img 装入
+    // /bin，musl target 缺失时 WARN 跳过，后续握手超时会给出明确指引）----
+    super::build::build_pair_for(&cfg, None, &["virtio_console".to_string()])?;
 
     let commands = collect_commands(cmds, cmd_file)?;
     anyhow::ensure!(
@@ -54,15 +55,16 @@ pub fn run_probe(
     let inv = launcher::QemuInvocation::new(
         arch,
         &kernel,
-        cfg.infra_dir.join("initrd.img"),
-        cfg.infra_dir.join("rootfs.img"),
+        cfg.artifacts_dir.join("initrd.img"),
+        cfg.artifacts_dir.join("rootfs.img"),
     )
     .accel(launcher::Accel::Tcg)
+    .pmem(super::pmem_opt(&cfg, arch, &topo)?)
     .topo(topo)
-    .qemu_override(cfg.env.get("QEMU").as_deref())
-    .disk(super::disk_opt(&cfg))
+    .qemu_override(cfg.qemu_override().as_deref())
+    .virtio_disks(super::tools_disk_opt(&cfg))
     .agent_serial(&sock_path)
-    .extra_opts(&super::qemu_extra(&cfg));
+    .extra_opts(&cfg.qemu_extra());
     println!(
         "[LAUNCH] {}",
         inv.command_line().map_err(anyhow::Error::msg)?

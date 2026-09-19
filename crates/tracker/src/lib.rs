@@ -280,11 +280,6 @@ pub const DEFAULT_RULES: &[Rule] = &[
         tests: &["test-example", "test-rs-example"],
     },
     Rule {
-        path_prefix: "drivers/nvme/",
-        subsystem: "nvme driver",
-        tests: &["test-example", "test-rs-example"],
-    },
-    Rule {
         path_prefix: "drivers/vfio/",
         subsystem: "vfio passthrough",
         tests: &["test-example", "test-rs-example"],

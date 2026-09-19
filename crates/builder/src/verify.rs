@@ -11,20 +11,22 @@ pub const HOST_TOOLS: &[&str] = &[
     "wget", "tar", "make", "cmake", "cpio", "gzip", "nproc", "find", "sed", "timeout",
 ];
 
-/// modules.conf 声明的模块是否都能在内核树找到（检查 #7 的输入收集）。
+/// 组件计划条目（conf 行）的模块是否都能在内核树找到（检查 #7 的输入收集）。
 /// `kernel_path` 为 None（未配置内核树）时全部记为未找到。
 pub fn module_presence(
-    modules_conf: &Path,
+    module_lines: &[String],
     kernel_path: Option<&Path>,
     fallback_dir: &Path,
 ) -> Vec<(String, bool)> {
-    modconf::parse(modules_conf)
-        .into_iter()
+    module_lines
+        .iter()
+        .map(|line| modconf::module_name(line))
+        .filter(|m| !m.is_empty())
         .map(|m| {
             let found = kernel_path
-                .map(|kp| modconf::find_ko(kp, fallback_dir, &m).is_some())
+                .map(|kp| modconf::find_ko(kp, fallback_dir, m).is_some())
                 .unwrap_or(false);
-            (m, found)
+            (m.to_string(), found)
         })
         .collect()
 }
@@ -78,7 +80,7 @@ pub struct Report {
 /// 运行全部检查（与 verify.sh 的 11 项一一对应）。
 #[allow(clippy::too_many_arguments)]
 pub fn run_checks(
-    env_file_exists: bool,
+    config_file_exists: bool,
     kernel_path: Option<&Path>,
     arch: Arch,
     host_is_cross: bool,
@@ -86,19 +88,18 @@ pub fn run_checks(
     qemu_bin: Option<&str>,
     qemu_override: Option<&str>,
     modules: &[(String, bool)], // (模块名, .ko 是否找到)
-    modules_conf_exists: bool,
     busybox_cached: bool,
-    disk_exists: bool,
+    tools_img_exists: bool,
     initrd: Option<&Path>,
 ) -> Report {
     let mut checks = Vec::new();
 
     // 1. Configuration
-    if env_file_exists {
-        checks.push(pass("Configuration: .env found"));
+    if config_file_exists {
+        checks.push(pass("Configuration: virtuoso.toml found"));
     } else {
         checks.push(fail(
-            "Configuration: .env not found (using .env.example defaults, copy it: cp .env.example .env)",
+            "Configuration: virtuoso.toml not found (run `cargo xtask` inside the project root, or restore the shipped template)",
         ));
     }
 
@@ -132,7 +133,9 @@ pub fn run_checks(
             Some(p.to_path_buf())
         }
         None => {
-            checks.push(fail("KERNEL_PATH not set (create .env from .env.example)"));
+            checks.push(fail(
+                "KERNEL_PATH not set (set kernel_path in virtuoso.toml or KERNEL_PATH env var)",
+            ));
             None
         }
     };
@@ -197,15 +200,19 @@ pub fn run_checks(
         )));
     }
     if common::fsutil::which("qemu-img") {
-        checks.push(info("qemu-img: available (for 'make disk')"));
+        checks.push(info("qemu-img: available"));
     } else {
         checks.push(info(
-            "qemu-img: not found (optional, for disk image creation)",
+            "qemu-img: not found (optional, for manual disk image work)",
         ));
     }
 
-    // 7. Kernel modules（WARN，不判死）
-    if modules_conf_exists {
+    // 7. Kernel modules（WARN，不判死；清单 = 启用组件 require 并集 + boot 基础集附加）
+    if modules.is_empty() {
+        checks.push(info(
+            "Kernel modules: none required (no enabled component declares require)"
+        ));
+    } else {
         let total = modules.len();
         let found = modules.iter().filter(|(_, ok)| *ok).count();
         if found == total {
@@ -221,8 +228,6 @@ pub fn run_checks(
                 missing.join(" ")
             )));
         }
-    } else {
-        checks.push(warn("modules.conf not found"));
     }
 
     // 8. BusyBox
@@ -244,11 +249,11 @@ pub fn run_checks(
         )));
     }
 
-    // 10. Disk
-    checks.push(if disk_exists {
-        info("Disk image: exists")
+    // 10. Tools image
+    checks.push(if tools_img_exists {
+        info("Tools image: exists (attached as /dev/vdb, mounted at /tools)")
     } else {
-        info("Disk image: not present (run 'make disk' to create)")
+        info("Tools image: not built yet (run `cargo xtask build`)")
     });
 
     // 11. initrd

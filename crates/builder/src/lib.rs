@@ -30,6 +30,16 @@ impl InitHook {
     }
 }
 
+/// tools.img 挂载 hook（rootfs 内 `/init-hooks.sh` 的生成片段）：init 在
+/// devtmpfs 挂载后、insmod/agent 拉起前 source——virtio_blk 已由 initramfs
+/// 的 modules-boot.conf 加载，此处直接挂 /dev/vdb 并把工具目录注入 PATH。
+const TOOLS_DISK_HOOK: &str = r#"mkdir -p /tools
+if mount -t ext4 /dev/vdb /tools 2>/dev/null; then
+    export PATH="/tools/bin:$PATH"
+else
+    LOG_WARN "tools disk not mounted (/dev/vdb missing or not ext4); tools unavailable"
+fi"#;
+
 /// 进度输出：同时打印到终端，可选追加到运行工件 build.log。
 pub struct Progress {
     log: Option<std::fs::File>,
@@ -58,14 +68,22 @@ impl Progress {
 }
 
 /// 构建两段式引导对（build-initrd.sh 的 Rust 接管）：
-/// `infra/initrd.img`（initramfs：busybox + modules-boot.conf + init-initramfs）
-/// 与 `infra/rootfs.img`（ext4：busybox + modules.conf + init + /tests）。
+/// `target/artifacts/initrd.img`（initramfs：busybox + modules-boot.conf
+/// 基础集 + 组件 boot 附加 + init-initramfs）与 `target/artifacts/rootfs.img`
+/// （ext4：busybox + 组件 require 生成的 modules.conf + init + /tests）。
+/// 另产出 `target/artifacts/tools.img`（ext4：/bin 常驻工具，VM 内挂 /tools）——
+/// 工具被跳过时不产出。源资产读 `infra_dir`，暂存目录与 busybox 缓存放
+/// `build_dir`（target/build）。
+#[allow(clippy::too_many_arguments)]
 pub fn build_boot_pair(
     infra_dir: &Path,
+    build_dir: &Path,
+    artifacts_dir: &Path,
     kernel_path: &Path,
     arch: common::Arch,
     supply: &busybox::Supply,
     hooks: &[InitHook],
+    modules: &modconf::Modules,
     progress: &mut Progress,
 ) -> anyhow::Result<()> {
     // 与脚本一致的先决检查
@@ -78,42 +96,56 @@ pub fn build_boot_pair(
     if !common::fsutil::which("mke2fs") {
         anyhow::bail!("mke2fs not found (install e2fsprogs)");
     }
+    std::fs::create_dir_all(build_dir)?;
+    std::fs::create_dir_all(artifacts_dir)?;
 
-    let busybox_bin = busybox::ensure(infra_dir, arch, supply, progress)?;
+    let busybox_bin = busybox::ensure(build_dir, arch, supply, progress)?;
 
     // ---------- initrd.img: minimal initramfs ----------
     progress.line("Building initrd.img (minimal initramfs)...");
-    let initramfs_dir = infra_dir.join("initramfs");
+    let initramfs_dir = build_dir.join("initramfs");
     assemble_busybox_tree(&initramfs_dir, &busybox_bin)?;
     std::fs::copy(infra_dir.join("init-initramfs"), initramfs_dir.join("init"))
         .context("复制 init-initramfs 失败")?;
     common::fsutil::set_executable(&initramfs_dir.join("init"))?;
     std::fs::create_dir_all(initramfs_dir.join("mnt"))?;
     std::fs::create_dir_all(initramfs_dir.join("lib/modules"))?;
-    modconf::copy_modules(
+    let (boot_names, boot_conf_text) =
+        modconf::boot_set(&infra_dir.join("modules-boot.conf"), &modules.boot_extra)?;
+    modconf::copy_module_list(
         &initramfs_dir.join("lib/modules"),
-        &infra_dir.join("modules-boot.conf"),
+        &boot_names,
+        &boot_conf_text,
+        "modules-boot.conf",
         kernel_path,
         infra_dir,
         progress,
     )?;
-    image::pack_initramfs(&initramfs_dir, &infra_dir.join("initrd.img"))?;
+    image::pack_initramfs(&initramfs_dir, &artifacts_dir.join("initrd.img"))?;
 
     // ---------- rootfs.img: ext4 rootfs with tests ----------
     progress.line("Building rootfs.img (ext4 rootfs)...");
-    let rootfs_dir = infra_dir.join("rootfs");
+    let rootfs_dir = build_dir.join("rootfs");
     assemble_busybox_tree(&rootfs_dir, &busybox_bin)?;
     std::fs::copy(infra_dir.join("init"), rootfs_dir.join("init")).context("复制 init 失败")?;
     common::fsutil::set_executable(&rootfs_dir.join("init"))?;
     std::fs::create_dir_all(rootfs_dir.join("lib/modules"))?;
-    modconf::copy_modules(
+    let runtime_conf = modconf::runtime_conf_text(&modules.runtime);
+    let runtime_names: Vec<String> = modules
+        .runtime
+        .iter()
+        .map(|l| modconf::module_name(l).to_string())
+        .filter(|n| !n.is_empty())
+        .collect();
+    modconf::copy_module_list(
         &rootfs_dir.join("lib/modules"),
-        &infra_dir.join("modules.conf"),
+        &runtime_names,
+        &runtime_conf,
+        "modules.conf",
         kernel_path,
         infra_dir,
         progress,
     )?;
-    write_hooks(&rootfs_dir, hooks)?;
     testcase::install(
         &infra_dir.join("testcases"),
         &rootfs_dir.join("tests"),
@@ -125,19 +157,31 @@ pub fn build_boot_pair(
         arch,
         progress,
     )?;
-    // tools workspace（常驻工具）→ /bin：与用例分类正交，见 tools::install
-    tools::install(
+    // tools workspace（常驻工具）→ tools.img 的 /bin：与用例分类正交，见
+    // tools::install。装入成功才产出 tools.img 并注入挂载 hook（降级语义）。
+    let tools_dir = build_dir.join("tools");
+    let tools_installed = tools::install(
         &infra_dir.join("tools"),
-        &rootfs_dir.join("bin"),
+        &tools_dir.join("bin"),
         arch,
         progress,
     )?;
-    image::make_ext4(&rootfs_dir, &infra_dir.join("rootfs.img"))?;
+    let mut hooks = hooks.to_vec();
+    if tools_installed {
+        image::make_ext4(&tools_dir, &artifacts_dir.join("tools.img"), "tools")?;
+        hooks.push(InitHook::shell("tools-disk", TOOLS_DISK_HOOK));
+    }
+    write_hooks(&rootfs_dir, &hooks)?;
+    image::make_ext4(&rootfs_dir, &artifacts_dir.join("rootfs.img"), "rootfs")?;
 
     progress.line("");
     progress.line("Done:");
-    for f in ["initrd.img", "rootfs.img"] {
-        let p = infra_dir.join(f);
+    let mut built = vec!["initrd.img", "rootfs.img"];
+    if tools_installed {
+        built.push("tools.img");
+    }
+    for f in built {
+        let p = artifacts_dir.join(f);
         let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
         progress.line(&format!("  {} {}", f, common::fmt::human_size_ls(size)));
     }

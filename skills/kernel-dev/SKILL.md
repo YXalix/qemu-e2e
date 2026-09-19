@@ -27,15 +27,11 @@ Activate this skill whenever the user asks to:
 kernel/                              # kernel source root
 ├── arch/ mm/ fs/ drivers/ ...       # kernel code
 └── qemu-e2e/                        # this harness
-    ├── Makefile                     # qemu, qemu-test, initrd, disk, verify, install-skill
-    ├── .env.example                 # tracked config template
-    ├── .env                         # personal overrides (gitignored)
+    ├── Makefile                     # thin forwarder to cargo xtask
+    ├── virtuoso.toml                # single config surface: globals + [components.*]
     └── infra/
-        ├── verify.sh                # prerequisite checker (host tools, kernel image, modules)
-        ├── run-qemu.sh              # QEMU launcher (multi-arch, KVM, GDB, NVMe)
-        ├── build-initrd.sh          # BusyBox + modules + tests → initrd.img
-        ├── init                     # PID 1 inside VM: mount → modprobe → run /tests/*
-        ├── modules.conf             # one module per line, optional load-time params
+        ├── init                     # PID 1 inside VM: mount → insmod modules.conf → run /tests/*
+        ├── modules-boot.conf        # frozen boot-critical module set → initramfs
         └── testcases/
             ├── CMakeLists.txt       # one add_executable() per test binary
             └── src/
@@ -44,29 +40,39 @@ kernel/                              # kernel source root
                 └── test_<name>.c    # YOU ADD THESE (define void run_tests(void))
 ```
 
-## Configuration (`.env`)
+## Configuration (`virtuoso.toml`)
 
-`.env` is sourced by the Makefile and every shell script. The user should have copied `.env.example → .env` at setup. Key variables:
+`virtuoso.toml` at the project root is the single config surface. The tracked
+template ships the default regular-boot config active; every optional setting
+is present as a comment. Unknown keys and bad types are rejected at parse time.
+Key global keys:
 
-| Variable | Purpose | Notes |
+| Key | Purpose | Notes |
 |---|---|---|
-| `KERNEL_PATH` | Kernel source root | Auto-detected as `..` from `qemu-e2e/`; override only for unusual layouts |
-| `ARCH` | Target arch | `arm64` (default), `x86_64`, `riscv64` — picks QEMU binary, kernel image path, console device |
-| `QEMU_TIMEOUT` | `qemu-test` wallclock cap (s) | `0` is rejected; pick 30–120 for CI, longer if KVM is off and tests are heavy |
-| `NUMA_MEMORY` | Per-NUMA-node memory | Total guest memory = `NUMA_MEMORY` × `NUMA_NODES` |
-| `SMP` | Total vCPUs | Split evenly across NUMA nodes; must be divisible by `NUMA_NODES` |
-| `NUMA_NODES` | NUMA node count | `1` = single-node (no `-numa`); `>1` = one socket per node |
-| `QEMU` | Override QEMU binary | Useful for cross-arch or out-of-tree QEMU builds |
-| `QEMU_OPTS` | Extra QEMU args | E.g. `-device vfio-pci,host=XX:XX.X` for passthrough |
+| `kernel_path` | Kernel source root | Auto-detected as `..` from the harness dir; override only for unusual layouts |
+| `arch` | Target arch | `arm64` (default), `x86_64`, `riscv64` — picks QEMU binary, kernel image path, console device |
+| `timeout_secs` | `test` wallclock cap (s) | `0` is rejected; pick 30–120 for CI, longer if KVM is off and tests are heavy |
+| `smp` | Total vCPUs | Must be divisible by the NUMA node count when > 1 |
+| `backend` | `qemu` or `firecracker` | firecracker = microVM (x86_64/aarch64 + KVM) |
+| `qemu_opts` | Extra QEMU args (array) | Escape hatch; passthrough components below are preferred |
 
-Do **not** edit values in `.env.example`; edit `.env`. If `.env` is missing, run `cp .env.example .env` first — `make verify` will fail otherwise.
+VM capabilities are **components** under `[components.*]`, each with `enabled`,
+`require` (kernel modules it needs) and `stage` (`boot` before root mount /
+`runtime` after pivot, default `runtime`): `[components.tools_disk]` (tools
+data disk, default on), `[components.agent]` (AI probe virtio-serial channel),
+`[components.vfio]` (PCI passthrough via `devices`), `[components.numa]`
+(multi-node topology via `nodes` / `memory_per_node`). The builder generates
+the rootfs module list from the enabled components' `require` union.
+
+A legacy `.env` is still read with a deprecation WARN; component config only
+exists in TOML.
 
 ## Primary Workflow: The Kernel Dev Loop
 
 When the user changes kernel code and wants verification, execute this loop end-to-end. **Do not skip the verify step** — it catches missing modules, missing kernel images, and toolchain gaps before you waste a build cycle.
 
-1. **Verify prerequisites** — `make -C qemu-e2e verify`
-   - Confirms `.env` exists, host tools present, `KERNEL_PATH` resolves, kernel image built, QEMU installed, every module in `modules.conf` is buildable, and warns on cross-compile mismatches.
+1. **Verify prerequisites** — `cargo xtask verify` (run inside the harness dir)
+   - Confirms `virtuoso.toml` exists, host tools present, `kernel_path` resolves, kernel image built, QEMU installed, every module required by enabled components is findable, and warns on cross-compile mismatches.
    - On failure, fix the reported gap before proceeding.
 
 2. **Build the kernel** (in the kernel tree root, not `qemu-e2e/`)
@@ -84,7 +90,7 @@ When the user changes kernel code and wants verification, execute this loop end-
    - No → add one (see "Adding a Test Case" below) **before** running the harness. A green run with no relevant assertions is worthless.
 
 4. **Build the initrd** — `make -C qemu-e2e initrd`
-   - Builds BusyBox 1.36.1 (cached after first run), copies every module from `modules.conf` (failing loudly on missing `.ko`), CMake-builds tests, packs `infra/initrd.img`.
+   - Builds BusyBox 1.36.1 (cached after first run), copies every module from `modules.conf` (failing loudly on missing `.ko`), CMake-builds tests, packs `target/artifacts/initrd.img`.
 
 5. **Run the verification** — `make -C qemu-e2e qemu-test QEMU_TIMEOUT=30`
    - Boots QEMU with serial console to stdout, kernel cmdline includes `auto_test`, init runs every binary in `/tests/`, then powers off.
@@ -143,7 +149,7 @@ Tests are statically-linked C binaries that run as user-space inside the VM. The
 
 ## Adding / Reordering Kernel Modules
 
-`infra/modules.conf` is read by both `build-initrd.sh` (to copy `.ko` files) and `init` (to `insmod` them at boot). Format: one module per line, `#` for comments. Tokens after the module name are passed verbatim to `insmod`.
+`infra/modules.conf` is read by the builder (`cargo xtask build`, to copy `.ko` files) and `init` (to `insmod` them at boot). Format: one module per line, `#` for comments. Tokens after the module name are passed verbatim to `insmod`.
 
 ```
 # dependency order is enforced by you; the harness does NOT topologically sort
@@ -154,7 +160,7 @@ my_driver param1=1 param2=foo
 
 Rules:
 - **List dependencies before dependents.** `init` calls `insmod` in file order; `modprobe`-style auto-resolution does not happen.
-- **Module must be built.** If a name in `modules.conf` doesn't have a matching `.ko` in `KERNEL_PATH`, `build-initrd.sh` aborts with `ERROR: Module X.ko not found`. Either build it (`make modules`) or remove the entry.
+- **Module must be built.** If a name in `modules.conf` doesn't have a matching `.ko` in `KERNEL_PATH`, `cargo xtask build` aborts with `ERROR: Module X.ko not found`. Either build it (`make modules`) or remove the entry.
 - **Prefer `=m` over `=y`** for modules under test — easier to iterate without rebuilding the kernel image.
 
 ## Customizing the Boot Environment

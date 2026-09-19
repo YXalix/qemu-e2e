@@ -23,9 +23,9 @@ Most kernel iteration loops look like: edit → `make` → ??? → push to a rea
 - **Boots your built kernel directly** — no distro userland, no overlay images, no flashing hardware.
 - **Statically-linked C tests** in a BusyBox rootfs — exercise syscalls, ioctls, `/proc`, `/sys`, `/dev` against the kernel under test.
 - **Multi-architecture** out of the box — arm64, x86_64, riscv64.
-- **Reproducible** — the same `.env` and the same kernel produce the same boot every time.
+- **Reproducible** — the same `virtuoso.toml` and the same kernel produce the same boot every time.
 - **CI-friendly** — `make qemu-test QEMU_TIMEOUT=N` exits non-zero on test failure, kernel panic, or timeout. Drop it straight into a pipeline.
-- **Debuggable** — KVM acceleration, GDB stub, interactive shell, optional NVMe block device, PCI passthrough hook.
+- **Debuggable** — KVM acceleration, GDB stub, interactive shell, virtio data disks, component-based VM config with kernel-module requirements.
 
 It is intentionally *not* a distro builder, not a container runtime, and not a fuzzer. It's the smallest thing that lets a kernel patch and a test program meet.
 
@@ -47,7 +47,7 @@ git clone https://gitcode.com/nashzhou/qemu-e2e.git
 # result: kernel/qemu-e2e/
 ```
 
-If you keep the harness elsewhere, set `KERNEL_PATH` in `.env` (see below).
+If you keep the harness elsewhere, set `kernel_path` in `virtuoso.toml` (see below).
 
 ### 2. Install host packages
 
@@ -65,27 +65,46 @@ For x86_64 or riscv64 targets, install the matching `qemu-system-x86_64` / `qemu
 
 ```bash
 cd qemu-e2e
-cp .env.example .env             # edit if defaults don't fit
-make verify                      # checks tools, kernel image, modules
-make qemu-test QEMU_TIMEOUT=30
+cargo xtask verify               # checks tools, kernel image, modules
+cargo xtask test --timeout 60
 ```
 
-`make verify` is the fastest way to know if everything is wired up — it prints colored PASS/FAIL/WARN lines for every prerequisite.
+`cargo xtask verify` is the fastest way to know if everything is wired up — it prints typed config diagnostics plus colored PASS/FAIL/WARN lines for every prerequisite.
 
-## Configuration (`.env`)
+## Configuration (`virtuoso.toml`)
 
-`.env` is sourced by the Makefile and every shell script. `.env.example` is the tracked template; copy it to `.env` and edit. Relative paths resolve from the project root (`qemu-e2e/`).
+`virtuoso.toml` at the project root is the single config surface. The tracked
+template ships the **default regular-boot config as active lines**; every
+optional setting is present as a comment — uncomment to enable. Unknown keys
+and bad types are rejected at parse time. (A legacy `.env` is still read with
+a deprecation WARN; component config only exists in TOML.)
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `KERNEL_PATH` | `..` (auto) | Kernel source tree. Override only for unusual layouts. |
-| `ARCH` | `arm64` | Target architecture: `arm64`, `x86_64`, or `riscv64`. Picks QEMU binary, kernel image path, console device. |
-| `QEMU_TIMEOUT` | `30` | Wallclock cap for `make qemu-test`. `0` is rejected. |
-| `NUMA_MEMORY` | `1G` | Per-NUMA-node memory. Total = `NUMA_MEMORY` × `NUMA_NODES`. |
-| `SMP` | `8` | Total vCPUs. Split evenly across NUMA nodes; must be divisible by `NUMA_NODES`. |
-| `NUMA_NODES` | `2` | NUMA node count. `1` = single-node (no `-numa`). `>1` = one socket per node. |
-| `QEMU` | auto | Override path to `qemu-system-<arch>`. |
-| `QEMU_OPTS` | empty | Extra QEMU args, e.g. `-device vfio-pci,host=XX:XX.X`. |
+Global keys: `arch` / `timeout_secs` / `smp` / `backend` / `auto_test` /
+`kernel_path` / `kernel_image` / `qemu` / `qemu_opts` / `firecracker_bin`.
+
+VM capabilities are **components** under `[components.*]`. Each component
+accepts `enabled`, `require` (kernel modules it needs, one conf-line per
+entry: `"<module> [key=val ...]"`) and `stage` (`boot` = needed before the
+root mount, default `runtime`). The builder generates the rootfs module list
+from the union of enabled components' `require`.
+
+```toml
+[components.tools_disk]   # tools.img data disk → /dev/vdb mounted at /tools
+enabled = true            # (default when the section is absent)
+
+# [components.agent]       # AI probe channel (virtio-serial); default off
+# enabled = true
+# require = ["virtio_console"]
+
+# [components.vfio]        # PCI passthrough → -device vfio-pci,host=<bdf>
+# enabled = true
+# devices = ["0000:01:00.0"]
+
+# [components.numa]        # multi-node NUMA; default single-node
+# enabled = true
+# nodes = 2
+# memory_per_node = "1G"
+```
 
 ### Architecture matrix
 
@@ -106,27 +125,27 @@ Cross-compile freely (e.g. `ARCH=x86_64` on an arm64 host) — `make verify` war
 | NUMA | `NUMA_NODES` nodes, one socket per node (default 2) |
 | Machine | `virt` (arm64/riscv64) / `q35` (x86_64) |
 | Console | Serial only (`-nographic -serial mon:stdio`) |
-| Block | `rootfs.img` ext4 system disk on virtio (`/dev/vda`); optional 512 MB NVMe (`disk.qcow2` → `/dev/nvme0n1`) |
-| Userland | BusyBox 1.36.1, statically linked, per-arch binary cached under `infra/busybox/bin/` (prebuilt release download first, source-build fallback) |
+| Block | `rootfs.img` ext4 system disk on virtio (`/dev/vda`); `tools.img` data disk (`[components.tools_disk]` → `/dev/vdb`) |
+| Userland | BusyBox 1.36.1, statically linked, per-arch binary cached under `target/build/busybox/bin/` (prebuilt release download first, source-build fallback) |
 | Cmdline | `console=<serial> root=/dev/vda rw init=/init loglevel=8 auto_test` |
 
 Boot is two-stage:
 
 1. **initramfs** (`initrd.img`, PID 1 = `infra/init-initramfs`) — one job: make `root=` mountable. Mounts `proc`/`sysfs`/`devtmpfs` (+ device-node fallbacks for kernels with quirky devtmpfs), insmods the **boot-critical** modules from `modules-boot.conf` (virtio + ext4 and deps), then mounts `root=` and `switch_root`s into it.
-2. **rootfs** (`rootfs.img`, PID 1 = `infra/init`) — remounts pseudo-filesystems idempotently, insmods the **test** modules from `modules.conf` (now living in the rootfs at `/lib/modules/`), then either drops to a shell (interactive) or executes every binary in `/tests/` and powers off (auto-test).
+2. **rootfs** (`rootfs.img`, PID 1 = `infra/init`) — remounts pseudo-filesystems idempotently, insmods the modules listed in the generated `/lib/modules/modules.conf` (union of enabled components' `require`), then either drops to a shell (interactive) or executes every binary in `/tests/` and powers off (auto-test).
 
 ## Makefile targets
 
 | Target | Description |
 |---|---|
-| `make verify` | Validate prerequisites: `.env`, host tools, `KERNEL_PATH`, kernel image, QEMU, modules, BusyBox cache. |
+| `make verify` | Validate prerequisites: `virtuoso.toml`, host tools, `kernel_path`, kernel image, QEMU, modules, BusyBox cache. |
 | `make busybox` | Ensure the per-arch static BusyBox: prebuilt download from release first, source-build fallback. |
-| `make initrd` | (Re)build the boot pair: `infra/initrd.img` (minimal initramfs + modules) and `infra/rootfs.img` (ext4 rootfs + tests). |
+| `make initrd` | (Re)build the boot pair: `target/artifacts/initrd.img` (minimal initramfs + modules) and `target/artifacts/rootfs.img` (ext4 rootfs + tests). |
 | `make qemu` | Boot interactively; lands in a BusyBox shell. |
 | `make qemu-kvm` | Same, with KVM acceleration (host arch == target arch only). |
 | `make qemu-debug` | Boot halted, with GDB stub on `:1234`. |
 | `make qemu-test` | CI mode: rebuild initrd, run with `QEMU_TIMEOUT=N`, exit non-zero on failure or timeout. |
-| `make disk` | Create `infra/disk.qcow2` (512 MB) for block-device tests. |
+| `make disk` | Create `target/artifacts/disk.qcow2` (512 MB) for block-device tests. |
 | `make install-skill` | Copy the `kernel-dev` Claude Code skill into `$KERNEL_PATH/.claude/skills/`. |
 | `make uninstall-skill` | Remove it. |
 | `make clean` | Remove `disk.qcow2`, `initrd.img`, `rootfs.img`, `testcases/build/`. |
@@ -157,21 +176,15 @@ pipe them directly. AI-facing repo guide: [AGENTS.md](AGENTS.md); failure playbo
 ```
 kernel/                              # Linux kernel source tree
 └── qemu-e2e/                        # ← this framework
-    ├── Makefile                     # top-level targets
-    ├── .env.example                 # tracked config template
-    ├── .env                         # your overrides (gitignored)
+    ├── Makefile                     # top-level targets (forwards to cargo xtask)
+    ├── virtuoso.toml                # single config surface: globals + [components.*]
     ├── README.md
     ├── skills/
     │   └── kernel-dev/SKILL.md      # Claude Code skill (assistant guidance)
     └── infra/
-        ├── verify.sh                # prerequisite checker
-        ├── run-qemu.sh              # QEMU launcher (multi-arch / KVM / GDB / NVMe)
-        ├── build-initrd.sh          # BusyBox + modules → initrd.img; BusyBox + tests → rootfs.img
         ├── init-initramfs           # stage-1 PID 1: insmod boot modules, mount root=, switch_root
-        ├── modules-boot.conf        # boot-critical modules only (virtio, ext4 + deps) → initramfs
+        ├── modules-boot.conf        # frozen boot-critical module set (virtio, ext4 + deps) → initramfs
         ├── init                     # test PID 1 (injected into rootfs.img; auto_test or shell)
-        ├── cpio2ext4.sh             # convert a release rootfs cpio.gz into an auto-sized ext4 img
-        ├── modules.conf             # one module per line, optional load-time params
         ├── initrd.img               # generated, minimal initramfs
         ├── rootfs.img               # generated, ext4 rootfs
         ├── disk.qcow2               # generated, optional
@@ -249,21 +262,29 @@ When auto-testing, look for:
 
 ## Loading kernel modules
 
-`infra/modules-boot.conf` (boot-critical: virtio/ext4) is copied into the initramfs and insmodded by `init-initramfs` before the pivot. `infra/modules.conf` (test modules, e.g. NVMe) is copied into `rootfs.img /lib/modules/` and insmodded by the test init after the pivot — adding a test module never changes `initrd.img`. Both: one module per line, `#` for comments, tokens after the name passed verbatim to `insmod`.
+Module supply is **generated from the components** declared in `virtuoso.toml`:
 
-```
-# dependencies first — there is no auto-resolution
-nvme-core
-nvme
+- `infra/modules-boot.conf` (frozen base set: virtio/ext4 + deps) is copied into
+  the initramfs and insmodded by `init-initramfs` before the pivot. Components
+  that need a module that early add `stage = "boot"`; those entries are appended
+  after the base set.
+- Everything else comes from enabled components' `require` and is written by the
+  builder into `rootfs.img /lib/modules/modules.conf`, insmodded by the test init
+  after the pivot. Entries are conf lines — tokens after the module name are
+  passed verbatim to `insmod`:
 
-# load-time parameters
-my_driver param1=1 param2=foo
-```
+  ```toml
+  # [components.mydev]
+  # enabled = true
+  # require = ["nvme-core", "nvme", "my_driver param1=1 param2=foo"]
+  ```
 
 Rules:
 
-- **Order matters.** `init` calls `insmod` in file order.
-- **Module must be built.** A name in `modules.conf` without a matching `.ko` under `KERNEL_PATH` aborts the initrd build with `ERROR: Module X.ko not found`.
+- **Order matters.** `init` calls `insmod` in list order (dependencies first —
+  there is no auto-resolution).
+- **Module must be built.** A name without a matching `.ko` under `kernel_path`
+  aborts the build with `Module X.ko not found`.
 - **Prefer `=m` over `=y`** for modules under iteration — faster cycle, no kernel rebuild.
 
 ## Customizing the boot environment
@@ -317,14 +338,18 @@ gdb-multiarch vmlinux -ex 'target remote :1234'
 ### Block device tests
 
 ```bash
-make disk         # creates infra/disk.qcow2 (512 MB, NVMe)
+make disk         # creates target/artifacts/disk.qcow2 (512 MB, NVMe)
 make qemu         # appears as /dev/nvme0n1 in the VM
 ```
 
 ### PCI passthrough
 
-```bash
-QEMU_OPTS='-device vfio-pci,host=XX:XX.X' make qemu
+Enable the vfio component in `virtuoso.toml`:
+
+```toml
+[components.vfio]
+enabled = true
+devices = ["0000:01:00.0"]
 ```
 
 Host needs IOMMU enabled (`intel_iommu=on` / `iommu=pt`).
@@ -345,7 +370,7 @@ Once installed, Claude discovers the skill automatically when invoked from the k
 Issues and PRs welcome. When adding features, please:
 
 - Keep the harness POSIX-shell-compatible where possible (`init` runs under BusyBox `sh`, not bash).
-- Update `verify.sh` with any new prerequisite.
+- Update `crates/builder/src/verify.rs` with any new prerequisite.
 - Add a corresponding `test_*.c` for any new behavior the harness exposes.
 - Update both this README and `skills/kernel-dev/SKILL.md` if user-visible behavior changes.
 

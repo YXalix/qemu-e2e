@@ -1,6 +1,6 @@
 //! BusyBox 供给（fetch-busybox.sh 的 Rust 接管）。
 //! 四层供给链（按序尝试，命中即返回）：
-//!   0. 本地缓存 infra/busybox/bin/busybox-<arch>
+//!   0. 本地缓存 target/build/busybox/bin/busybox-<arch>
 //!   1. BUSYBOX_DL_URL   显式完整资产 URL（wget）
 //!   2. gh release download（自带认证，私有仓库可用）
 //!   3. 直链 wget（公开 release）
@@ -27,15 +27,15 @@ pub struct Supply {
     pub force_source_build: bool,
 }
 
-fn cache_bin(infra_dir: &Path, arch: Arch) -> PathBuf {
-    infra_dir
+fn cache_bin(build_dir: &Path, arch: Arch) -> PathBuf {
+    build_dir
         .join("busybox/bin")
         .join(format!("busybox-{}", arch.name()))
 }
 
 /// 确保目标架构静态 BusyBox 就位，返回其二进制路径。失败即 Err（构建中止）。
 pub fn ensure(
-    infra_dir: &Path,
+    build_dir: &Path,
     arch: Arch,
     supply: &Supply,
     progress: &mut Progress,
@@ -44,7 +44,7 @@ pub fn ensure(
         .version
         .clone()
         .unwrap_or_else(|| DEFAULT_VERSION.into());
-    let bin = cache_bin(infra_dir, arch);
+    let bin = cache_bin(build_dir, arch);
     let asset = format!("busybox-{version}-linux-{}", arch.name());
     let tag = format!("busybox-v{version}");
 
@@ -52,7 +52,7 @@ pub fn ensure(
         progress.line(&format!("BusyBox: cached ({})", arch.name()));
         return Ok(bin);
     }
-    std::fs::create_dir_all(infra_dir.join("busybox/bin"))?;
+    std::fs::create_dir_all(build_dir.join("busybox/bin"))?;
 
     if !supply.force_source_build {
         // 1) 显式 URL
@@ -62,7 +62,7 @@ pub fn ensure(
             }
         }
         // 2/3) release 下载
-        if let Some(repo) = resolve_repo(infra_dir, &supply.release_repo) {
+        if let Some(repo) = resolve_repo(build_dir, &supply.release_repo) {
             // 2) gh（认证可用时）
             if common::fsutil::which("gh") && gh_auth_ok() {
                 progress.line(&format!("Fetching {asset} via gh from {repo} ({tag})"));
@@ -96,7 +96,7 @@ pub fn ensure(
     }
 
     // 4) 源码编译兜底
-    build_from_source(infra_dir, arch, &version, progress)?;
+    build_from_source(build_dir, arch, &version, progress)?;
     Ok(bin)
 }
 
@@ -122,12 +122,21 @@ fn try_wget(url: &str, bin: &Path, asset: &str, progress: &mut Progress) -> bool
     }
 }
 
-/// 推导发布仓库：显式 BUSYBOX_RELEASE_REPO → 扫描 git remote 取 GitHub 的那个。
-fn resolve_repo(infra_dir: &Path, explicit: &Option<String>) -> Option<String> {
+/// 推导发布仓库：显式 BUSYBOX_RELEASE_REPO → 从 start 逐级向上找含 `.git`
+/// 的项目根，扫其 git remote 取 GitHub 的那个。
+fn resolve_repo(start: &Path, explicit: &Option<String>) -> Option<String> {
     if let Some(repo) = explicit {
         return Some(repo.clone());
     }
-    let project_root = infra_dir.parent()?;
+    let mut project_root = start.to_path_buf();
+    loop {
+        if project_root.join(".git").exists() {
+            break;
+        }
+        if !project_root.pop() {
+            return None;
+        }
+    }
     let out = Command::new("git")
         .args(["-C", &project_root.display().to_string(), "remote", "-v"])
         .output()
@@ -158,7 +167,7 @@ fn gh_auth_ok() -> bool {
 }
 
 fn build_from_source(
-    infra_dir: &Path,
+    build_dir: &Path,
     arch: Arch,
     version: &str,
     progress: &mut Progress,
@@ -170,7 +179,7 @@ fn build_from_source(
         "Building BusyBox {version} from source (host arch: {})...",
         std::env::consts::ARCH
     ));
-    let busybox_root = infra_dir.join("busybox");
+    let busybox_root = build_dir.join("busybox");
     std::fs::create_dir_all(&busybox_root)?;
     let src_dir = busybox_root.join("busybox");
 
@@ -218,7 +227,7 @@ fn build_from_source(
     }
     run(make)?;
 
-    let bin = cache_bin(infra_dir, arch);
+    let bin = cache_bin(build_dir, arch);
     std::fs::copy(src_dir.join("busybox"), &bin)?;
     common::fsutil::set_executable(&bin)?;
 

@@ -7,7 +7,7 @@
 
 QEMU_TIMEOUT ?= 0
 
-.PHONY: all help verify busybox qemu qemu-kvm qemu-debug disk initrd qemu-test clean install-skill uninstall-skill
+.PHONY: all help verify busybox qemu qemu-kvm qemu-debug initrd qemu-test clean install-skill uninstall-skill
 
 all: help
 
@@ -23,8 +23,7 @@ help:
 	@echo "  qemu-kvm      - Start QEMU VM with KVM acceleration"
 	@echo "  qemu-debug    - Start QEMU with GDB stub"
 	@echo "  qemu-test     - Start QEMU with timeout (for CI)"
-	@echo "  disk          - Create disk.qcow2 (block device for testing)"
-	@echo "  initrd        - Rebuild initrd.img + rootfs.img (two-stage boot pair)"
+	@echo "  initrd        - Rebuild initrd.img + rootfs.img + tools.img (two-stage boot pair + tools disk)"
 	@echo "  install-skill - Install kernel-dev skill for Claude Code"
 	@echo "  uninstall-skill - Remove kernel-dev skill from Claude Code"
 	@echo "  clean         - Remove generated images"
@@ -57,9 +56,6 @@ qemu-test:
 		exit 1; \
 	fi
 	@cargo xtask test --timeout $(QEMU_TIMEOUT)
-
-disk:
-	@cargo xtask disk
 
 initrd:
 	@cargo xtask build

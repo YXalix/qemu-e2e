@@ -1,0 +1,99 @@
+# =====================================================================
+# Virtuoso VM 配置 —— 唯一配置面（.env 已废弃）
+# =====================================================================
+# 解析规则：
+#   * 未知键 / 非法类型在解析期报错（deny_unknown_fields）；
+#   * 优先级：本文件 > .env（遗留，仅标量键）> 进程环境变量；
+#   * 活动行 = 默认常规启动配置；注释行 = 可选项，取消注释即生效。
+#
+# 组件化：每个 [components.*] 段是一个 VM 组件，`require` 声明它依赖的
+# 内核模块（.ko）。builder 按「启用组件的 require 并集」生成 rootfs 的
+# /lib/modules/modules.conf（switch_root 后由 init 逐行 insmod；缺 .ko
+# 构建期报错）。require 条目格式沿用 conf 行："<module> [key=val ...]"，
+# 首 token 是模块名（去重键），其余原样传给 insmod；需要 initramfs 阶段
+# （挂 root 前）加载的组件加 stage = "boot"，缺省 "runtime"。
+
+# ---------------------------------------------------------------- 全局
+
+# 目标架构：x86_64 | arm64 | riscv64（决定 QEMU 二进制 / 内核镜像 / console）
+arch = "arm64"
+
+# 测试墙钟超时秒数；0 一律拒绝
+timeout_secs = 60
+
+# vCPU 总数（NUMA 多节点时须被节点数整除，解析期校验）
+smp = 8
+
+# 启动后端：qemu | firecracker（microVM：x86_64/aarch64 + KVM）
+backend = "qemu"
+
+# 测试模式（kernel cmdline auto_test）；false = 交互引导不自动跑测试
+auto_test = true
+
+# 内核源码树（构建期从内核树找 .ko / 内核镜像）。缺省 = 项目根上一级。
+# kernel_path = "/path/to/kernel"
+
+# 内核镜像覆盖（firecracker aarch64 需要 ELF vmlinux 时常用）
+# kernel_image = "/path/to/vmlinux"
+
+# QEMU 二进制覆盖（等价旧 QEMU= 语义）
+# qemu = "qemu-system-aarch64"
+
+# firecracker 二进制（缺省 "firecracker"）
+# firecracker_bin = "firecracker"
+
+# QEMU 透传兜底（数组，逐项透传；vfio 直通优先用组件，见下）
+# qemu_opts = ["-device ivshmem-plain,memdev=hostmem"]
+
+# ------------------------------------------------------------- VM 组件
+
+[components.tools_disk]
+# tools.img 常驻工具盘：外挂 virtio-blk → guest 内 /dev/vdb 挂 /tools，
+# 工具目录注入 PATH。段缺省（整段注释）= 启用；tools.img 未构建则自动跳过。
+enabled = true
+# require = ["virtio_blk", "ext4"]   # 已在 boot 基础集，声明仅为文档
+
+# [components.agent]
+# AI probe 通道：virtio-serial 端口 + guest 内 virtuoso-agent（cargo xtask
+# probe 恒开本通道，不依赖此开关）。启用后 shell/test 也附加通道，
+# virtio_console.ko 随本组件进 rootfs。段缺省 = 关闭（argv 保持冻结基线）。
+# enabled = true
+# require = ["virtio_console"]
+
+# [components.vfio]
+# vfio-pci 直通：devices 逐条生成 -device vfio-pci,host=<bdf>（需 KVM）。
+# enabled = true
+# devices = ["0000:01:00.0"]
+# require = ["vfio", "vfio_pci"]     # guest 侧驱动，按被测内核配置取舍
+# stage = "boot"                     # 需要引导早期可用时才改 boot
+
+# [components.numa]
+# 多节点 NUMA 拓扑（缺省单节点，无 -numa 参数）。总内存 = memory_per_node
+# × nodes；smp 必须被 nodes 整除。
+# enabled = true
+# nodes = 2
+# memory_per_node = "1G"
+
+# [components.pmem]
+# 持久内存（DT 途径，arm64/riscv64）：设备树注入 pmem-region 节点（xtask 用
+# dumpdtb+fdtput 生成补丁 DTB，经 -dtb 传入），cmdline 追加 mem=<总内存−size>
+# 把 pmem 区从内核线性内存排除（等价 x86 memmap= 语义），主内存后端换宿主
+# 文件（share=on）—— pmem 区即文件 backed，guest 写入持久落盘。guest 内
+# of_pmem 免 ndctl 注册 /dev/pmem0（DAX=1，mkfs 后 mount -o dax 即 fsdax）。
+# size = pmem 区大小（缺省 "256M"，2MiB 对齐、须小于总内存）；段缺省 = 关闭
+# （argv 保持冻结基线）。注意：QEMU nvdimm 的 ACPI NFIT 在 arm64 直启下不可见
+# （需 EFI 引导）；x86_64 途径另行支持；firecracker 启用时 WARN 忽略。
+# enabled = true
+# size = "256M"
+# require = ["libnvdimm", "nd_btt", "of_pmem", "nd_pmem"]  # 内核 =m 时声明（含加载顺序）
+# stage = "runtime"                              # rootfs 阶段加载（缺省）
+
+# ------------------------------------------------------------- 供给链
+
+# [busybox]
+# 预编译静态 busybox 优先（GitHub Release，见
+# .github/workflows/busybox-release.yml）；下载失败或离线回退源码编译。
+# version = "1.36.1"
+# release_repo = "owner/repo"        # 发布 busybox-v* 的仓库（owner/repo）
+# dl_url = "https://example.com/busybox"   # 或直接给资产 URL
+# force_source_build = false         # true = 强制本地源码编译（气隙环境）

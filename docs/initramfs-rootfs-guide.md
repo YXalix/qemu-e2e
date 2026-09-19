@@ -23,7 +23,7 @@ qemu-system-<arch>
   └─ -drive  rootfs.img       ── 阶段 2 ──       ext4 系统盘（virtio → /dev/vda）
                PID 1 = /init (= infra/init，测试 init)
                ① 幂等重挂 proc/sys/dev（switch_root 后多数已是挂载态）
-               ② insmod modules.conf 里全部 .ko（测试模块，盘上 /lib/modules/）
+               ② insmod modules.conf 里全部 .ko（组件 require 并集生成，/lib/modules/）
                ③ 交互 shell（默认）或 auto_test：跑 /tests/* → poweroff
 ```
 
@@ -59,7 +59,9 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 - release rootfs 的 `/init` 是**冻结在 workflow 里的 10 行脚本**（printf 拼接），
   不引用任何仓库脚本。→ 改仓库任何 `.sh`/`init*` 都**不需要**重发 release；
   资产内容只随 busybox 版本变化。
-- release **不含**任何测试内容（无 `/tests`、无测试 init、无 modules.conf）。
+- release **不含**任何测试内容（无 `/tests`、无测试 init、无模块清单）。
+  模块清单由组件 require 并集生成（§5），测试是本仓库的场景注入，由本地
+  构建（§3）完成。
   测试是本仓库的场景注入，由本地构建（§3）完成。
 - rootfs 目录树：`bin/`(busybox + 全量 applet 符号链接) + `sbin usr/{bin,sbin}`
   + 空骨架目录（`proc sys dev tmp mnt etc/init.d var/run root lib`）
@@ -70,9 +72,9 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 重新发布：Actions 页手动 `workflow_dispatch`（默认 1.36.1），或推 `busybox-v*` tag。
 发布是幂等的：同名 asset 先删后传，release 已存在则复用。
 
-### 2.2 BusyBox 二进制的本地供给链（fetch-busybox.sh）
+### 2.2 BusyBox 二进制的本地供给链（builder::busybox，`cargo xtask busybox`）
 
-按序尝试，命中即缓存到 `infra/busybox/bin/busybox-<arch>`：
+按序尝试，命中即缓存到 `target/build/busybox/bin/busybox-<arch>`：
 
 ```
 0. 本地缓存  →  1. $BUSYBOX_DL_URL  →  2. gh release download（带认证，私有库可用）
@@ -81,38 +83,48 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 
 发布仓库推导：`$BUSYBOX_RELEASE_REPO` > 扫描 git remotes 找 github.com 的那个。
 
-### 2.3 cpio.gz → ext4 转换（cpio2ext4.sh）
+### 2.3 cpio.gz → ext4 转换（并入 `cargo xtask build`）
 
-```bash
-infra/cpio2ext4.sh rootfs-<ver>-<arch>.cpio.gz [out.img] [size]
-```
-
-按解包内容 + 2MB 余量自动算大小（绝不要拍固定尺寸——曾有过 64MB 空洞的教训，
-ext4 的元数据 + journal 会把创建时声明的大小全部真实占满）。
+ext4 打包由 builder 完成（`crates/builder/src/image.rs::make_ext4`，
+`mke2fs -d` + 自动尺寸）：先 cpio 解包成树，再按 `du -sm` + **2MB 余量**
+生成镜像（绝不要拍固定尺寸——曾有过 64MB 空洞的教训，ext4 的元数据 +
+journal 会把创建时声明的大小全部真实占满）。release 的 rootfs cpio.gz
+如需单独转 ext4，解包后 loop mount 即可。
 
 ---
 
-## 3. 本地构建流水线（build-initrd.sh）
+## 3. 本地构建流水线（builder，`cargo xtask build`）
 
 ```
-make initrd   ⇒   infra/build-initrd.sh
+make initrd   ⇒   cargo xtask build   （crates/builder）
 ```
 
-**输入**：`KERNEL_PATH`（内核源码树，找 .ko）、`ARCH`、`modules-boot.conf`、
-`modules.conf`、`infra/init-initramfs`、`infra/init`、testcases/。
-**输出**：`infra/initrd.img`（cpio.gz）+ `infra/rootfs.img`（ext4，自动尺寸）。
+**输入**：`kernel_path`（内核源码树，找 .ko）、`arch`、`modules-boot.conf`
+（冻结 boot 基础集）、`virtuoso.toml` 组件 require 并集（boot 附加 + runtime）、
+`infra/init-initramfs`、`infra/init`、testcases/、tools/。
+**输出**：`target/artifacts/initrd.img`（cpio.gz）+ `target/artifacts/rootfs.img`
+（ext4，自动尺寸）+ `target/artifacts/tools.img`（ext4 卷标 `tools`，VM 内挂
+`/tools`；tools 被跳过时不产出）；
+暂存目录与 busybox 缓存在 `target/build/`。
 
 流水线步骤（函数级）：
 
-1. `fetch-busybox.sh` → 拿到 per-arch 静态 busybox；
-2. `assemble_busybox_tree <dest>` → busybox 二进制 + `--install` applet 链接
+1. busybox 供给（§2.2）→ 拿到 per-arch 静态 busybox；
+2. busybox 树组装 → busybox 二进制 + `--install` applet 链接
    + 绝对链接重写 + 骨架目录 + passwd/group；
 3. **initramfs 树** = busybox 树 + `init-initramfs` → `/init`
-   + `copy_modules <dest> modules-boot.conf`（只有 boot 模块）→ 打包 cpio.gz；
+   + `modules-boot.conf` 冻结基础集 + 组件 `stage = "boot"` 附加条目
+   （生成 conf 随行）→ 打包 cpio.gz；
 4. **rootfs 树** = busybox 树 + `init`（测试 init）→ `/init`
-   + `copy_modules <dest> modules.conf`（测试模块 → `/lib/modules/`）
-   + `install_testcases`（CMake 构建静态测试二进制 → `/tests/`）
-   → `mke2fs -d` 打成 ext4（尺寸 = `du -sm` + 2MB）。
+   + 组件 require 并集生成 `modules.conf` → `/lib/modules/`
+   + 构建 testcases（C/CMake + Rust no_std 静态二进制 → `/tests/`）
+   + 生成 `/init-hooks.sh`（tools.img 挂载 hook，见下）
+   → `mke2fs -d` 打成 ext4（尺寸 = `du -sm` + 2MB）；
+5. **tools.img 树** = tools workspace 的 musl 静态产物 → `/bin`
+   → `mke2fs -d` 打成 ext4（卷标 `tools`）。启动时作为第二个 virtio-blk
+   （`/dev/vdb`）附加（`tools_disk_opt`：产物存在才附加），rootfs 的
+   `/init-hooks.sh` 挂载到 `/tools` 并把 `/tools/bin` 注入 PATH——agent 与
+   常驻工具随此盘走，rootfs 不装工具。
 
 **已知限制**：`--install` 需要执行 busybox 二进制，所以交叉构建 initramfs
 （宿主 ≠ 目标架构）不可用——这是上游供给链的老限制，cross 场景需用
@@ -152,13 +164,16 @@ exec switch_root /mnt /init            # busybox 会把 /proc /sys /dev 挂载�
 
 ## 5. 模块双清单规则
 
-| 文件 | 语义 | 去向 | 谁加载 |
-|---|---|---|---|
-| `infra/modules-boot.conf` | 让 root= 可挂载的最小集 | initramfs `/lib/modules/` | `init-initramfs`，pivot 前 |
-| `infra/modules.conf` | 一切测试用途模块 | rootfs.img `/lib/modules/` | `infra/init`，pivot 后 |
+| 清单 | 语义 | 去向 | 谁加载 | 来源 |
+|---|---|---|---|---|
+| `infra/modules-boot.conf` | 让 root= 可挂载的最小集（**冻结基础集，手工维护**） | initramfs `/lib/modules/` | `init-initramfs`，pivot 前 | 手写 conf 文件 |
+| 组件 `stage = "boot"` 附加 | 某组件需要引导早期可用 | 同上（追加在基础集后） | 同上 | `virtuoso.toml` `[components.*] require` |
+| 生成 `modules.conf` | 启用组件的一切模块需求 | rootfs.img `/lib/modules/` | `infra/init`，pivot 后 | 组件 require 并集（builder 生成） |
 
-**判断标准：这个模块是不是"root 挂上之前就必须在内核里"？是 → boot，否 → 测试。**
-依赖顺序手工维护（前者先于后者 insmod），两份文件内的顺序都有意义。
+**判断标准：这个模块是不是"root 挂上之前就必须在内核里"？是 → 组件加
+`stage = "boot"`，否 → 缺省 runtime。**require 条目 = conf 行
+`"<module> [key=val ...]"`；并集按组件固定顺序去重保首个，条目顺序即
+insmod 顺序（被依赖者在前）。缺 `.ko` 构建期报错。
 
 ---
 
@@ -179,8 +194,9 @@ exec switch_root /mnt /init            # busybox 会把 /proc /sys /dev 挂载�
 ## 7. 常见修改任务手册
 
 **加一个测试模块**（最常见）
-→ 只改 `infra/modules.conf`（追加模块名，注意依赖顺序），`make initrd`。
-**不要**碰 `modules-boot.conf`——那会让 initrd.img 无谓变化。
+→ 在 `virtuoso.toml` 里给对应组件加/启用 `require`（注意依赖顺序，被依赖者
+在前），`cargo xtask build`。**不要**碰 `modules-boot.conf`——那会让
+initrd.img 无谓变化。
 
 **改测试流程 / 加测试用例**
 → 改 `infra/init`（流程）或 `testcases/`（用例），`make initrd` 后
@@ -192,11 +208,12 @@ POSIX/busybox-ash 语法（本地校验：
 `busybox sh -n infra/init-initramfs`）。改完重跑 §8 的三条验证。
 
 **换 rootfs 发行版**（如 Alpine/debootstrap）
-→ rootfs.img 就是普通 ext4。改 `build-initrd.sh` 的 rootfs 组装段，或在 VM 外
-loop mount 后替换内容。两阶段启动链不需要任何改动。
+→ rootfs.img 就是普通 ext4。改 builder 的 rootfs 组装段
+（`crates/builder/src/`），或在 VM 外 loop mount 后替换内容。两阶段启动链
+不需要任何改动。
 
 **发新 busybox 版本** → Actions 手动触发 `busybox-release`（填版本号），
-然后 `.env` 里 `BUSYBOX_VERSION=<ver>`。
+然后 `virtuoso.toml` 里 `[busybox] version = <ver>`。
 
 **改 release rootfs 的 /init**
 → 原则上不要改（冻结不变量，§2.1）。确需修改：编辑 workflow 里 printf 段落，
@@ -206,8 +223,9 @@ loop mount 后替换内容。两阶段启动链不需要任何改动。
 
 **改 shell 脚本通用规则**：GitHub Actions 的 `run:` 用 dash 执行——
 `local a=1 b=$a` 同行互引会取到空值（必须分行）、不支持花括号展开
-(`{a,b}`)、不支持 `${@:2}`（用 `shift`）。VM 内脚本以 busybox ash 为准，
-同样按 POSIX 写。每个脚本改完先做 `sh -n` / `busybox sh -n` 语法校验。
+(`{a,b}`)、不支持 `${@:2}`（用 `shift`）。VM 内脚本（`init`、
+`init-initramfs`）以 busybox ash 为准，同样按 POSIX 写，改完先做
+`busybox sh -n` 语法校验。
 
 ---
 
@@ -215,15 +233,15 @@ loop mount 后替换内容。两阶段启动链不需要任何改动。
 
 ```bash
 # 0. 语法
-busybox sh -n infra/init-initramfs && busybox sh -n infra/init && bash -n infra/build-initrd.sh
+busybox sh -n infra/init-initramfs && busybox sh -n infra/init
 
 # 1. 构建
-KERNEL_PATH=/path/to/kernel ARCH=arm64 make initrd
+KERNEL_PATH=/path/to/kernel ARCH=arm64 cargo xtask build
 
 # 2. 交互模式：应看到 [initramfs] 模块日志 → root 挂载 → 测试 init 横幅 → ~ # shell
 qemu-system-aarch64 -M virt -cpu cortex-a72 -m 1G -nographic -no-reboot \
-  -kernel $KERNEL_PATH/arch/arm64/boot/Image -initrd infra/initrd.img \
-  -drive file=infra/rootfs.img,format=raw,if=virtio \
+  -kernel $KERNEL_PATH/arch/arm64/boot/Image -initrd target/artifacts/initrd.img \
+  -drive file=target/artifacts/rootfs.img,format=raw,if=virtio \
   -append "console=ttyAMA0 root=/dev/vda rw init=/init loglevel=3"
 
 # 3. 自动测试：应输出 TEST_COMPLETE: ALL TESTS PASSED 且干净关机（exit 0）
@@ -236,14 +254,11 @@ qemu-system-aarch64 -M virt -cpu cortex-a72 -m 1G -nographic -no-reboot \
 
 | 文件 | 角色 | gitignored |
 |---|---|---|
-| `infra/fetch-busybox.sh` | busybox 二进制四级供给链 + 缓存 | — |
-| `infra/build-initrd.sh` | 本地构建流水线 → initrd.img + rootfs.img | — |
 | `infra/init-initramfs` | 阶段 1 PID 1（pivot init） | — |
 | `infra/init` | 阶段 2 PID 1（测试 init，构建时注入 rootfs） | — |
-| `infra/modules-boot.conf` | boot 模块清单 → initramfs | — |
-| `infra/modules.conf` | 测试模块清单 → rootfs | — |
-| `infra/run-qemu.sh` | QEMU 启动器（两件套 + 可选 NVMe 测试盘 disk.qcow2） | — |
-| `infra/cpio2ext4.sh` | release cpio.gz → 自动尺寸 ext4 | — |
-| `infra/initrd.img` / `infra/rootfs.img` | 构建产物 | ✅ |
-| `infra/busybox/`、`infra/rootfs/`、`infra/initramfs/` | 缓存与暂存目录 | ✅ |
+| `infra/modules-boot.conf` | boot 冻结基础集 → initramfs | — |
+| `virtuoso.toml` | 唯一配置面：全局键 + 组件 require 并集 → rootfs modules.conf | — |
+| `crates/builder/` | busybox 供给 + 两段式镜像组装（原 shell 流水线的 Rust 接管） | — |
+| `target/artifacts/initrd.img` / `rootfs.img` / `tools.img` | 构建产物 | ✅ |
+| `target/build/busybox/`、`rootfs/`、`initramfs/`、`tools/` | 缓存与暂存目录 | ✅ |
 | `.github/workflows/busybox-release.yml` | release 生成（含冻结 init） | — |

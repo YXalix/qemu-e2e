@@ -36,13 +36,16 @@ AI/人共用的故障速查。先跑 `cargo xtask triage`（或 `cargo xtask tri
 
 ## insmod 失败 / 模块缺失
 
-**Symptom**: `serial.log` 有 `insmod: can't insert 'xxx.ko'`，或 verify 阶段
-`modules.conf` 校验 FAIL。
+**Symptom**: `serial.log` 有 `insmod: can't insert 'xxx.ko'`，或构建期
+`Module xxx.ko not found`，或 verify 阶段 Kernel modules 报 missing。
 **Solution**:
-- `modules-boot.conf`（initramfs，virtio+ext4 引导关键）与 `modules.conf`（rootfs，
-  测试用）必须手写依赖顺序——被依赖者在前。
+- rootfs 的 `modules.conf` 由启用组件的 require 并集生成（`virtuoso.toml`
+  `[components.*]`）——加模块改组件的 `require`，不要手写 conf；条目顺序即
+  insmod 顺序，被依赖者在前。
+- `modules-boot.conf`（initramfs，virtio+ext4 引导关键）仍是手写冻结基础集；
+  组件需要引导早期加载时用 `stage = "boot"` 追加。
 - 内核重编后 `.ko` 路径变化：`make modules INSTALL_MOD_PATH=...` 或确认
-  `verify.sh` 报告的模块路径。
+  `cargo xtask verify` 报告的模块路径。
 
 ## 测试二进制没出现在 /tests/
 
@@ -59,8 +62,8 @@ AI/人共用的故障速查。先跑 `cargo xtask triage`（或 `cargo xtask tri
 
 ## SMP not divisible by NUMA_NODES
 
-**Solution**: run-qemu.sh 拒绝执行。调 `.env` 的 `SMP`/`NUMA_NODES`
-（SMP 必须整除节点数）。
+**Solution**: launcher 校验拒绝启动（SMP 必须整除节点数）。调
+`virtuoso.toml` 的 `smp` / `[components.numa]` 的 `nodes`。
 
 ## Ctrl-C 中断后想看已输出的日志
 
@@ -78,7 +81,7 @@ serial.log（`verdict: unknown`）。
 ## BusyBox 下载/构建失败
 
 **Solution**: `cargo xtask busybox` 走四级供应链（本地缓存 → release → 直链 →
-源码构建）。离线环境提前把对应架构的 busybox 放进 `infra/busybox/bin/`；
+源码构建）。离线环境提前把对应架构的 busybox 放进 `target/build/busybox/bin/`；
 release 资产校验 ELF magic，损坏会自动回退源码构建。
 
 ## 工件占满磁盘

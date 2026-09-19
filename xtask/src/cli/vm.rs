@@ -10,8 +10,9 @@ use anyhow::Context;
 use launcher::{Accel, Arch, Backend, QemuInvocation};
 
 use super::{
-    disk_opt, firecracker_kernel, firecracker_preflight, kernel_image_path, qemu_extra,
-    resolve_arch, resolve_backend, resolve_topology,
+    agent_socket_opt, firecracker_kernel, firecracker_preflight, kernel_image_path,
+    pmem_opt, resolve_arch, resolve_backend, resolve_topology, tools_disk_opt,
+    warn_agent_unsupported, warn_pmem_unsupported,
 };
 use crate::config::Config;
 use crate::runs;
@@ -35,6 +36,10 @@ fn run_vm_session(kvm: bool, gdb_stub: bool, backend: Option<&str>) -> anyhow::R
     if gdb_stub && backend == Backend::Firecracker {
         anyhow::bail!("gdb stub 仅 qemu 后端支持");
     }
+    if backend == Backend::Firecracker {
+        warn_agent_unsupported(&cfg);
+        warn_pmem_unsupported(&cfg);
+    }
 
     let status = if backend == Backend::Firecracker {
         let kernel = firecracker_kernel(&cfg, arch)?;
@@ -43,13 +48,14 @@ fn run_vm_session(kvm: bool, gdb_stub: bool, backend: Option<&str>) -> anyhow::R
         let inv = launcher::firecracker::FirecrackerInvocation::new(
             arch,
             &kernel,
-            cfg.infra_dir.join("rootfs.img"),
+            cfg.artifacts_dir.join("rootfs.img"),
             &topo,
-            cfg.auto_test() == "1",
-            cfg.infra_dir.join("firecracker-shell.json"),
-            cfg.infra_dir.join("firecracker-shell.sock"),
+            cfg.auto_test(),
+            cfg.target_dir.join("firecracker-shell.json"),
+            cfg.target_dir.join("firecracker-shell.sock"),
         )
-        .map_err(anyhow::Error::msg)?;
+        .map_err(anyhow::Error::msg)?
+        .virtio_disks(tools_disk_opt(&cfg));
         println!("[LAUNCH] {}", inv.command_line());
         let (mut child, mut sup) = inv.spawn_supervised(false)?;
         let st = child.wait().context("等待 firecracker 退出失败")?;
@@ -66,14 +72,22 @@ fn run_vm_session(kvm: bool, gdb_stub: bool, backend: Option<&str>) -> anyhow::R
         let inv = QemuInvocation::new(
             arch,
             &kernel,
-            cfg.infra_dir.join("initrd.img"),
-            cfg.infra_dir.join("rootfs.img"),
+            cfg.artifacts_dir.join("initrd.img"),
+            cfg.artifacts_dir.join("rootfs.img"),
         )
         .accel(if kvm { Accel::Kvm } else { Accel::Tcg })
+        .pmem(pmem_opt(&cfg, arch, &topo)?)
         .topo(topo)
-        .qemu_override(cfg.env.get("QEMU").as_deref())
-        .disk(disk_opt(&cfg))
-        .extra_opts(&qemu_extra(&cfg));
+        .qemu_override(cfg.qemu_override().as_deref())
+        .virtio_disks(tools_disk_opt(&cfg))
+        .extra_opts(&cfg.qemu_extra());
+        let inv = match agent_socket_opt(&cfg, &cfg.target_dir, "agent-shell") {
+            Some(sock) => {
+                let _ = std::fs::remove_file(&sock); // QEMU 不清理已存在的 socket 路径
+                inv.agent_serial(sock)
+            }
+            None => inv,
+        };
 
         println!(
             "[LAUNCH] {}",
@@ -143,7 +157,7 @@ fn test_once(
 
     // ---- 构建（builder）----
     let build_started = Instant::now();
-    if let Err(e) = super::build::build_pair_for(cfg, Some(&run.path.join("build.log"))) {
+    if let Err(e) = super::build::build_pair_for(cfg, Some(&run.path.join("build.log")), &[]) {
         let meta = build_failed_meta(
             &run,
             arch,
@@ -164,18 +178,21 @@ fn test_once(
     let started = Instant::now();
     let (mut child, mut sup, kernel, accel_label) = match backend {
         Backend::Firecracker => {
+            warn_agent_unsupported(cfg);
+            warn_pmem_unsupported(cfg);
             let kernel = firecracker_kernel(cfg, arch)?;
             firecracker_preflight(cfg, arch, &kernel)?;
             let inv = launcher::firecracker::FirecrackerInvocation::new(
                 arch,
                 &kernel,
-                cfg.infra_dir.join("rootfs.img"),
+                cfg.artifacts_dir.join("rootfs.img"),
                 &topo,
-                cfg.auto_test() == "1",
+                cfg.auto_test(),
                 run.path.join("firecracker-config.json"),
                 run.path.join("firecracker.sock"),
             )
-            .map_err(anyhow::Error::msg)?;
+            .map_err(anyhow::Error::msg)?
+            .virtio_disks(tools_disk_opt(cfg));
             println!("[LAUNCH] {}", inv.command_line());
             println!("Running firecracker test with {timeout_secs}s timeout...");
             let (child, sup) = inv.spawn_supervised(true)?;
@@ -186,15 +203,20 @@ fn test_once(
             let inv = QemuInvocation::new(
                 arch,
                 &kernel,
-                cfg.infra_dir.join("initrd.img"),
-                cfg.infra_dir.join("rootfs.img"),
+                cfg.artifacts_dir.join("initrd.img"),
+                cfg.artifacts_dir.join("rootfs.img"),
             )
             .accel(Accel::Tcg)
             .topo(topo.clone())
-            .qemu_override(cfg.env.get("QEMU").as_deref())
-            .disk(disk_opt(cfg))
-            .auto_test(cfg.auto_test() == "1")
-            .extra_opts(&qemu_extra(cfg));
+            .qemu_override(cfg.qemu_override().as_deref())
+            .virtio_disks(tools_disk_opt(cfg))
+            .pmem(pmem_opt(cfg, arch, &topo)?)
+            .auto_test(cfg.auto_test())
+            .extra_opts(&cfg.qemu_extra());
+        let inv = match agent_socket_opt(cfg, &run.path, "agent") {
+            Some(sock) => inv.agent_serial(sock),
+            None => inv,
+        };
             println!(
                 "[LAUNCH] {}",
                 inv.command_line().map_err(anyhow::Error::msg)?
@@ -247,7 +269,7 @@ fn test_once(
             "memory_per_node": topo.memory_per_node,
             "accel": accel_label,
             "backend": backend.name(),
-            "auto_test": cfg.auto_test(),
+            "auto_test": cfg.auto_test().to_string(),
         }),
         build_failed: false,
     };

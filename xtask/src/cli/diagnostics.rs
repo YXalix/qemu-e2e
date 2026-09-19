@@ -5,31 +5,27 @@ use launcher::{Arch, NumaTopology};
 
 use crate::config::Config;
 
-/// Phase 1 配置诊断。
+/// 类型化配置诊断。
 pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
-    println!("[CONFIG] Virtuoso Phase-1 wrapper — typed config diagnostics");
-    println!(
-        "  .env: {}",
-        cfg.env
-            .path
-            .as_deref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "absent (defaults; cp .env.example .env)".into())
-    );
-    if let Some(t) = &cfg.env.toml_path {
-        println!("  virtuoso.toml: {} (overrides .env)", t.display());
+    println!("[CONFIG] Virtuoso — typed config diagnostics");
+    match &cfg.toml_path() {
+        Some(t) => println!("  virtuoso.toml: {} (唯一配置面)", t.display()),
+        None => println!(
+            "  virtuoso.toml: absent (使用内置缺省；仓库根有完整注释模板)"
+        ),
+    }
+    if let Some(p) = &cfg.env.path {
+        println!("  .env: {} (DEPRECATED — 迁移到 virtuoso.toml)", p.display());
     }
 
     // 架构
-    let arch_raw = arch_override
-        .map(str::to_string)
-        .or_else(|| cfg.env.get("ARCH"));
+    let arch_raw = arch_override.map(str::to_string).or_else(|| cfg.arch_str());
     let host = Arch::host_default();
     match arch_raw.as_deref().and_then(Arch::parse).or(host) {
         Some(arch) => {
             let src = if arch_override.is_some() {
                 "CLI --arch"
-            } else if cfg.env.get("ARCH").is_some() {
+            } else if cfg.arch_str().is_some() {
                 "config"
             } else {
                 "host default"
@@ -85,9 +81,7 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
     }
 
     // CPU / NUMA
-    let smp = cfg.env.get("SMP").unwrap_or_else(|| "8".into());
-    let nodes_raw = cfg.env.get("NUMA_NODES").unwrap_or_else(|| "1".into());
-    let mem = cfg.env.get("NUMA_MEMORY").unwrap_or_else(|| "1G".into());
+    let (smp, nodes_raw, mem) = cfg.topo_params();
     match NumaTopology::parse(&smp, &nodes_raw, &mem) {
         Ok(t) => {
             let total = t
@@ -114,7 +108,7 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
 
     // QEMU 二进制
     if let Some(arch) = cfg.arch() {
-        let override_q = cfg.env.get("QEMU");
+        let override_q = cfg.qemu_override();
         let found = match &override_q {
             Some(q) => common::fsutil::which(q),
             None => common::fsutil::which(arch.qemu_bin()),
@@ -125,9 +119,43 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
             if found {
                 "found"
             } else {
-                "NOT FOUND (install qemu-system or set QEMU=)"
+                "NOT FOUND (install qemu-system or set qemu=)"
             }
         );
+    }
+
+    // 组件
+    let mut comps: Vec<String> = Vec::new();
+    comps.push(format!(
+        "tools_disk={}",
+        if cfg.tools_disk_enabled() { "on" } else { "off" }
+    ));
+    comps.push(format!(
+        "agent={}",
+        if cfg.agent_enabled() { "on" } else { "off" }
+    ));
+    match cfg.vfio() {
+        Some(devices) if !devices.is_empty() => {
+            comps.push(format!("vfio=[{}]", devices.join(",")));
+        }
+        _ => comps.push("vfio=off".into()),
+    }
+    let (_, nodes, _) = cfg.topo_params();
+    comps.push(format!(
+        "numa={}",
+        if nodes != "1" { format!("on (nodes={nodes})") } else { "off".to_string() }
+    ));
+    match cfg.pmem_size() {
+        Some(size) => comps.push(format!("pmem=on (size={size})")),
+        None => comps.push("pmem=off".into()),
+    }
+    println!("  components: {}", comps.join("  "));
+    let plan = cfg.component_plan();
+    if !plan.runtime.is_empty() {
+        println!("  modules (runtime): {}", plan.runtime.join(" "));
+    }
+    if !plan.boot_extra.is_empty() {
+        println!("  modules (boot extra): {}", plan.boot_extra.join(" "));
     }
     println!();
 }

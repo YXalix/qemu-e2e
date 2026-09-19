@@ -23,8 +23,8 @@ pub fn pack_initramfs(dir: &Path, out: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `mke2fs -q -F -t ext4 -L rootfs -d <dir> <img> <size>M`，size = du -sm + 2。
-pub fn make_ext4(dir: &Path, out: &Path) -> anyhow::Result<()> {
+/// `mke2fs -q -F -t ext4 -L <label> -d <dir> <img> <size>M`，size = du -sm + 2。
+pub fn make_ext4(dir: &Path, out: &Path, label: &str) -> anyhow::Result<()> {
     let du = std::process::Command::new("du")
         .arg("-sm")
         .arg(dir)
@@ -42,14 +42,14 @@ pub fn make_ext4(dir: &Path, out: &Path) -> anyhow::Result<()> {
 
     let _ = std::fs::remove_file(out);
     let status = std::process::Command::new("mke2fs")
-        .args(["-q", "-F", "-t", "ext4", "-L", "rootfs", "-d"])
+        .args(["-q", "-F", "-t", "ext4", "-L", label, "-d"])
         .arg(dir)
         .arg(out)
         .arg(format!("{size_mb}M"))
         .status()
         .context("mke2fs 启动失败（安装 e2fsprogs）")?;
     if !status.success() {
-        anyhow::bail!("rootfs ext4 构建失败（mke2fs 退出码 {status}）");
+        anyhow::bail!("{label} ext4 构建失败（mke2fs 退出码 {status}）");
     }
     Ok(())
 }

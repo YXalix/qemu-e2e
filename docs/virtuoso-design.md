@@ -20,7 +20,7 @@
 | F4 | **静态 C 测试 + BusyBox initramfs** | 静态链接测试二进制（`-static -O2 -Wall`）装入 BusyBox 1.36.1 initramfs；通过 syscall/ioctl/`/proc`/`/sys`/`/dev` 驱动被测内核 |
 | F5 | **内核模块加载** | `modules.conf` 声明式：有序 `insmod`、支持加载参数、依赖手工排序、缺 `.ko` 构建即报错 |
 | F6 | **NUMA 拓扑** | `NUMA_NODES × NUMA_MEMORY`（默认 2 节点 × 1G）、`SMP=8` vCPU 均分到各节点，单节点时不传 `-numa` |
-| F7 | **可调试性** | KVM 加速（同构时）、GDB stub（`:1234`，配 `gdb-multiarch vmlinux`）、交互 BusyBox shell、可选 512M NVMe（`disk.qcow2` → `/dev/nvme0n1`）、PCI 直通（`QEMU_OPTS='-device vfio-pci,...'`） |
+| F7 | **可调试性** | KVM 加速（同构时）、GDB stub（`:1234`，配 `gdb-multiarch vmlinux`）、交互 BusyBox shell、多 virtio-blk 数据盘（`DataDisk`，缺省挂 tools.img → `/dev/vdb` → `/tools`）、PCI 直通（`QEMU_OPTS='-device vfio-pci,...'`） |
 | F8 | **CI 友好** | 墙钟超时（`timeout --signal=KILL`，超时退出码 124）、`TEST_COMPLETE` 标记协议、进程组收割 |
 | F9 | **串口标记协议** | `[PASS]/[FAIL]/[SKIP]/[INFO]`、`Test Results: N/M passed`、`TEST_COMPLETE: ALL TESTS PASSED / SOME TESTS FAILED` |
 | F10 | **可复现** | 同一 `.env` + 同一内核 → 同一次 boot；BusyBox 静态缓存 |
@@ -88,7 +88,7 @@ launcher / judge / guardian / tracker / xtask，见 §2.3 与附录 B 决策记�
 |              |                                                                   |
 |              v                                                                   |
 |  +------------------------+      +------------------------+    +---------------+  |
-|  |        launcher        | ---> |     qemu-system-<arch> | -->| disk.qcow2    |  |
+|  |        launcher        | ---> |     qemu-system-<arch> | -->| tools.img     |  |
 |  | 多架构矩阵·启动 DSL      |      |  virt / q35 · KVM·GDB  |    | vfio-pci      |  |
 |  +------------------------+      +------------------------+    +---------------+  |
 |              |                                                                   |
@@ -157,13 +157,12 @@ qemu-e2e 全部 8 个 target 一一对应，语义与退出码不变：
 | qemu-e2e（Make） | Virtuoso（cargo xtask） | 说明 |
 |---|---|---|
 | `make verify` | `cargo xtask verify` | 前置检查：工具链、内核镜像、QEMU、模块、BusyBox 缓存 |
-| `make initrd` | `cargo xtask build` | builder：C 用例编译 + initrd 组装 |
+| `make initrd` | `cargo xtask build` | builder：C 用例编译 + initrd/rootfs/tools.img 组装 |
 | `make qemu` | `cargo xtask shell` | 交互式 BusyBox shell（TCG） |
 | `make qemu-kvm` | `cargo xtask shell --kvm` | KVM 加速（仅同构） |
 | `make qemu-debug` | `cargo xtask debug` | 挂起启动 + GDB stub `:1234` |
 | `make qemu-test QEMU_TIMEOUT=30` | `cargo xtask test --timeout 30` | CI 模式；`--timeout 0` 一律拒绝 |
-| `make disk` | `cargo xtask disk` | 512M `disk.qcow2`（幂等，已存在则跳过） |
-| `make clean` | `cargo xtask clean` | 清理生成物 |
+| `make clean` | `cargo xtask clean` | 清理生成物（含 tools.img） |
 | `make install-skill` | `cargo xtask skill install` | AI skill 装入内核树 |
 | —（新增） | `cargo xtask matrix` | launcher：多架构矩阵批量测试 |
 | —（新增） | `cargo xtask triage` | AI 分诊：events.jsonl → 根因分析报告 |
@@ -179,7 +178,11 @@ qemu-e2e 全部 8 个 target 一一对应，语义与退出码不变：
 
 ### 3.1 类型化配置（xtask/src/config.rs）
 
-qemu-e2e 的 `.env` 全部变量收敛为强类型结构；Phase 1–2 保持 `.env` 兼容读取，Phase 2 起推荐 `virtuoso.toml`：
+qemu-e2e 的 `.env` 全部变量收敛为强类型结构；Phase 3 起实现为**组件化配置**：
+`virtuoso.toml` 是唯一配置面（全局键 + `[components.*]` 组件段，组件 `require`
+声明 KO 依赖，`ComponentPlan` 按启用组件并集分区 boot/runtime 供 builder 生成
+模块清单；见附录 B「配置组件化与 KO 生成式供给」）。下图为早期 schema 草案，
+落地以 `xtask/src/config.rs` 与仓库根 `virtuoso.toml` 模板为准：
 
 ```rust
 use serde::Deserialize;
@@ -256,7 +259,9 @@ impl Arch {
 
 * **内核镜像发现与校验**：按 `Arch::kernel_image` 定位镜像，缺失时给出可执行建议（"先在 `$KERNEL_PATH` 执行 `make -j$(nproc)`"）；
 * **C 用例增量编译**：保留 `-static -O2 -Wall`（VM 内无动态加载器，`-static` 不可放松），按 `cross_prefix` 选择交叉编译器，产物输出 `target/<arch>/tests/`；
-* **initrd 组装**：BusyBox **预编译优先供给**（`.github/workflows/busybox-release.yml` 在 GitHub Release 发布 `busybox-<ver>-linux-<arch>`，arm64/x86_64/riscv64 三架构；`fetch-busybox.sh` 按 ARCH 缓存于 `infra/busybox/bin/`，下载失败或离线时回退源码编译并告警）→ 复制 `modules.conf` 声明的 `.ko`（按声明顺序，缺 `.ko` 构建期报错）→ 注入 `/tests/` 二进制与 `init`；
+* **initrd 组装**：BusyBox **预编译优先供给**（`.github/workflows/busybox-release.yml` 在 GitHub Release 发布 `busybox-<ver>-linux-<arch>`，arm64/x86_64/riscv64 三架构；builder 按 ARCH 缓存于 `target/build/busybox/bin/`，下载失败或离线时回退源码编译并告警）→ 复制模块清单声明的 `.ko`（boot = `modules-boot.conf` 冻结基础集 + 组件
+`stage="boot"` 附加；runtime = 启用组件 require 并集生成的 `modules.conf`；
+按清单顺序，缺 `.ko` 构建期报错）→ 注入 `/tests/` 二进制与 `init`；
 * **init 的 Rust 化**：PID 1 的挂载序列（proc/sysfs/devtmpfs/tmpfs/debugfs/devpts/shm）与 `auto_test` 流程由模板生成，启动定制（如 hugetlbfs 预分配）从"手改脚本"升级为声明式 hook：
 
 ```rust
@@ -294,7 +299,7 @@ let vm = QemuInvocation::new(cfg.arch, cfg.qemu.as_deref())?
         Accel::Tcg                            // 交叉架构回退 TCG，并 WARN
     })
     .serial(Channel::MonStdio)                // -nographic -serial mon:stdio
-    .nvme(disk.as_deref())                    // 可选：disk.qcow2 → /dev/nvme0n1
+    .virtio_disks(data_disks)                 // 多 virtio-blk 数据盘（tools.img → /dev/vdb → /tools）
     .gdb_stub(mode == Debug)                  // -S -gdb tcp::1234
     .extra(&cfg.qemu_opts)                    // vfio-pci 直通等原样透传
     .cmdline(format!(
@@ -352,9 +357,9 @@ impl AuditSession {
 auditor 同时输出**结构化事件流**（AI 组件的数据源，见 §3.8）：
 
 ```jsonl
-{"ts":"00:00:04.113","kind":"test_result","binary":"test-nvme","case":"blkid reads /dev/nvme0n1","status":"PASS"}
-{"ts":"00:00:04.201","kind":"kernel_log","level":"warn","module":"nvme","text":"missing NVMe queue"}
-{"ts":"00:00:05.872","kind":"summary","binary":"test-nvme","passed":3,"total":3}
+{"ts":"00:00:04.113","kind":"test_result","binary":"test-example","case":"getpid returns nonzero","status":"PASS"}
+{"ts":"00:00:04.201","kind":"kernel_log","level":"warn","module":"virtio_blk","text":"unexpected capacity"}
+{"ts":"00:00:05.872","kind":"summary","binary":"test-example","passed":3,"total":3}
 {"ts":"00:00:06.000","kind":"verdict","result":"ALL_TESTS_PASSED"}
 ```
 
@@ -643,3 +648,57 @@ exit 124   # wallclock timeout（内核挂死 / runaway loop）
     runs.rs(809) → runs/{rundir,render}；config 只管解析，诊断呈现在 cli/diagnostics。
   - **不变量**：标记协议 v1、退出码 0/124/137、argv 逐字对齐、.env 语义、静态链接
     约束全部未动；verdict.json/events.jsonl 序列化输出逐字节一致（schema 仅换定义位置）。
+* **磁盘抽象与 tools 外挂数据盘（2026-09）**。动机：项目工具（musl 静态 agent 等）
+  原打进 rootfs `/bin`，rootfs 膨胀且工具迭代需整盘重建；且块设备表示分裂
+  （rootfs 走 `-drive if=virtio`，可选测试盘走 NVMe `-blockdev`），无多盘抽象。
+  落地：
+  - **`DataDisk { id, path }`（launcher::lib）**：rootfs 之外的 virtio-blk 数据盘
+    统一抽象。QEMU 侧按追加顺序发 `-drive …,if=virtio`（guest 内 `/dev/vdb` 起，
+    rootfs 恒 `/dev/vda`）；Firecracker 侧扩 drives 数组 + `PUT /drives/<id>`。
+    `.virtio_disk`/`.virtio_disks` builder 接受单个/`Option`/迭代器。
+  - **tools.img**：builder 新产物（`target/artifacts/tools.img`，ext4 卷标 `tools`），
+    tools workspace 的 musl 静态产物装入其 `/bin`；rootfs 不再装工具。
+    `make_ext4` 增加卷标参数。工具被 WARN 跳过（cargo/musl target 缺失）时不产出
+    tools.img、不注入挂载 hook——降级语义显式且非掩盖。
+  - **VM 内挂载走 InitHook**：builder 首次在生产路径使用 `/init-hooks.sh` 注入
+    （`TOOLS_DISK_HOOK`）：`mount -t ext4 /dev/vdb /tools` 成功即
+    `export PATH="/tools/bin:$PATH"`（hook 在 devtmpfs 挂载后、insmod/agent 拉起前
+    source，virtio_blk 已由 initramfs 的 modules-boot.conf 加载）；失败 LOG_WARN，
+    agent 静默缺席。`infra/init` 的 agent 守卫从 `[ -x /bin/…]` 改为 PATH 感知的
+    `command -v`。
+  - **NVMe 测试盘移除**：`disk.qcow2 → /dev/nvme0n1` 无任何真实用例引用，整体拆除
+    （DSL `.disk()`/`-blockdev nvme`、`cargo xtask disk`、`make disk`、modules.conf
+    的 nvme 模块段、tracker 的 nvme 补丁映射）。**这是 argv 基线的唯一刻意变更**
+    （移除分支不新增缺省输出）；数据盘与 agent 通道一致遵守"缺省 argv 与基线逐字
+    一致"的冻结策略——tools.img 由 `tools_disk_opt` 在产物存在时附加，属调用方
+    行为，DSL 缺省不变。
+
+* **配置组件化与 KO 生成式供给（2026-09）**。动机：`virtuoso.toml` 此前只是
+  「拍平成 env 键」的薄覆盖层，VM 能力（agent 通道 / tools 盘 / vfio / NUMA）
+  的 QEMU 参数、guest `.ko` 依赖、init hook 三处各自为政；模块清单手写于
+  `modules.conf`，与组件状态脱节。落地：
+  - **`virtuoso.toml` 唯一配置面**：全局键（arch/timeout_secs/smp/backend/
+    auto_test/kernel_path/qemu/qemu_opts/firecracker_bin）+ `[components.*]`
+    组件段（tools_disk / agent / vfio / numa），组件公共字段
+    `enabled` / `require`（KO 依赖，条目 = conf 行 `"<module> [key=val ...]"`）/
+    `stage`（boot｜runtime，缺省 runtime）。serde 结构体 + `deny_unknown_fields`
+    逐组件显式字段（不用 `#[serde(flatten)]` —— 与 deny_unknown_fields 不兼容）；
+    旧 `[numa]` 段解析报错时提示迁移。`.env` 废弃：存在打 WARN 仍兼容读取
+    （仅标量键），`.env.example` 删除；优先级 toml > .env > 进程 env 不变。
+  - **`ComponentPlan`（xtask/src/config.rs）**：启用组件 require 并集（schema
+    固定顺序 tools_disk→agent→vfio→numa，按首 token 去重保首个），按 stage
+    分区 `boot_extra` / `runtime`；builder 按其生成 rootfs
+    `/lib/modules/modules.conf`（文件名不变 → `infra/init` 零改动）并把
+    boot_extra 追加到 `modules-boot.conf` 冻结基础集之后。`infra/modules.conf`
+    手写源文件删除（生成物，行格式与 insmod 参数语义不变）。
+  - **启动侧投影**：agent enabled → `QemuInvocation::agent_serial`（shell/test
+    附加；firecracker 后端不支持，WARN 忽略）；vfio devices → 逐条
+    `-device vfio-pci,host=<bdf>`；tools_disk（段缺省 = 启用）门控
+    `tools_disk_opt`；numa 走 `[components.numa]`。组件缺省 = argv 冻结基线
+    逐字不变（不变量 3 由既有单测把守）。`cargo xtask probe` 恒开 agent 通道
+    （强制并入 virtio_console，不依赖组件开关）。
+  - **仓库根 ship 注释模板**：活动行 = 默认常规启动配置（arch/timeout/smp/
+    backend/auto_test/tools_disk），全部可选项以注释形式存在并附语义说明。
+  - 实测：`cargo xtask verify` 诊断呈现组件状态与模块清单；build 产物
+    initramfs boot 基础集完整、rootfs modules.conf 为生成物；全 workspace
+    62 测试通过（含 launcher argv 冻结单测零改动）。

@@ -28,7 +28,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// 前置检查：先输出类型化配置诊断，再运行 infra/verify.sh（make verify 对等）
+    /// 前置检查：类型化配置诊断 + 构建环境检查（make verify 对等）
     Verify {
         /// 覆盖目标架构（透传为 ARCH 环境变量）
         #[arg(long)]
@@ -54,7 +54,7 @@ enum Command {
     /// --replay-until-fail N：对可疑 flaky 场景自动返场最多 N 次，出现首个
     /// 非 passed verdict 即停（tracker 返场语义）。
     Test {
-        /// 墙钟超时秒数；0 一律拒绝。缺省读 .env 的 QEMU_TIMEOUT
+        /// 墙钟超时秒数；0 一律拒绝。缺省读 virtuoso.toml 的 timeout_secs
         #[arg(long)]
         timeout: Option<u64>,
         /// 覆盖目标架构（透传为 ARCH 环境变量）
@@ -67,8 +67,6 @@ enum Command {
         #[arg(long)]
         backend: Option<String>,
     },
-    /// 创建 512M disk.qcow2（NVMe 用块设备，幂等；make disk 对等）
-    Disk,
     /// 确保 ARCH 对应的静态 BusyBox：release 下载优先，源码兜底（make busybox 对等）
     #[command(name = "busybox")]
     BusyBox,

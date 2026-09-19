@@ -17,7 +17,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
-use crate::{Arch, NumaTopology};
+use crate::{Arch, DataDisk, NumaTopology};
 
 /// Firecracker 支持的架构。
 pub fn arch_supported(arch: Arch) -> bool {
@@ -46,6 +46,8 @@ pub struct FirecrackerInvocation {
     pub kernel: PathBuf,
     /// ext4 rootfs（直接作根，无 initramfs）
     pub rootfs: PathBuf,
+    /// 额外数据盘（virtio-blk，rootfs 之后 → /dev/vdb 起），如 tools.img。
+    pub data_disks: Vec<DataDisk>,
     pub vcpus: u32,
     /// MiB
     pub mem_mib: u64,
@@ -86,6 +88,7 @@ impl FirecrackerInvocation {
             arch,
             kernel: kernel.into(),
             rootfs: rootfs.into(),
+            data_disks: Vec::new(),
             vcpus: topo.smp,
             mem_mib,
             auto_test,
@@ -102,6 +105,18 @@ impl FirecrackerInvocation {
         }
     }
 
+    /// 附加一个数据盘（drive_id = `DataDisk::id`，guest 内 /dev/vdb 起）。
+    pub fn virtio_disk(mut self, disk: DataDisk) -> Self {
+        self.data_disks.push(disk);
+        self
+    }
+
+    /// 批量附加数据盘（接受 Option / 迭代器，空缺省不变）。
+    pub fn virtio_disks(mut self, disks: impl IntoIterator<Item = DataDisk>) -> Self {
+        self.data_disks.extend(disks);
+        self
+    }
+
     /// 单行可复制启动命令（shell 引用；spawn 前展示 / 手动复现用）。
     /// 复现前需确保 config_path 的 JSON 已存在（spawn 会自动写入）。
     pub fn command_line(&self) -> String {
@@ -110,6 +125,14 @@ impl FirecrackerInvocation {
             self.binary().display(),
             crate::shell_quote(&self.api_sock.display().to_string()),
             crate::shell_quote(&self.config_path.display().to_string()),
+        )
+    }
+
+    /// 单个 drive 的 v1 API JSON 片段（config 与 PUT 共用，键序冻结）。
+    fn drive_json(id: &str, path: &Path, is_root: bool) -> String {
+        format!(
+            "{{\"drive_id\": \"{id}\", \"path_on_host\": \"{}\", \"is_root_device\": {is_root}, \"is_read_only\": false}}",
+            path.display()
         )
     }
 
@@ -125,19 +148,21 @@ impl FirecrackerInvocation {
             "  \"machine-config\": {{\"vcpu_count\": {}, \"mem_size_mib\": {}, \"smt\": false}},\n",
             self.vcpus, self.mem_mib
         ));
-        s.push_str(&format!(
-            "  \"drives\": [{{\"drive_id\": \"rootfs\", \"path_on_host\": \"{}\", \"is_root_device\": true, \"is_read_only\": false}}]\n",
-            self.rootfs.display()
-        ));
+        let mut drives = Self::drive_json("rootfs", &self.rootfs, true);
+        for d in &self.data_disks {
+            drives.push_str(",\n    ");
+            drives.push_str(&Self::drive_json(&d.id, &d.path, false));
+        }
+        s.push_str(&format!("  \"drives\": [{drives}]\n"));
         s.push('}');
         s
     }
 
     /// 等价的 API 逐 PUT 序列（--api-sock 交互形态，供 curl/jq 调试与文档）。
-    pub fn api_requests(&self) -> Vec<(&'static str, String)> {
-        vec![
+    pub fn api_requests(&self) -> Vec<(String, String)> {
+        let mut reqs = vec![
             (
-                "PUT /boot-source",
+                "PUT /boot-source".to_string(),
                 format!(
                     "{{\"kernel_image_path\": \"{}\", \"boot_args\": \"{}\"}}",
                     self.kernel.display(),
@@ -145,18 +170,25 @@ impl FirecrackerInvocation {
                 ),
             ),
             (
-                "PUT /machine-config",
+                "PUT /machine-config".to_string(),
                 format!("{{\"vcpu_count\": {}, \"mem_size_mib\": {}}}", self.vcpus, self.mem_mib),
             ),
             (
-                "PUT /drives/rootfs",
-                format!(
-                    "{{\"drive_id\": \"rootfs\", \"path_on_host\": \"{}\", \"is_root_device\": true, \"is_read_only\": false}}",
-                    self.rootfs.display()
-                ),
+                "PUT /drives/rootfs".to_string(),
+                Self::drive_json("rootfs", &self.rootfs, true),
             ),
-            ("PUT /actions", "{\"action_type\": \"InstanceStart\"}".to_string()),
-        ]
+        ];
+        for d in &self.data_disks {
+            reqs.push((
+                format!("PUT /drives/{}", d.id),
+                Self::drive_json(&d.id, &d.path, false),
+            ));
+        }
+        reqs.push((
+            "PUT /actions".to_string(),
+            "{\"action_type\": \"InstanceStart\"}".to_string(),
+        ));
+        reqs
     }
 
     pub fn write_config(&self) -> anyhow::Result<()> {
@@ -164,8 +196,6 @@ impl FirecrackerInvocation {
             .with_context(|| format!("写 firecracker 配置 {} 失败", self.config_path.display()))
     }
 
-    /// spawn：独立进程组（pgid = child pid，与 QemuInvocation 同约定，交给
-    /// guardian 收割）。guest 串口接 firecracker 进程 stdout，piped 语义与 QEMU 一致。
     /// spawn：独立进程组（pgid = child pid，与 QemuInvocation 同约定，交给
     /// guardian 收割）。guest 串口接 firecracker 进程 stdout，piped 语义与 QEMU 一致。
     pub fn spawn(&self, piped: bool) -> anyhow::Result<(Child, u32)> {
@@ -372,13 +402,44 @@ mod tests {
     #[test]
     fn api_requests_cover_boot_machine_drive_start() {
         let reqs = inv().api_requests();
-        let names: Vec<_> = reqs.iter().map(|(n, _)| *n).collect();
+        let names: Vec<_> = reqs.iter().map(|(n, _)| n.as_str()).collect();
         assert_eq!(
             names,
             [
                 "PUT /boot-source",
                 "PUT /machine-config",
                 "PUT /drives/rootfs",
+                "PUT /actions"
+            ]
+        );
+    }
+
+    #[test]
+    fn data_disks_extend_drives_array_and_puts() {
+        let inv = inv()
+            .virtio_disk(DataDisk::new("tools", "/tmp/tools.img"))
+            .virtio_disk(DataDisk::new("data0", "/tmp/data0.img"));
+        let j = inv.config_json();
+        assert!(j.contains(
+            "{\"drive_id\": \"tools\", \"path_on_host\": \"/tmp/tools.img\", \"is_root_device\": false, \"is_read_only\": false}"
+        ));
+        assert!(j.contains("{\"drive_id\": \"data0\""));
+        // rootfs 仍是唯一根盘
+        assert_eq!(j.matches("\"is_root_device\": true").count(), 1);
+
+        let names: Vec<_> = inv
+            .api_requests()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "PUT /boot-source",
+                "PUT /machine-config",
+                "PUT /drives/rootfs",
+                "PUT /drives/tools",
+                "PUT /drives/data0",
                 "PUT /actions"
             ]
         );

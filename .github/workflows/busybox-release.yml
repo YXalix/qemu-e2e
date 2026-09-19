@@ -15,9 +15,9 @@ name: busybox-release
 # rootfs 的 /init 是冻结在下方 workflow 里的两行事（挂载 + shell），不引用
 # 任何仓库脚本 —— 资产内容只随 busybox 版本变化，仓库迭代不触发重发。
 # 测试专属内容（测试 init、/tests、modules.conf）一律不进 release，
-# 由 infra/build-initrd.sh 在本地构建时注入。
-# rootfs 可直接 cpio 解包使用，或经 infra/cpio2ext4.sh 转成 ext4 磁盘镜像。
-# 宿主侧下载：见 infra/fetch-busybox.sh 与 .env.example。
+# 由本地构建（cargo xtask build）注入。
+# rootfs 可直接 cpio 解包使用；两段式引导对（initramfs + ext4 rootfs）
+# 在 virtuoso 仓库内用 `cargo xtask build` 组装。
 
 on:
   workflow_dispatch:
@@ -112,7 +112,7 @@ jobs:
               ln -sf busybox "${root}/bin/${applet}"
             done < /tmp/applets.txt
 
-            # 冻结的通用 /init：刻意不引用仓库脚本（如 infra/init-rootfs），
+            # 冻结的通用 /init：刻意不引用仓库内容，
             # 保证 release 资产不随仓库迭代变化。测试场景在本地构建时
             # 用自己的 init 覆盖 /init。
             # （用 printf 拼接而非 heredoc：YAML 块缩进会让 EOF 终止符对不上）
@@ -155,7 +155,7 @@ jobs:
           if [ -z "$REL" ] || echo "$REL" | grep -q '"Not Found"'; then
             curl -fsSL -X POST -H "$AUTH" -H "Accept: application/vnd.github+json" \
               "${API}/releases" \
-              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static + rootfs)\",\"body\":\"BusyBox ${VERSION} for the Virtuoso kernel-testing harness (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\\n\\nEach arch ships: bare static busybox and a generic BusyBox rootfs (rootfs-*.cpio.gz, interactive shell on console, no test content). Convert to ext4 with infra/cpio2ext4.sh; assemble the two-stage boot pair (initramfs + ext4 rootfs) with infra/build-initrd.sh.\"}" \
+              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static + rootfs)\",\"body\":\"BusyBox ${VERSION} for the Virtuoso kernel-testing harness (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\\n\\nEach arch ships: bare static busybox and a generic BusyBox rootfs (rootfs-*.cpio.gz, interactive shell on console, no test content). Clone the Virtuoso repo and run 'cargo xtask build' to assemble the two-stage boot pair (initramfs + ext4 rootfs).\"}" \
               > /tmp/rel.json
           else
             echo "$REL" > /tmp/rel.json
