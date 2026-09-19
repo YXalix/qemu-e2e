@@ -50,6 +50,7 @@ fn run_vm_session(kvm: bool, gdb_stub: bool, backend: Option<&str>) -> anyhow::R
             cfg.infra_dir.join("firecracker-shell.sock"),
         )
         .map_err(anyhow::Error::msg)?;
+        println!("[LAUNCH] {}", inv.command_line());
         let (mut child, mut sup) = inv.spawn_supervised(false)?;
         let st = child.wait().context("等待 firecracker 退出失败")?;
         sup.finish();
@@ -74,6 +75,7 @@ fn run_vm_session(kvm: bool, gdb_stub: bool, backend: Option<&str>) -> anyhow::R
         .disk(disk_opt(&cfg))
         .extra_opts(&qemu_extra(&cfg));
 
+        println!("[LAUNCH] {}", inv.command_line().map_err(anyhow::Error::msg)?);
         let (mut child, mut sup) = inv.spawn_supervised(false)?;
         let st = child.wait().context("等待 QEMU 退出失败")?;
         sup.finish();
@@ -158,6 +160,7 @@ fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64, backend: B
                 run.path.join("firecracker.sock"),
             )
             .map_err(anyhow::Error::msg)?;
+            println!("[LAUNCH] {}", inv.command_line());
             println!("Running firecracker test with {timeout_secs}s timeout...");
             let (child, sup) = inv.spawn_supervised(true)?;
             (child, sup, kernel, "KVM")
@@ -176,6 +179,7 @@ fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64, backend: B
             .disk(disk_opt(cfg))
             .auto_test(cfg.auto_test() == "1")
             .extra_opts(&qemu_extra(cfg));
+            println!("[LAUNCH] {}", inv.command_line().map_err(anyhow::Error::msg)?);
             println!("Running QEMU test with {timeout_secs}s timeout...");
             let (child, sup) = inv.spawn_supervised(true)?;
             (child, sup, kernel, "TCG")

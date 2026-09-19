@@ -41,8 +41,35 @@ impl Backend {
     }
 }
 
+/// POSIX shell 单参引用（shlex.quote 语义）：安全字符原样，其余整体单引号包裹。
+/// 用于把 argv 渲染成可直接复制执行的一行启动命令。
+pub fn shell_quote(arg: &str) -> String {
+    if !arg.is_empty()
+        && arg
+            .bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' | b'.' | b'/' | b':' | b'=' | b'@' | b'%' | b'+' | b','))
+    {
+        return arg.to_string();
+    }
+    format!("'{}'", arg.replace('\'', r"'\''"))
+}
+
 /// `qemu-system-<arch> --version` 首行（verdict 运行指纹用）。
 pub fn qemu_version(arch: Arch) -> Option<String> {
     let out = Command::new(arch.qemu_bin()).arg("--version").output().ok()?;
     String::from_utf8_lossy(&out.stdout).lines().next().map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shell_quote;
+
+    #[test]
+    fn shell_quote_safe_chars_verbatim_spaces_quoted() {
+        assert_eq!(shell_quote("virt"), "virt");
+        assert_eq!(shell_quote("file=a.img,format=raw"), "file=a.img,format=raw");
+        assert_eq!(shell_quote("/tmp/a b.img"), "'/tmp/a b.img'");
+        assert_eq!(shell_quote("a'b"), "'a'\\''b'");
+        assert_eq!(shell_quote(""), "''");
+    }
 }

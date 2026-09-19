@@ -99,6 +99,17 @@ impl FirecrackerInvocation {
         }
     }
 
+    /// 单行可复制启动命令（shell 引用；spawn 前展示 / 手动复现用）。
+    /// 复现前需确保 config_path 的 JSON 已存在（spawn 会自动写入）。
+    pub fn command_line(&self) -> String {
+        format!(
+            "{} --api-sock {} --config-file {}",
+            self.binary().display(),
+            crate::shell_quote(&self.api_sock.display().to_string()),
+            crate::shell_quote(&self.config_path.display().to_string()),
+        )
+    }
+
     /// config-file JSON 文本（serde_json 手写以保证键序稳定可 diff）。
     pub fn config_json(&self) -> String {
         let mut s = String::from("{\n");

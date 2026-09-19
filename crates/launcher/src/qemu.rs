@@ -196,6 +196,13 @@ impl QemuInvocation {
         Ok(args)
     }
 
+    /// 单行可复制启动命令（shell 引用；spawn 前展示 / 手动复现用）。
+    pub fn command_line(&self) -> Result<String, String> {
+        let mut parts = vec![self.qemu_bin()];
+        parts.extend(self.argv()?.iter().map(|a| crate::shell_quote(a)));
+        Ok(parts.join(" "))
+    }
+
     /// spawn QEMU：独立进程组（pgid = 返回的 child pid，交给 guardian 收割）。
     /// `piped` = true 时 stdout/stderr 管道化（test 路径捕获串口），
     /// false 时继承宿主 stdio（交互 shell / debug）。
@@ -303,5 +310,16 @@ mod tests {
     fn cmdline_without_auto_test_has_no_trailing_space() {
         let inv = QemuInvocation::new(Arch::Riscv64, "k", "i", "r");
         assert_eq!(inv.cmdline(), "console=ttyS0 root=/dev/vda rw init=/init loglevel=8");
+    }
+
+    #[test]
+    fn command_line_quotes_append_value() {
+        let args = base_inv().command_line().unwrap();
+        // 路径与逗号安全字符原样；含空格的 -append 值整体单引号
+        assert!(args.contains("-drive file=/tmp/rootfs.img,format=raw,if=virtio"));
+        assert!(args.contains(
+            "-append 'console=ttyAMA0 root=/dev/vda rw init=/init loglevel=8'"
+        ));
+        assert!(args.starts_with("qemu-system-aarch64 -machine virt"));
     }
 }
