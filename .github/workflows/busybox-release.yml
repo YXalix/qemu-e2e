@@ -9,12 +9,12 @@ name: busybox-release
 # 使用方式：
 #   1. workflow_dispatch 手动触发（默认 1.36.1）；
 #   2. 或推送 tag：git tag busybox-v1.36.1 && git push origin busybox-v1.36.1
-# 产物（assets，每架构三个）：
+# 产物（assets，每架构两个）：
 #   busybox-<version>-linux-<arch>                裸静态二进制
 #   rootfs-<version>-linux-<arch>.cpio.gz         initramfs，qemu -initrd 直接可用
-#   rootfs-<version>-linux-<arch>.ext4.img        ext4 磁盘镜像，qemu -drive/-root 可用
 # rootfs 内含 busybox 全量 applet 符号链接、/init（infra/init）、/tests、
 # /lib/modules 目录骨架，下载后无需再加工即可启动。
+# 需要 ext4 磁盘镜像时本地转换：见 infra/cpio2ext4.sh。
 # 宿主侧下载：见 infra/fetch-busybox.sh 与 .env.example。
 
 on:
@@ -49,7 +49,7 @@ jobs:
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
             wget tar bzip2 gzip file make gcc libc6-dev curl ca-certificates \
-            cpio e2fsprogs jq \
+            cpio jq \
             gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu \
             libc6-dev-arm64-cross libc6-dev-riscv64-cross
 
@@ -86,7 +86,7 @@ jobs:
           build_one riscv64 "riscv64-linux-gnu-"
           ls -lh /tmp/busybox-*-linux-*
 
-      - name: Assemble rootfs images (cpio.gz + ext4, 3 arches)
+      - name: Assemble initramfs (3 arches)
         run: |
           set -e
           cd /tmp
@@ -122,12 +122,7 @@ jobs:
             (cd "${root}" && find . -print0 | cpio --null -o -H newc 2>/dev/null) \
               | gzip -9 > "/tmp/rootfs-${VERSION}-linux-${arch}.cpio.gz"
 
-            # ext4 磁盘镜像（qemu -drive + root= 直接可用）
-            rm -f "/tmp/rootfs-${VERSION}-linux-${arch}.ext4.img"
-            mke2fs -q -F -t ext4 -L rootfs -d "${root}" \
-              "/tmp/rootfs-${VERSION}-linux-${arch}.ext4.img" 64M
-
-            echo "OK: rootfs-${VERSION}-linux-${arch} (.cpio.gz / .ext4.img)"
+            echo "OK: rootfs-${VERSION}-linux-${arch}.cpio.gz"
           }
 
           make_rootfs x86_64
@@ -146,7 +141,7 @@ jobs:
           if [ -z "$REL" ] || echo "$REL" | grep -q '"Not Found"'; then
             curl -fsSL -X POST -H "$AUTH" -H "Accept: application/vnd.github+json" \
               "${API}/releases" \
-              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static + rootfs)\",\"body\":\"BusyBox ${VERSION} for the Virtuoso initramfs (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\\n\\nEach arch ships: bare static busybox, ready-to-boot initramfs (rootfs-*.cpio.gz, use with qemu -initrd, init=/init included) and an ext4 rootfs image (rootfs-*.ext4.img, use with qemu -drive).\"}" \
+              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static + rootfs)\",\"body\":\"BusyBox ${VERSION} for the Virtuoso initramfs (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\\n\\nEach arch ships: bare static busybox and a ready-to-boot initramfs (rootfs-*.cpio.gz, use with qemu -initrd, init=/init included). Need an ext4 rootfs instead? Convert locally: infra/cpio2ext4.sh.\"}" \
               > /tmp/rel.json
           else
             echo "$REL" > /tmp/rel.json
