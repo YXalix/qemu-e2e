@@ -74,6 +74,16 @@ impl Arch {
         }
     }
 
+    /// Rust 静态 musl target triple（tools workspace 构建用；crt-static 自含
+    /// 链接，产物为无动态依赖的静态 ELF —— VM 无动态加载器的对齐选择）。
+    pub fn rust_musl_triple(self) -> &'static str {
+        match self {
+            Arch::Arm64 => "aarch64-unknown-linux-musl",
+            Arch::X86_64 => "x86_64-unknown-linux-musl",
+            Arch::Riscv64 => "riscv64gc-unknown-linux-musl",
+        }
+    }
+
     /// 交叉编译前缀（builder 编译 C 用例用）；本机架构返回 None。
     pub fn cross_prefix(self) -> Option<&'static str> {
         match self {

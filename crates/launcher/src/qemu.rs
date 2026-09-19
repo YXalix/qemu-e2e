@@ -32,12 +32,21 @@ pub struct QemuInvocation {
     pub auto_test: bool,
     /// `-s -S`：挂起等待 GDB 连接 :1234
     pub gdb_stub: bool,
+    /// AI agent 通道：virtio-serial 端口，宿主侧 unix socket（chardev）。
+    /// Some 时追加 chardev + virtio-serial-pci + virtserialport；None（缺省）
+    /// argv 与 run-qemu.sh 基线逐字不变（冻结不变量 3）。
+    pub agent_serial: Option<PathBuf>,
     /// 原样透传（shell 展开语义：按空白切分）
     pub extra_opts: Vec<String>,
 }
 
 impl QemuInvocation {
-    pub fn new(arch: Arch, kernel: impl Into<PathBuf>, initrd: impl Into<PathBuf>, rootfs: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        arch: Arch,
+        kernel: impl Into<PathBuf>,
+        initrd: impl Into<PathBuf>,
+        rootfs: impl Into<PathBuf>,
+    ) -> Self {
         Self {
             arch,
             qemu_override: None,
@@ -46,9 +55,14 @@ impl QemuInvocation {
             rootfs: rootfs.into(),
             disk: None,
             accel: Accel::Tcg,
-            topo: NumaTopology { smp: 1, nodes: 1, memory_per_node: "1G".into() },
+            topo: NumaTopology {
+                smp: 1,
+                nodes: 1,
+                memory_per_node: "1G".into(),
+            },
             auto_test: false,
             gdb_stub: false,
+            agent_serial: None,
             extra_opts: Vec::new(),
         }
     }
@@ -83,13 +97,22 @@ impl QemuInvocation {
         self
     }
 
+    /// 启用 AI agent 通道（virtio-serial；宿主通过该 unix socket 与 guest
+    /// 内 virtuoso-agent 通信）。socket 文件须不存在（QEMU 不会清理旧路径）。
+    pub fn agent_serial(mut self, sock: impl Into<PathBuf>) -> Self {
+        self.agent_serial = Some(sock.into());
+        self
+    }
+
     pub fn extra_opts(mut self, opts: &[String]) -> Self {
         self.extra_opts = opts.to_vec();
         self
     }
 
     pub fn qemu_bin(&self) -> String {
-        self.qemu_override.clone().unwrap_or_else(|| self.arch.qemu_bin().to_string())
+        self.qemu_override
+            .clone()
+            .unwrap_or_else(|| self.arch.qemu_bin().to_string())
     }
 
     /// 内核 cmdline（run-qemu.sh 冻结文本）。
@@ -168,7 +191,10 @@ impl QemuInvocation {
         args.push(self.cmdline());
 
         args.push("-drive".into());
-        args.push(format!("file={},format=raw,if=virtio", self.rootfs.display()));
+        args.push(format!(
+            "file={},format=raw,if=virtio",
+            self.rootfs.display()
+        ));
 
         if let Some(disk) = &self.disk {
             args.push("-blockdev".into());
@@ -178,6 +204,18 @@ impl QemuInvocation {
             ));
             args.push("-device".into());
             args.push("nvme,drive=ssd0,serial=nvme-ssd-0".into());
+        }
+
+        if let Some(sock) = &self.agent_serial {
+            args.push("-chardev".into());
+            args.push(format!(
+                "socket,id=agentch,path={},server=on,wait=off",
+                sock.display()
+            ));
+            args.push("-device".into());
+            args.push("virtio-serial-pci,id=virtio-serial0".into());
+            args.push("-device".into());
+            args.push("virtserialport,chardev=agentch,id=agentport,name=virtuoso-agent".into());
         }
 
         for opt in &self.extra_opts {
@@ -213,18 +251,26 @@ impl QemuInvocation {
             ("Rootfs image", &self.rootfs),
         ] {
             if !path.is_file() {
-                anyhow::bail!("{what} not found at {} (build the kernel / run `cargo xtask build` first)", path.display());
+                anyhow::bail!(
+                    "{what} not found at {} (build the kernel / run `cargo xtask build` first)",
+                    path.display()
+                );
             }
         }
         let args = self.argv().map_err(anyhow::Error::msg)?;
         let mut cmd = Command::new(self.qemu_bin());
         cmd.args(&args).process_group(0);
         if piped {
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
+            cmd.stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .stdin(Stdio::null());
         }
-        let child = cmd
-            .spawn()
-            .with_context(|| format!("{} not found; run `cargo xtask verify` for install hints", self.qemu_bin()))?;
+        let child = cmd.spawn().with_context(|| {
+            format!(
+                "{} not found; run `cargo xtask verify` for install hints",
+                self.qemu_bin()
+            )
+        })?;
         let pgid = child.id();
         Ok((child, pgid))
     }
@@ -242,8 +288,13 @@ mod tests {
     use crate::numa::NumaTopology;
 
     fn base_inv() -> QemuInvocation {
-        QemuInvocation::new(Arch::Arm64, "/tmp/vmlinuz", "/tmp/initrd.img", "/tmp/rootfs.img")
-            .topo(NumaTopology::parse("8", "2", "1G").unwrap())
+        QemuInvocation::new(
+            Arch::Arm64,
+            "/tmp/vmlinuz",
+            "/tmp/initrd.img",
+            "/tmp/rootfs.img",
+        )
+        .topo(NumaTopology::parse("8", "2", "1G").unwrap())
     }
 
     #[test]
@@ -257,9 +308,8 @@ mod tests {
         assert!(joined.contains("-smp 8,sockets=2,cores=4,threads=1"));
         assert!(joined.contains("-cpu cortex-a72"));
         assert!(joined.contains("-m 2G"));
-        assert!(joined.contains(
-            "-append console=ttyAMA0 root=/dev/vda rw init=/init loglevel=8 auto_test"
-        ));
+        assert!(joined
+            .contains("-append console=ttyAMA0 root=/dev/vda rw init=/init loglevel=8 auto_test"));
         assert!(joined.contains("-drive file=/tmp/rootfs.img,format=raw,if=virtio"));
         assert!(joined.contains("-nographic -serial mon:stdio -no-reboot"));
         // 顺序约束：machine 必须最先，-no-reboot 在 console 之后
@@ -309,7 +359,37 @@ mod tests {
     #[test]
     fn cmdline_without_auto_test_has_no_trailing_space() {
         let inv = QemuInvocation::new(Arch::Riscv64, "k", "i", "r");
-        assert_eq!(inv.cmdline(), "console=ttyS0 root=/dev/vda rw init=/init loglevel=8");
+        assert_eq!(
+            inv.cmdline(),
+            "console=ttyS0 root=/dev/vda rw init=/init loglevel=8"
+        );
+    }
+
+    #[test]
+    fn agent_serial_off_by_default_keeps_baseline_argv() {
+        // 冻结不变量 3：未启用 agent 通道时 argv 与基线逐字一致
+        let joined = base_inv().argv().unwrap().join(" ");
+        assert!(!joined.contains("virtio-serial"));
+        assert!(!joined.contains("chardev"));
+    }
+
+    #[test]
+    fn agent_serial_adds_chardev_and_virtserialport() {
+        let args = base_inv()
+            .agent_serial("/tmp/virtuoso-agent.sock")
+            .argv()
+            .unwrap();
+        let joined = args.join(" ");
+        assert!(joined.contains(
+            "-chardev socket,id=agentch,path=/tmp/virtuoso-agent.sock,server=on,wait=off"
+        ));
+        assert!(joined.contains("-device virtio-serial-pci,id=virtio-serial0"));
+        assert!(joined
+            .contains("-device virtserialport,chardev=agentch,id=agentport,name=virtuoso-agent"));
+        // 顺序约束：agent 设备在盘之后、-nographic 之前
+        let pos = |p: &str| args.iter().position(|a| a.contains(p)).unwrap();
+        assert!(pos("-drive") < pos("-chardev"));
+        assert!(pos("virtserialport") < pos("-nographic"));
     }
 
     #[test]
@@ -317,9 +397,7 @@ mod tests {
         let args = base_inv().command_line().unwrap();
         // 路径与逗号安全字符原样；含空格的 -append 值整体单引号
         assert!(args.contains("-drive file=/tmp/rootfs.img,format=raw,if=virtio"));
-        assert!(args.contains(
-            "-append 'console=ttyAMA0 root=/dev/vda rw init=/init loglevel=8'"
-        ));
+        assert!(args.contains("-append 'console=ttyAMA0 root=/dev/vda rw init=/init loglevel=8'"));
         assert!(args.starts_with("qemu-system-aarch64 -machine virt"));
     }
 }

@@ -8,7 +8,10 @@ use launcher::{Arch, Backend};
 use super::{firecracker_kernel, resolve_arch, resolve_backend};
 use crate::config::Config;
 
-pub fn run_verify(arch_override: Option<&str>, backend_override: Option<&str>) -> anyhow::Result<i32> {
+pub fn run_verify(
+    arch_override: Option<&str>,
+    backend_override: Option<&str>,
+) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     super::diagnostics::print_diagnostics(&cfg, arch_override);
     let backend = resolve_backend(&cfg, backend_override)?;
@@ -21,7 +24,8 @@ pub fn run_verify(arch_override: Option<&str>, backend_override: Option<&str>) -
 
     // modules.conf 声明的模块是否都能在内核树找到（WARN 级；输入收集在 builder）
     let modules_conf = cfg.infra_dir.join("modules.conf");
-    let modules = builder::verify::module_presence(&modules_conf, kernel_path.as_deref(), &cfg.infra_dir);
+    let modules =
+        builder::verify::module_presence(&modules_conf, kernel_path.as_deref(), &cfg.infra_dir);
 
     let report = builder::verify::run_checks(
         cfg.env.path.is_some(),
@@ -33,7 +37,10 @@ pub fn run_verify(arch_override: Option<&str>, backend_override: Option<&str>) -
         cfg.env.get("QEMU").as_deref(),
         &modules,
         modules_conf.is_file(),
-        cfg.infra_dir.join("busybox/bin").join(format!("busybox-{}", arch.name())).is_file(),
+        cfg.infra_dir
+            .join("busybox/bin")
+            .join(format!("busybox-{}", arch.name()))
+            .is_file(),
         cfg.infra_dir.join("disk.qcow2").is_file(),
         Some(&cfg.infra_dir.join("initrd.img")),
     );
@@ -48,14 +55,22 @@ pub fn run_verify(arch_override: Option<&str>, backend_override: Option<&str>) -
             arch,
             &kernel,
             kernel_config.as_deref(),
-            cfg.env.get("FIRECRACKER_BIN").as_deref().unwrap_or("firecracker"),
+            cfg.env
+                .get("FIRECRACKER_BIN")
+                .as_deref()
+                .unwrap_or("firecracker"),
         );
         let mut fc_fail = 0;
         for chk in &checks {
             if !chk.ok {
                 fc_fail += 1;
             }
-            println!("    [{}] {} — {}", if chk.ok { "OK" } else { "FAIL" }, chk.name, chk.note);
+            println!(
+                "    [{}] {} — {}",
+                if chk.ok { "OK" } else { "FAIL" },
+                chk.name,
+                chk.note
+            );
         }
         if fc_fail > 0 {
             println!();

@@ -28,12 +28,22 @@ pub struct Supply {
 }
 
 fn cache_bin(infra_dir: &Path, arch: Arch) -> PathBuf {
-    infra_dir.join("busybox/bin").join(format!("busybox-{}", arch.name()))
+    infra_dir
+        .join("busybox/bin")
+        .join(format!("busybox-{}", arch.name()))
 }
 
 /// 确保目标架构静态 BusyBox 就位，返回其二进制路径。失败即 Err（构建中止）。
-pub fn ensure(infra_dir: &Path, arch: Arch, supply: &Supply, progress: &mut Progress) -> anyhow::Result<PathBuf> {
-    let version = supply.version.clone().unwrap_or_else(|| DEFAULT_VERSION.into());
+pub fn ensure(
+    infra_dir: &Path,
+    arch: Arch,
+    supply: &Supply,
+    progress: &mut Progress,
+) -> anyhow::Result<PathBuf> {
+    let version = supply
+        .version
+        .clone()
+        .unwrap_or_else(|| DEFAULT_VERSION.into());
     let bin = cache_bin(infra_dir, arch);
     let asset = format!("busybox-{version}-linux-{}", arch.name());
     let tag = format!("busybox-v{version}");
@@ -139,11 +149,23 @@ fn resolve_repo(infra_dir: &Path, explicit: &Option<String>) -> Option<String> {
 }
 
 fn gh_auth_ok() -> bool {
-    Command::new("gh").arg("auth").arg("status").status().map(|s| s.success()).unwrap_or(false)
+    Command::new("gh")
+        .arg("auth")
+        .arg("status")
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
-fn build_from_source(infra_dir: &Path, arch: Arch, version: &str, progress: &mut Progress) -> anyhow::Result<()> {
-    let host_norm = Arch::parse(std::env::consts::ARCH).map(|a| a.name()).unwrap_or("unknown");
+fn build_from_source(
+    infra_dir: &Path,
+    arch: Arch,
+    version: &str,
+    progress: &mut Progress,
+) -> anyhow::Result<()> {
+    let host_norm = Arch::parse(std::env::consts::ARCH)
+        .map(|a| a.name())
+        .unwrap_or("unknown");
     progress.line(&format!(
         "Building BusyBox {version} from source (host arch: {})...",
         std::env::consts::ARCH
@@ -186,7 +208,10 @@ fn build_from_source(infra_dir: &Path, arch: Arch, version: &str, progress: &mut
     // sed 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' —— Rust 等价实现
     let config_path = src_dir.join(".config");
     let config = std::fs::read_to_string(&config_path)?;
-    std::fs::write(&config_path, config.replace("# CONFIG_STATIC is not set", "CONFIG_STATIC=y"))?;
+    std::fs::write(
+        &config_path,
+        config.replace("# CONFIG_STATIC is not set", "CONFIG_STATIC=y"),
+    )?;
     let mut make = mk("make", &[], &src_dir);
     if let Ok(n) = std::thread::available_parallelism() {
         make.arg(format!("-j{n}"));

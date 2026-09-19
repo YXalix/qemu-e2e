@@ -62,14 +62,22 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
             println!(
                 "  kernel_path: {} ({})",
                 kp.display(),
-                if explicit { "from config" } else { "auto-detected" }
+                if explicit {
+                    "from config"
+                } else {
+                    "auto-detected"
+                }
             );
             if let Some(arch) = cfg.arch() {
                 let img = kp.join(arch.kernel_img());
                 println!(
                     "  kernel_image: {} — {}",
                     arch.kernel_img(),
-                    if img.is_file() { "found" } else { "MISSING (build the kernel first)" }
+                    if img.is_file() {
+                        "found"
+                    } else {
+                        "MISSING (build the kernel first)"
+                    }
                 );
             }
         }
@@ -97,7 +105,11 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
     let t = cfg.timeout_raw();
     println!(
         "  timeout: {t}s{}",
-        if t == "0" { " (cargo xtask test will reject 0)" } else { "" }
+        if t == "0" {
+            " (cargo xtask test will reject 0)"
+        } else {
+            ""
+        }
     );
 
     // QEMU 二进制
@@ -110,7 +122,11 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
         let label = override_q.as_deref().unwrap_or(arch.qemu_bin());
         println!(
             "  qemu: {label} — {}",
-            if found { "found" } else { "NOT FOUND (install qemu-system or set QEMU=)" }
+            if found {
+                "found"
+            } else {
+                "NOT FOUND (install qemu-system or set QEMU=)"
+            }
         );
     }
     println!();

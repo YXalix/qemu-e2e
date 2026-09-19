@@ -82,7 +82,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("builder-modconf-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let conf = dir.join("modules.conf");
-        std::fs::write(&conf, "# comment\ncrc64\nnvme-core  poll_queues=2\n\n  # indented\next4\n").unwrap();
+        std::fs::write(
+            &conf,
+            "# comment\ncrc64\nnvme-core  poll_queues=2\n\n  # indented\next4\n",
+        )
+        .unwrap();
         let mods = parse(&conf);
         assert_eq!(mods, ["crc64", "nvme-core", "ext4"]);
         let _ = std::fs::remove_dir_all(&dir);

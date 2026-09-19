@@ -12,7 +12,11 @@ use crate::Progress;
 /// 编译 testcases 并把可执行文件装入 `<rootfs>/tests/`。
 /// 返回装入的二进制名列表。构建日志语义与脚本一致：
 /// 失败时提取 `error:` 行（否则全文）作为错误信息；成功时打印 `warning:` 行。
-pub fn install(testcases_dir: &Path, dest_tests: &Path, progress: &mut Progress) -> anyhow::Result<()> {
+pub fn install(
+    testcases_dir: &Path,
+    dest_tests: &Path,
+    progress: &mut Progress,
+) -> anyhow::Result<()> {
     progress.line("Building testcases...");
     std::fs::create_dir_all(dest_tests)?;
     if !testcases_dir.is_dir() {
@@ -33,16 +37,28 @@ pub fn install(testcases_dir: &Path, dest_tests: &Path, progress: &mut Progress)
         .current_dir(&build_dir)
         .output()
         .context("make 启动失败")?;
-    std::fs::write(&log_path, format!("{}{}", String::from_utf8_lossy(&cmake.stdout), String::from_utf8_lossy(&cmake.stderr)))?;
-    let make_log = format!("{}{}", String::from_utf8_lossy(&make.stdout), String::from_utf8_lossy(&make.stderr));
+    std::fs::write(
+        &log_path,
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&cmake.stdout),
+            String::from_utf8_lossy(&cmake.stderr)
+        ),
+    )?;
+    let make_log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&make.stdout),
+        String::from_utf8_lossy(&make.stderr)
+    );
     std::fs::write(&log_path, &make_log)?;
 
     if !cmake.status.success() || !make.status.success() {
-        let shown: Vec<&str> = make_log
-            .lines()
-            .filter(|l| l.contains("error:"))
-            .collect();
-        let body = if shown.is_empty() { make_log.clone() } else { shown.join("\n") };
+        let shown: Vec<&str> = make_log.lines().filter(|l| l.contains("error:")).collect();
+        let body = if shown.is_empty() {
+            make_log.clone()
+        } else {
+            shown.join("\n")
+        };
         anyhow::bail!("Testcases build failed\n{body}");
     }
     for line in make_log.lines().filter(|l| l.contains("warning:")) {
@@ -68,7 +84,9 @@ pub fn install(testcases_dir: &Path, dest_tests: &Path, progress: &mut Progress)
 
 fn is_executable(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(p).map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+    std::fs::metadata(p)
+        .map(|m| m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
 }
 
 /// 编译 no_std Rust 用例（`testcases/rust/` 独立 workspace）并装入
@@ -111,7 +129,11 @@ pub fn install_rust(
         .output()
         .context("cargo 启动失败")?;
     if !out.status.success() {
-        let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        let log = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
         anyhow::bail!("Rust testcases build failed\n{log}");
     }
 
@@ -127,13 +149,16 @@ pub fn install_rust(
         }
     }
     if installed == 0 {
-        anyhow::bail!("Rust testcases build succeeded but no binaries found under {}/release", target_dir.display());
+        anyhow::bail!(
+            "Rust testcases build succeeded but no binaries found under {}/release",
+            target_dir.display()
+        );
     }
     Ok(())
 }
 
 /// `target/release/` 下的测试二进制判定：可执行文件、排除 `.d`/`.rlib`/`.so` 等副产物。
-fn rust_test_binary(p: &Path) -> Option<PathBuf> {
+pub(crate) fn rust_test_binary(p: &Path) -> Option<PathBuf> {
     let name = p.file_name()?.to_string_lossy();
     if !p.is_file() || !is_executable(p) {
         return None;
@@ -170,7 +195,10 @@ mod tests {
         assert!(rust_test_binary(&bin).is_some());
         assert!(rust_test_binary(&dep).is_none(), ".d 副产物必须被过滤");
         assert!(rust_test_binary(&rlib).is_none(), "rlib 必须被过滤");
-        assert!(rust_test_binary(&script).is_none(), "build script 必须被过滤");
+        assert!(
+            rust_test_binary(&script).is_none(),
+            "build script 必须被过滤"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -8,7 +8,8 @@ use anyhow::Context;
 /// `(cd dir && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > out`
 /// （保留 null 分隔与脚本完全一致；文件顺序随 find，无需稳定排序）。
 pub fn pack_initramfs(dir: &Path, out: &Path) -> anyhow::Result<()> {
-    let out_file = std::fs::File::create(out).with_context(|| format!("创建 {} 失败", out.display()))?;
+    let out_file =
+        std::fs::File::create(out).with_context(|| format!("创建 {} 失败", out.display()))?;
     let status = std::process::Command::new("bash")
         .arg("-c")
         .arg("find . -print0 | cpio --null -o -H newc 2>/dev/null | gzip -9")

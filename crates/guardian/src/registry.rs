@@ -39,7 +39,11 @@ pub fn install_ctrlc_guard() {
 
 /// 墙钟看门狗：到点 KILL 进程组并置位 quit（等价 timeout --signal=KILL 的
 /// 124 语义；调用方据 quit 位区分超时与自然退出）。
-pub fn spawn_watchdog(pgid: u32, timeout_secs: u64, quit: Arc<AtomicBool>) -> std::thread::JoinHandle<()> {
+pub fn spawn_watchdog(
+    pgid: u32,
+    timeout_secs: u64,
+    quit: Arc<AtomicBool>,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(timeout_secs);
         loop {

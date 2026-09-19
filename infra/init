@@ -180,6 +180,13 @@ main() {
     # Load test modules (boot-critical ones were loaded by the initramfs)
     load_modules
 
+    # Virtuoso tools（常驻工具，非用例）：守卫式启动。仅当二进制随 rootfs
+    # 装入且 virtio-serial 端口驱动已加载时才会真正驻留；两者缺一 agent
+    # 自行退出，交互与 auto_test 行为零影响。
+    if [ -x /bin/virtuoso-agent ]; then
+        /bin/virtuoso-agent >/dev/null 2>&1 &
+    fi
+
     # Show status
     print_status
 

@@ -29,7 +29,11 @@ impl NumaTopology {
         if memory_per_node.is_empty() {
             return Err("NUMA_MEMORY 为空".into());
         }
-        Ok(NumaTopology { smp, nodes, memory_per_node: memory_per_node.to_string() })
+        Ok(NumaTopology {
+            smp,
+            nodes,
+            memory_per_node: memory_per_node.to_string(),
+        })
     }
 
     /// 总内存字符串（run-qemu.sh 的乘法规则：数字前缀 × 节点数，保留单位后缀）。
@@ -55,9 +59,30 @@ mod tests {
 
     #[test]
     fn total_memory_suffix_rules() {
-        assert_eq!(NumaTopology::parse("8", "2", "1G").unwrap().total_memory().unwrap(), "2G");
-        assert_eq!(NumaTopology::parse("8", "2", "512M").unwrap().total_memory().unwrap(), "1024M");
-        assert_eq!(NumaTopology::parse("8", "2", "1024").unwrap().total_memory().unwrap(), "2048");
-        assert!(NumaTopology::parse("8", "2", "1X").unwrap().total_memory().is_err());
+        assert_eq!(
+            NumaTopology::parse("8", "2", "1G")
+                .unwrap()
+                .total_memory()
+                .unwrap(),
+            "2G"
+        );
+        assert_eq!(
+            NumaTopology::parse("8", "2", "512M")
+                .unwrap()
+                .total_memory()
+                .unwrap(),
+            "1024M"
+        );
+        assert_eq!(
+            NumaTopology::parse("8", "2", "1024")
+                .unwrap()
+                .total_memory()
+                .unwrap(),
+            "2048"
+        );
+        assert!(NumaTopology::parse("8", "2", "1X")
+            .unwrap()
+            .total_memory()
+            .is_err());
     }
 }

@@ -10,8 +10,8 @@ use anyhow::Context;
 use launcher::{Accel, Arch, Backend, QemuInvocation};
 
 use super::{
-    disk_opt, firecracker_kernel, firecracker_preflight, kernel_image_path, qemu_extra, resolve_arch,
-    resolve_backend, resolve_topology,
+    disk_opt, firecracker_kernel, firecracker_preflight, kernel_image_path, qemu_extra,
+    resolve_arch, resolve_backend, resolve_topology,
 };
 use crate::config::Config;
 use crate::runs;
@@ -75,7 +75,10 @@ fn run_vm_session(kvm: bool, gdb_stub: bool, backend: Option<&str>) -> anyhow::R
         .disk(disk_opt(&cfg))
         .extra_opts(&qemu_extra(&cfg));
 
-        println!("[LAUNCH] {}", inv.command_line().map_err(anyhow::Error::msg)?);
+        println!(
+            "[LAUNCH] {}",
+            inv.command_line().map_err(anyhow::Error::msg)?
+        );
         let (mut child, mut sup) = inv.spawn_supervised(false)?;
         let st = child.wait().context("等待 QEMU 退出失败")?;
         sup.finish();
@@ -127,7 +130,12 @@ fn resolve_timeout(cfg: &Config, cli_timeout: Option<u64>) -> anyhow::Result<u64
 }
 
 /// 单次完整测试（test 与 matrix 共用）。
-fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64, backend: Backend) -> anyhow::Result<i32> {
+fn test_once(
+    cfg: &Config,
+    cli_arch: Option<&str>,
+    timeout_secs: u64,
+    backend: Backend,
+) -> anyhow::Result<i32> {
     let arch = resolve_arch(cfg, cli_arch)?;
     let topo = resolve_topology(cfg)?;
     let run = runs::create_run_dir(&cfg.project_root, arch.name())?;
@@ -136,10 +144,18 @@ fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64, backend: B
     // ---- 构建（builder）----
     let build_started = Instant::now();
     if let Err(e) = super::build::build_pair_for(cfg, Some(&run.path.join("build.log"))) {
-        let meta = build_failed_meta(&run, arch, timeout_secs, build_started.elapsed().as_millis() as u64);
+        let meta = build_failed_meta(
+            &run,
+            arch,
+            timeout_secs,
+            build_started.elapsed().as_millis() as u64,
+        );
         runs::finalize_run(&run, &meta)?;
         runs::prune(&cfg.project_root, runs::RUNS_KEEP);
-        eprintln!("ERROR: initrd build failed; artifacts: {}", run.path.display());
+        eprintln!(
+            "ERROR: initrd build failed; artifacts: {}",
+            run.path.display()
+        );
         eprintln!("ERROR: {e:#}");
         return Ok(1);
     }
@@ -179,7 +195,10 @@ fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64, backend: B
             .disk(disk_opt(cfg))
             .auto_test(cfg.auto_test() == "1")
             .extra_opts(&qemu_extra(cfg));
-            println!("[LAUNCH] {}", inv.command_line().map_err(anyhow::Error::msg)?);
+            println!(
+                "[LAUNCH] {}",
+                inv.command_line().map_err(anyhow::Error::msg)?
+            );
             println!("Running QEMU test with {timeout_secs}s timeout...");
             let (child, sup) = inv.spawn_supervised(true)?;
             (child, sup, kernel, "TCG")
@@ -187,7 +206,8 @@ fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64, backend: B
     };
     // 墙钟看门狗：到点 KILL 进程组（等价 timeout --signal=KILL 的 124 语义）
     let timed_out = Arc::new(AtomicBool::new(false));
-    let watchdog = guardian::registry::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
+    let watchdog =
+        guardian::registry::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
 
     let status = runs::pump_child(
         &mut child,

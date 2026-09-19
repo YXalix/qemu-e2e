@@ -142,7 +142,10 @@ pub fn parse(text: &str) -> Audit {
             });
         };
 
-        if let Some(name) = t.strip_prefix("--- Running: ").and_then(|s| s.strip_suffix(" ---")) {
+        if let Some(name) = t
+            .strip_prefix("--- Running: ")
+            .and_then(|s| s.strip_suffix(" ---"))
+        {
             current = Some(a.tests.len());
             a.tests.push(TestResult {
                 name: name.trim().to_string(),
@@ -151,38 +154,62 @@ pub fn parse(text: &str) -> Audit {
                 assert_fail: 0,
                 assert_skip: 0,
             });
-            ev(EventKind::TestStart, serde_json::json!({ "name": name.trim() }), &mut a);
+            ev(
+                EventKind::TestStart,
+                serde_json::json!({ "name": name.trim() }),
+                &mut a,
+            );
         } else if let Some(name) = t.strip_prefix("PASSED: ") {
             if let Some(tr) = a.tests.iter_mut().rev().find(|tr| tr.name == name.trim()) {
                 tr.status = TestStatus::Pass;
             }
-            ev(EventKind::TestEnd, serde_json::json!({ "name": name.trim(), "status": "pass" }), &mut a);
+            ev(
+                EventKind::TestEnd,
+                serde_json::json!({ "name": name.trim(), "status": "pass" }),
+                &mut a,
+            );
         } else if let Some(name) = t.strip_prefix("FAILED: ") {
             if let Some(tr) = a.tests.iter_mut().rev().find(|tr| tr.name == name.trim()) {
                 tr.status = TestStatus::Fail;
             }
-            ev(EventKind::TestEnd, serde_json::json!({ "name": name.trim(), "status": "fail" }), &mut a);
+            ev(
+                EventKind::TestEnd,
+                serde_json::json!({ "name": name.trim(), "status": "fail" }),
+                &mut a,
+            );
         } else if t.starts_with("[PASS] ") {
             if let Some(idx) = current {
                 if let Some(tr) = a.tests.get_mut(idx) {
                     tr.assert_pass += 1;
                 }
             }
-            ev(EventKind::Assert, serde_json::json!({ "result": "pass" }), &mut a);
+            ev(
+                EventKind::Assert,
+                serde_json::json!({ "result": "pass" }),
+                &mut a,
+            );
         } else if t.starts_with("[FAIL] ") {
             if let Some(idx) = current {
                 if let Some(tr) = a.tests.get_mut(idx) {
                     tr.assert_fail += 1;
                 }
             }
-            ev(EventKind::Assert, serde_json::json!({ "result": "fail" }), &mut a);
+            ev(
+                EventKind::Assert,
+                serde_json::json!({ "result": "fail" }),
+                &mut a,
+            );
         } else if t.starts_with("[SKIP] ") {
             if let Some(idx) = current {
                 if let Some(tr) = a.tests.get_mut(idx) {
                     tr.assert_skip += 1;
                 }
             }
-            ev(EventKind::Assert, serde_json::json!({ "result": "skip" }), &mut a);
+            ev(
+                EventKind::Assert,
+                serde_json::json!({ "result": "skip" }),
+                &mut a,
+            );
         } else if let Some(rest) = t.strip_prefix("Test Results: ") {
             let frac = rest.split_whitespace().find(|tok| tok.contains('/'));
             let pair = frac.and_then(|f| {
@@ -191,11 +218,19 @@ pub fn parse(text: &str) -> Audit {
             });
             if let Some((passed, total)) = pair {
                 a.summary = Some((passed, total));
-                ev(EventKind::Summary, serde_json::json!({ "passed": passed, "total": total }), &mut a);
+                ev(
+                    EventKind::Summary,
+                    serde_json::json!({ "passed": passed, "total": total }),
+                    &mut a,
+                );
             }
         } else if let Some(rest) = t.strip_prefix("TEST_COMPLETE: ") {
             a.marker = Some(rest.trim().to_string());
-            ev(EventKind::Marker, serde_json::json!({ "value": rest.trim() }), &mut a);
+            ev(
+                EventKind::Marker,
+                serde_json::json!({ "value": rest.trim() }),
+                &mut a,
+            );
         } else if raw.contains("Kernel panic - not syncing") {
             a.panics.push(raw.to_string());
             ev(EventKind::Panic, serde_json::Value::Null, &mut a);
@@ -209,11 +244,17 @@ pub fn parse(text: &str) -> Audit {
 
 impl Audit {
     pub fn passed_count(&self) -> usize {
-        self.tests.iter().filter(|t| t.status == TestStatus::Pass).count()
+        self.tests
+            .iter()
+            .filter(|t| t.status == TestStatus::Pass)
+            .count()
     }
 
     pub fn failed_count(&self) -> usize {
-        self.tests.iter().filter(|t| t.status == TestStatus::Fail).count()
+        self.tests
+            .iter()
+            .filter(|t| t.status == TestStatus::Fail)
+            .count()
     }
 
     pub fn skipped_count(&self) -> usize {
@@ -286,7 +327,11 @@ mod tests {
         assert_eq!(a.tests[1].status, TestStatus::Pass);
         assert_eq!(a.summary, Some((1, 2)));
         assert_eq!(judge(1, false, &a), Verdict::Failed);
-        assert_eq!(judge(0, false, &a), Verdict::Failed, "marker says failed → failed even with exit 0");
+        assert_eq!(
+            judge(0, false, &a),
+            Verdict::Failed,
+            "marker says failed → failed even with exit 0"
+        );
     }
 
     #[test]
@@ -341,9 +386,18 @@ mod tests {
 
     #[test]
     fn events_carry_line_numbers_and_order() {
-        let a = parse("--- Running: t ---\n  [FAIL] x\nFAILED: t\nTEST_COMPLETE: SOME TESTS FAILED\n");
+        let a =
+            parse("--- Running: t ---\n  [FAIL] x\nFAILED: t\nTEST_COMPLETE: SOME TESTS FAILED\n");
         let kinds: Vec<EventKind> = a.events.iter().map(|e| e.kind).collect();
-        assert_eq!(kinds, [EventKind::TestStart, EventKind::Assert, EventKind::TestEnd, EventKind::Marker]);
+        assert_eq!(
+            kinds,
+            [
+                EventKind::TestStart,
+                EventKind::Assert,
+                EventKind::TestEnd,
+                EventKind::Marker
+            ]
+        );
         assert_eq!(a.events[0].line_no, Some(1));
         assert_eq!(a.events[1].line_no, Some(2));
         assert_eq!(a.events[0].seq, 0);

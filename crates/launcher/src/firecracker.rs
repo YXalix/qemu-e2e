@@ -12,7 +12,7 @@
 //!   因此 preflight 会读内核 .config 逐项核对；
 //! - aarch64 内核必须交付 ELF（vmlinux），`Image` 裸镜像不被接受。
 
-use anyhow::{Context, bail};
+use anyhow::{bail, Context};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -76,7 +76,10 @@ impl FirecrackerInvocation {
         api_sock: impl Into<PathBuf>,
     ) -> Result<Self, String> {
         if !arch_supported(arch) {
-            return Err(format!("firecracker 不支持架构 {}（仅 x86_64/aarch64）", arch.name()));
+            return Err(format!(
+                "firecracker 不支持架构 {}（仅 x86_64/aarch64）",
+                arch.name()
+            ));
         }
         let mem_mib = memory_to_mib(&topo.total_memory()?)?;
         Ok(Self {
@@ -174,11 +177,16 @@ impl FirecrackerInvocation {
             .arg(&self.config_path)
             .process_group(0);
         if piped {
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
+            cmd.stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .stdin(Stdio::null());
         }
-        let child = cmd
-            .spawn()
-            .with_context(|| format!("{} 启动失败（preflight 见 `cargo xtask verify --backend firecracker`）", self.binary().display()))?;
+        let child = cmd.spawn().with_context(|| {
+            format!(
+                "{} 启动失败（preflight 见 `cargo xtask verify --backend firecracker`）",
+                self.binary().display()
+            )
+        })?;
         let pgid = child.id();
         Ok((child, pgid))
     }
@@ -240,9 +248,17 @@ pub fn preflight_checks(
 /// spawn 前硬校验：逐项核对，首个失败即 Err（可操作诊断）。
 /// microVM 引导的硬前提，见本模块文档（`cargo xtask verify --backend firecracker`
 /// 提供同样的逐项诊断视图）。
-pub fn preflight(arch: Arch, kernel: &Path, kernel_config: &Path, binary_name: &str) -> anyhow::Result<()> {
+pub fn preflight(
+    arch: Arch,
+    kernel: &Path,
+    kernel_config: &Path,
+    binary_name: &str,
+) -> anyhow::Result<()> {
     if !arch_supported(arch) {
-        anyhow::bail!("firecracker 不支持架构 {}（仅 x86_64/aarch64）", arch.name());
+        anyhow::bail!(
+            "firecracker 不支持架构 {}（仅 x86_64/aarch64）",
+            arch.name()
+        );
     }
     if !Path::new("/dev/kvm").exists() {
         anyhow::bail!("firecracker 需要 KVM：/dev/kvm 不存在（加载 kvm 模块或改用 qemu 后端）");
@@ -282,7 +298,10 @@ pub fn kernel_format_ok(arch: Arch, kernel: &Path) -> anyhow::Result<()> {
 /// 内核 .config 内建项核对（无 initramfs 引导的硬前提）。
 /// 返回缺失列表；空列表 = 可引导。config 不存在时返回 Err（无法背书）。
 /// 串口 console 内建项按架构区分（aarch64 = PL011，x86_64 = 8250）。
-pub fn required_builtin_missing(arch: Arch, kernel_config: &Path) -> anyhow::Result<Vec<&'static str>> {
+pub fn required_builtin_missing(
+    arch: Arch,
+    kernel_config: &Path,
+) -> anyhow::Result<Vec<&'static str>> {
     let text = std::fs::read_to_string(kernel_config)
         .with_context(|| format!("读取 {} 失败（内核树未配置？）", kernel_config.display()))?;
     let mut need: Vec<&str> = vec!["CONFIG_VIRTIO", "CONFIG_VIRTIO_BLK", "CONFIG_EXT4_FS"];
@@ -328,7 +347,13 @@ mod tests {
     #[test]
     fn riscv64_rejected() {
         assert!(FirecrackerInvocation::new(
-            Arch::Riscv64, "k", "r", &topo(), false, "/tmp/c", "/tmp/s"
+            Arch::Riscv64,
+            "k",
+            "r",
+            &topo(),
+            false,
+            "/tmp/c",
+            "/tmp/s"
         )
         .is_err());
     }
@@ -348,7 +373,15 @@ mod tests {
     fn api_requests_cover_boot_machine_drive_start() {
         let reqs = inv().api_requests();
         let names: Vec<_> = reqs.iter().map(|(n, _)| *n).collect();
-        assert_eq!(names, ["PUT /boot-source", "PUT /machine-config", "PUT /drives/rootfs", "PUT /actions"]);
+        assert_eq!(
+            names,
+            [
+                "PUT /boot-source",
+                "PUT /machine-config",
+                "PUT /drives/rootfs",
+                "PUT /actions"
+            ]
+        );
     }
 
     #[test]

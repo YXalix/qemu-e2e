@@ -81,12 +81,19 @@ pub fn prune(project_root: &Path, keep: usize) {
 
 /// 把已 spawn 的子进程 stdout/stderr 逐行同时写到终端与日志（追加模式）。
 /// 由 launcher::QemuInvocation::spawn(piped=true) 提供子进程。
-pub fn pump_child(child: &mut Child, out_log: &Path, err_log: &Path) -> std::io::Result<ExitStatus> {
+pub fn pump_child(
+    child: &mut Child,
+    out_log: &Path,
+    err_log: &Path,
+) -> std::io::Result<ExitStatus> {
     let out = child.stdout.take().expect("stdout piped");
     let err = child.stderr.take().expect("stderr piped");
 
     fn pump(pipe: impl Read, log: &Path) -> std::io::Result<()> {
-        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(log)?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log)?;
         let mut reader = std::io::BufReader::new(pipe);
         let stdout = std::io::stdout();
         let mut buf = Vec::new();
@@ -179,7 +186,11 @@ pub fn load_verdict_or_parse(run_dir: &Path) -> anyhow::Result<VerdictReport> {
             run_id: id,
             arch: run_dir
                 .file_name()
-                .and_then(|n| n.to_string_lossy().rsplit_once('-').map(|(_, a)| a.to_string()))
+                .and_then(|n| {
+                    n.to_string_lossy()
+                        .rsplit_once('-')
+                        .map(|(_, a)| a.to_string())
+                })
                 .unwrap_or_default(),
             exit_code: None,
             duration_ms: 0,

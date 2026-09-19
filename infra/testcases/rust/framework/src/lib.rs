@@ -57,7 +57,11 @@ unsafe fn syscall1(n: u64, a0: u64) -> i64 {
             options(nostack)
         );
     }
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "riscv64")))]
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        target_arch = "x86_64",
+        target_arch = "riscv64"
+    )))]
     compile_error!("testfw: unsupported architecture (expect aarch64/x86_64/riscv64)");
     out
 }
@@ -100,7 +104,11 @@ unsafe fn syscall3(n: u64, a0: u64, a1: u64, a2: u64) -> i64 {
             options(nostack)
         );
     }
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "riscv64")))]
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        target_arch = "x86_64",
+        target_arch = "riscv64"
+    )))]
     compile_error!("testfw: unsupported architecture (expect aarch64/x86_64/riscv64)");
     out
 }
@@ -201,7 +209,10 @@ unsafe extern "C" fn memcmp(a: *const u8, b: *const u8, n: usize) -> i32 {
 pub fn emit(tag: &str, args: Arguments<'_>) {
     let mut buf: [u8; 512] = [0; 512];
     let pos = {
-        let mut w = BufWriter { buf: &mut buf, pos: 0 };
+        let mut w = BufWriter {
+            buf: &mut buf,
+            pos: 0,
+        };
         let _ = write!(w, "  [{tag}] {args}\n");
         w.pos
     };

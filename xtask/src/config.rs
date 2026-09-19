@@ -65,7 +65,11 @@ impl EnvFile {
             None
         };
 
-        Ok(Self { vars, path, toml_path })
+        Ok(Self {
+            vars,
+            path,
+            toml_path,
+        })
     }
 
     /// BusyBox 供给配置（BUSYBOX_* 变量 → builder::busybox::Supply）。
@@ -163,7 +167,6 @@ impl Config {
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "1".into())
     }
-
 }
 
 /// 接受 string 或 integer 标量并统一成 String（timeout_secs = 60 与 = "60"
@@ -231,8 +234,8 @@ impl StrVal {
 /// virtuoso.toml → env 键映射（存在的键覆盖 .env）。schema 用 serde 结构体
 /// 表达：未知键与非法类型一律在解析期报错（Phase 2 的强类型目标之一）。
 fn apply_toml(vars: &mut BTreeMap<String, String>, path: &Path) -> anyhow::Result<()> {
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("读取 {} 失败", path.display()))?;
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("读取 {} 失败", path.display()))?;
     let cfg: TomlOverlay = toml::from_str(&raw)
         .with_context(|| format!("{} 解析失败（未知键或非法类型）", path.display()))?;
 
@@ -303,8 +306,14 @@ force_source_build = true
             Some("-device vfio-pci,host=01:00.0")
         );
         assert_eq!(vars.get("NUMA_NODES").map(String::as_str), Some("2"));
-        assert_eq!(vars.get("BUSYBOX_VERSION").map(String::as_str), Some("1.36.1"));
-        assert_eq!(vars.get("BUSYBOX_SOURCE_BUILD").map(String::as_str), Some("1"));
+        assert_eq!(
+            vars.get("BUSYBOX_VERSION").map(String::as_str),
+            Some("1.36.1")
+        );
+        assert_eq!(
+            vars.get("BUSYBOX_SOURCE_BUILD").map(String::as_str),
+            Some("1")
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

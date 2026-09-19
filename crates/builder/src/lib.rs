@@ -6,6 +6,7 @@ pub mod busybox;
 pub mod image;
 pub mod modconf;
 pub mod testcase;
+pub mod tools;
 pub mod verify;
 
 use std::path::Path;
@@ -22,7 +23,10 @@ pub struct InitHook {
 
 impl InitHook {
     pub fn shell(name: impl Into<String>, script: impl Into<String>) -> Self {
-        Self { name: name.into(), script: script.into() }
+        Self {
+            name: name.into(),
+            script: script.into(),
+        }
     }
 }
 
@@ -37,7 +41,10 @@ impl Progress {
     }
 
     pub fn with_log(path: &Path) -> anyhow::Result<Self> {
-        let log = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
         Ok(Self { log: Some(log) })
     }
 
@@ -107,10 +114,21 @@ pub fn build_boot_pair(
         progress,
     )?;
     write_hooks(&rootfs_dir, hooks)?;
-    testcase::install(&infra_dir.join("testcases"), &rootfs_dir.join("tests"), progress)?;
+    testcase::install(
+        &infra_dir.join("testcases"),
+        &rootfs_dir.join("tests"),
+        progress,
+    )?;
     testcase::install_rust(
         &infra_dir.join("testcases/rust"),
         &rootfs_dir.join("tests"),
+        arch,
+        progress,
+    )?;
+    // tools workspace（常驻工具）→ /bin：与用例分类正交，见 tools::install
+    tools::install(
+        &infra_dir.join("tools"),
+        &rootfs_dir.join("bin"),
         arch,
         progress,
     )?;
@@ -133,8 +151,18 @@ pub fn assemble_busybox_tree(dest: &Path, busybox_bin: &Path) -> anyhow::Result<
         std::fs::remove_dir_all(dest)?;
     }
     for d in [
-        "bin", "sbin", "usr/bin", "usr/sbin", "proc", "sys", "dev", "tmp", "mnt",
-        "etc/init.d", "var/run", "root",
+        "bin",
+        "sbin",
+        "usr/bin",
+        "usr/sbin",
+        "proc",
+        "sys",
+        "dev",
+        "tmp",
+        "mnt",
+        "etc/init.d",
+        "var/run",
+        "root",
     ] {
         std::fs::create_dir_all(dest.join(d))?;
     }
@@ -183,4 +211,3 @@ fn write_hooks(rootfs_dir: &Path, hooks: &[InitHook]) -> anyhow::Result<()> {
     std::fs::write(rootfs_dir.join("init-hooks.sh"), body)?;
     Ok(())
 }
-

@@ -28,5 +28,8 @@ infra/testcases/compile_commands.json
 # no_std rust testcase firmware build dir
 infra/testcases/rust/target/
 
+# guest tools workspace build dir
+infra/tools/target/
+
 # ZCode session-local data
 .zcode/

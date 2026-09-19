@@ -23,7 +23,14 @@ pub(crate) fn build_pair_for(cfg: &Config, log_path: Option<&Path>) -> anyhow::R
         None => builder::Progress::stdout(),
     };
     progress.line("Rebuilding initrd.img + rootfs.img (two-stage boot pair)...");
-    builder::build_boot_pair(&cfg.infra_dir, &kernel_path, arch, &supply, &[], &mut progress)
+    builder::build_boot_pair(
+        &cfg.infra_dir,
+        &kernel_path,
+        arch,
+        &supply,
+        &[],
+        &mut progress,
+    )
 }
 
 pub fn run_disk() -> anyhow::Result<i32> {

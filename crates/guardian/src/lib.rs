@@ -35,7 +35,10 @@ pub struct ProcessGroupGuard {
 impl ProcessGroupGuard {
     /// 接管一个进程组。
     pub fn adopt(pgid: u32) -> Self {
-        Self { pgid, armed: pgid != 0 }
+        Self {
+            pgid,
+            armed: pgid != 0,
+        }
     }
 
     /// KILL 整个进程组（幂等；收割后 guard 自动失效）。
@@ -71,7 +74,10 @@ impl Supervised {
     /// 接管一个进程组并登记为活动进程组（Ctrl-C 守护可见）。
     pub fn adopt(pgid: u32) -> Self {
         registry::register(pgid);
-        Self { pgid, guard: ProcessGroupGuard::adopt(pgid) }
+        Self {
+            pgid,
+            guard: ProcessGroupGuard::adopt(pgid),
+        }
     }
 
     pub fn pgid(&self) -> u32 {
@@ -119,7 +125,10 @@ mod tests {
             assert!(group_alive(pgid));
         }
         let _ = child.wait();
-        assert!(!group_alive(pgid), "process group must not survive guard drop");
+        assert!(
+            !group_alive(pgid),
+            "process group must not survive guard drop"
+        );
     }
 
     #[test]
@@ -138,6 +147,9 @@ mod tests {
         let mut guard = ProcessGroupGuard::adopt(0);
         guard.kill_now();
         guard.disarm();
-        assert!(!group_alive(0), "guard must never signal the caller's own group");
+        assert!(
+            !group_alive(0),
+            "guard must never signal the caller's own group"
+        );
     }
 }

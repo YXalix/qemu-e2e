@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["agent"]
+
+# tools workspace：VM 内常驻工具（std Rust + musl 静态）。与 testcases 分类
+# 正交：工具不进 /tests、不被 init 自动发现、不参与标记协议判定。
+# 以 `cargo build --release --target <arch 的 musl triple>` 构建，产物为
+# 自含静态 ELF（crt-static），不需要 rootfs 动态库/动态加载器（VM 现状不变）。
+# 由 builder::tools::install 拷入 rootfs 的 /bin/。
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

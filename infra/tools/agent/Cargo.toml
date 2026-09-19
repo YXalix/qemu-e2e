@@ -1,0 +1,9 @@
+[package]
+name = "virtuoso-agent"
+version = "0.1.0"
+edition = "2021"
+description = "VM 内常驻 agent：virtio-serial 端口上的 JSON 行协议执行通道（AI probe 的 guest 侧）"
+
+[dependencies]
+serde_json = "1"
+libc = "0.2"

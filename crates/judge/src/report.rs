@@ -99,7 +99,10 @@ impl RunMeta {
     }
 
     fn repro(&self) -> String {
-        format!("cargo xtask test --timeout {} --arch {}", self.timeout_s, self.arch)
+        format!(
+            "cargo xtask test --timeout {} --arch {}",
+            self.timeout_s, self.arch
+        )
     }
 
     pub fn verdict_of(&self, audit: &Audit) -> Verdict {

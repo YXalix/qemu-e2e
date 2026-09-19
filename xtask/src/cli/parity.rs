@@ -10,17 +10,35 @@ use crate::{Command as CliCommand, SkillAction};
 
 pub fn run_parity(target: &str, force: bool, strict: bool) -> anyhow::Result<i32> {
     let inner: CliCommand = match target {
-        "verify" => CliCommand::Verify { arch: None, backend: None },
+        "verify" => CliCommand::Verify {
+            arch: None,
+            backend: None,
+        },
         "initrd" => CliCommand::Build,
         "disk" => CliCommand::Disk,
         "busybox" => CliCommand::BusyBox,
         "clean" => CliCommand::Clean,
-        "qemu" => CliCommand::Shell { kvm: false, backend: None },
-        "qemu-kvm" => CliCommand::Shell { kvm: true, backend: None },
+        "qemu" => CliCommand::Shell {
+            kvm: false,
+            backend: None,
+        },
+        "qemu-kvm" => CliCommand::Shell {
+            kvm: true,
+            backend: None,
+        },
         "qemu-debug" => CliCommand::Debug,
-        "qemu-test" => CliCommand::Test { timeout: None, arch: None, replay_until_fail: None, backend: None },
-        "install-skill" => CliCommand::Skill { action: SkillAction::Install },
-        "uninstall-skill" => CliCommand::Skill { action: SkillAction::Uninstall },
+        "qemu-test" => CliCommand::Test {
+            timeout: None,
+            arch: None,
+            replay_until_fail: None,
+            backend: None,
+        },
+        "install-skill" => CliCommand::Skill {
+            action: SkillAction::Install,
+        },
+        "uninstall-skill" => CliCommand::Skill {
+            action: SkillAction::Uninstall,
+        },
         other => {
             eprintln!("ERROR: unsupported parity target `{other}`");
             eprintln!("  supported: verify initrd disk busybox clean qemu qemu-kvm qemu-debug qemu-test install-skill uninstall-skill");

@@ -7,11 +7,17 @@ use common::Arch;
 
 use crate::modconf;
 
-pub const HOST_TOOLS: &[&str] = &["wget", "tar", "make", "cmake", "cpio", "gzip", "nproc", "find", "sed", "timeout"];
+pub const HOST_TOOLS: &[&str] = &[
+    "wget", "tar", "make", "cmake", "cpio", "gzip", "nproc", "find", "sed", "timeout",
+];
 
 /// modules.conf 声明的模块是否都能在内核树找到（检查 #7 的输入收集）。
 /// `kernel_path` 为 None（未配置内核树）时全部记为未找到。
-pub fn module_presence(modules_conf: &Path, kernel_path: Option<&Path>, fallback_dir: &Path) -> Vec<(String, bool)> {
+pub fn module_presence(
+    modules_conf: &Path,
+    kernel_path: Option<&Path>,
+    fallback_dir: &Path,
+) -> Vec<(String, bool)> {
     modconf::parse(modules_conf)
         .into_iter()
         .map(|m| {
@@ -38,16 +44,28 @@ pub struct Check {
 }
 
 fn pass(msg: impl Into<String>) -> Check {
-    Check { level: Level::Pass, msg: msg.into() }
+    Check {
+        level: Level::Pass,
+        msg: msg.into(),
+    }
 }
 fn fail(msg: impl Into<String>) -> Check {
-    Check { level: Level::Fail, msg: msg.into() }
+    Check {
+        level: Level::Fail,
+        msg: msg.into(),
+    }
 }
 fn warn(msg: impl Into<String>) -> Check {
-    Check { level: Level::Warn, msg: msg.into() }
+    Check {
+        level: Level::Warn,
+        msg: msg.into(),
+    }
 }
 fn info(msg: impl Into<String>) -> Check {
-    Check { level: Level::Info, msg: msg.into() }
+    Check {
+        level: Level::Info,
+        msg: msg.into(),
+    }
 }
 
 pub struct Report {
@@ -90,7 +108,10 @@ pub fn run_checks(
         .filter(|t| !common::fsutil::which(t))
         .map(|t| (*t).to_string())
         .collect();
-    let cc = ["gcc", "cc"].iter().find(|c| common::fsutil::which(c)).copied();
+    let cc = ["gcc", "cc"]
+        .iter()
+        .find(|c| common::fsutil::which(c))
+        .copied();
     if cc.is_none() {
         missing.push("gcc/cc".into());
     }
@@ -162,7 +183,9 @@ pub fn run_checks(
         if qemu_found {
             checks.push(pass(format!("QEMU binary: {q} (from env)")));
         } else {
-            checks.push(fail(format!("QEMU binary: {q} not found (from QEMU env var)")));
+            checks.push(fail(format!(
+                "QEMU binary: {q} not found (from QEMU env var)"
+            )));
         }
     } else if qemu_found {
         checks.push(pass(format!("QEMU binary: {}", arch.qemu_bin())));
@@ -176,7 +199,9 @@ pub fn run_checks(
     if common::fsutil::which("qemu-img") {
         checks.push(info("qemu-img: available (for 'make disk')"));
     } else {
-        checks.push(info("qemu-img: not found (optional, for disk image creation)"));
+        checks.push(info(
+            "qemu-img: not found (optional, for disk image creation)",
+        ));
     }
 
     // 7. Kernel modules（WARN，不判死）
@@ -230,7 +255,11 @@ pub fn run_checks(
     match initrd.filter(|p| p.is_file()) {
         Some(p) => {
             let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-            checks.push(info(format!("Initrd: {} ({})", p.display(), common::fmt::human_size_ls(size))));
+            checks.push(info(format!(
+                "Initrd: {} ({})",
+                p.display(),
+                common::fmt::human_size_ls(size)
+            )));
         }
         None => checks.push(info("Initrd: not built yet (run 'make initrd')")),
     }
@@ -238,7 +267,12 @@ pub fn run_checks(
     let critical_pass = checks.iter().filter(|c| c.level == Level::Pass).count() as u32;
     let critical_fail = checks.iter().filter(|c| c.level == Level::Fail).count() as u32;
     let warnings = checks.iter().filter(|c| c.level == Level::Warn).count() as u32;
-    Report { checks, critical_pass, critical_fail, warnings }
+    Report {
+        checks,
+        critical_pass,
+        critical_fail,
+        warnings,
+    }
 }
 
 fn kernel_version(kernel: &Path) -> Option<String> {
@@ -259,7 +293,13 @@ impl Report {
     /// 渲染（tty 下着色）。
     pub fn render(&self) -> String {
         let tty = is_stdout_tty();
-        let c = |code: &str, s: &str| if tty { format!("\x1b[{code}m{s}\x1b[0m") } else { s.to_string() };
+        let c = |code: &str, s: &str| {
+            if tty {
+                format!("\x1b[{code}m{s}\x1b[0m")
+            } else {
+                s.to_string()
+            }
+        };
         let mut out = String::new();
         out.push_str(&c("1", "[VERIFY] QEMU E2E Prerequisites Check"));
         out.push_str("\n========================================\n");
@@ -279,6 +319,8 @@ impl Report {
 fn is_stdout_tty() -> bool {
     // 无 libc 依赖的近似判断：TERM 存在且非 dumb，且没有 CI 强制管道。
     // 仅影响颜色，不影响判定。
-    std::env::var_os("TERM").map(|t| t != "dumb").unwrap_or(false)
+    std::env::var_os("TERM")
+        .map(|t| t != "dumb")
+        .unwrap_or(false)
         && std::env::var_os("NO_COLOR").is_none()
 }

@@ -30,7 +30,9 @@ pub fn run_triage(cfg: &Config, run_spec: Option<&str>, json: bool) -> anyhow::R
         "[TRIAGE] run {} — verdict: {}{}{}",
         v.run_id,
         verdict.to_uppercase(),
-        v.exit_code.map(|c| format!(" (exit {c}")).unwrap_or_default(),
+        v.exit_code
+            .map(|c| format!(" (exit {c}"))
+            .unwrap_or_default(),
         dur_suffix,
     );
     if let Some(note) = &v.verdict_source {
@@ -65,8 +67,14 @@ pub fn run_triage(cfg: &Config, run_spec: Option<&str>, json: bool) -> anyhow::R
         v.summary.pass,
         v.summary.fail,
         v.summary.skip,
-        v.summary.reported_pass.map(|x| x.to_string()).unwrap_or_else(|| "?".into()),
-        v.summary.reported_total.map(|x| x.to_string()).unwrap_or_else(|| "?".into()),
+        v.summary
+            .reported_pass
+            .map(|x| x.to_string())
+            .unwrap_or_else(|| "?".into()),
+        v.summary
+            .reported_total
+            .map(|x| x.to_string())
+            .unwrap_or_else(|| "?".into()),
         v.marker_complete.as_deref().unwrap_or("none"),
     );
     for t in &v.tests {
@@ -91,7 +99,14 @@ pub fn run_triage(cfg: &Config, run_spec: Option<&str>, json: bool) -> anyhow::R
         let serial = dir.join("serial.log");
         if let Ok(text) = std::fs::read_to_string(&serial) {
             println!("  serial tail (last 15 lines):");
-            for line in text.lines().rev().take(15).collect::<Vec<_>>().into_iter().rev() {
+            for line in text
+                .lines()
+                .rev()
+                .take(15)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
                 println!("    | {line}");
             }
         }
@@ -116,22 +131,37 @@ pub fn run_runs(cfg: &Config, json: bool) -> anyhow::Result<i32> {
                     })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&serde_json::Value::Array(items))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::Value::Array(items))?
+        );
         return Ok(0);
     }
     if dirs.is_empty() {
-        println!("no runs yet — cargo xtask test 会写入 {}/", runs_root(&cfg.project_root).display());
+        println!(
+            "no runs yet — cargo xtask test 会写入 {}/",
+            runs_root(&cfg.project_root).display()
+        );
         return Ok(0);
     }
-    println!("{:<22} {:<8} {:<12} {:>5} {:>8}  TESTS", "RUN", "ARCH", "VERDICT", "EXIT", "DUR");
+    println!(
+        "{:<22} {:<8} {:<12} {:>5} {:>8}  TESTS",
+        "RUN", "ARCH", "VERDICT", "EXIT", "DUR"
+    );
     for d in &dirs {
         let (arch, verdict, exit, dur, tests) = match load_verdict_or_parse(d) {
             Ok(r) => (
                 r.arch,
                 r.verdict.as_str().to_string(),
-                r.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "-".into()),
+                r.exit_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "-".into()),
                 format!("{:.1}s", r.duration_ms as f64 / 1000.0),
-                format!("{}/{} passed", r.summary.pass, r.summary.reported_total.unwrap_or(0)),
+                format!(
+                    "{}/{} passed",
+                    r.summary.pass,
+                    r.summary.reported_total.unwrap_or(0)
+                ),
             ),
             Err(_) => (
                 "?".into(),
@@ -143,7 +173,9 @@ pub fn run_runs(cfg: &Config, json: bool) -> anyhow::Result<i32> {
         };
         println!(
             "{:<22} {:<8} {:<12} {:>5} {:>8}  {}",
-            d.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+            d.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
             arch,
             verdict,
             exit,
@@ -166,7 +198,11 @@ fn load_summaries(cfg: &Config) -> anyhow::Result<Vec<tracker::RunSummary>> {
     }
     Ok(dirs
         .into_iter()
-        .filter_map(|d| load_verdict_or_parse(&d).ok().map(tracker::RunSummary::from))
+        .filter_map(|d| {
+            load_verdict_or_parse(&d)
+                .ok()
+                .map(tracker::RunSummary::from)
+        })
         .collect())
 }
 
@@ -203,7 +239,11 @@ pub fn run_cluster(cfg: &Config, json: bool) -> anyhow::Result<i32> {
             i + 1,
             c.count,
             c.verdict,
-            if c.key.len() > 120 { format!("{}…", &c.key[..120]) } else { c.key.clone() }
+            if c.key.len() > 120 {
+                format!("{}…", &c.key[..120])
+            } else {
+                c.key.clone()
+            }
         );
         println!(
             "           first: {}  last: {}  arches: {}",
@@ -305,7 +345,9 @@ pub fn run_suggest(
     }
     println!(
         "  run: cargo xtask test --timeout 60 --arch {}",
-        cfg.arch().map(|a| a.name().to_string()).unwrap_or_else(|| "arm64".into())
+        cfg.arch()
+            .map(|a| a.name().to_string())
+            .unwrap_or_else(|| "arm64".into())
     );
     Ok(0)
 }

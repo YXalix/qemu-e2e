@@ -24,6 +24,8 @@ cargo xtask suggest [--diff f] # 补丁↔测试映射：git diff → 最小测�
 cargo xtask replay --log <f>   # 任意串口日志的离线标记协议断言
 cargo xtask shell [--kvm]      # 交互式 VM
 cargo xtask debug              # GDB stub :1234 挂起启动
+cargo xtask probe --cmd 'uname -a' [--cmd-file f] [--json]
+                               # AI 交互通道：virtio-serial agent 命令批（结构化事件流）
 cargo xtask verify --backend firecracker  # microVM preflight（test/shell 同参数）
 cargo xtask skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核树
 ```
@@ -36,12 +38,12 @@ AI 的标准验证循环：`verify → test → triage`。**判定以 triage 的
 | 领域 | 入口 | 说明 |
 |---|---|---|
 | CLI 入口 | `xtask/src/main.rs` | clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
-| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查）/ `build.rs`（build/busybox/disk/clean/skill）/ `vm.rs`（shell/debug/test/matrix）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers） |
+| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查）/ `build.rs`（build/busybox/disk/clean/skill）/ `vm.rs`（shell/debug/test/matrix）/ `probe.rs`（AI 交互通道）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers） |
 | 类型化配置 | `xtask/src/config.rs` | `.env` 兼容 + `virtuoso.toml` 覆盖层（诊断呈现在 `cli/diagnostics.rs`） |
 | 运行工件与分诊 | `xtask/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
 | 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
-| 构建器 | `crates/builder/src/` | busybox 四层供给 / modules.conf / C 用例 / **no_std Rust 用例** / cpio+ext4 组装 / verify 检查引擎 |
-| 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 与 run-qemu.sh 逐字对齐，QEMU=echo 可对照）/ `numa.rs` / `lib.rs`（`Backend` 枚举） |
+| 构建器 | `crates/builder/src/` | busybox 四层供给 / modules.conf / C 用例 / **no_std Rust 用例** / **tools 装载（musl 静态 → /bin）** / cpio+ext4 组装 / verify 检查引擎 |
+| 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 与 run-qemu.sh 逐字对齐，QEMU=echo 可对照；`agent_serial` = AI 通道，缺省关）/ `numa.rs` / `lib.rs`（`Backend` 枚举） |
 | 第二后端 | `crates/launcher/src/firecracker.rs` | microVM（x86_64/aarch64+KVM）：config JSON / API PUT 序列 / `preflight`+`preflight_checks`；`spawn_supervised` 一体登记监管 |
 | 判定引擎 | `crates/judge/src/` | `lib.rs`（标记协议 v1 解析 + `judge` 对账，panic 假通过防护）/ `report.rs`（verdict.json schema + `RunMeta`）/ `exit.rs`（**退出码语义唯一表**） |
 | 跨 run 语义 | `crates/tracker/src/lib.rs` | 失败指纹归一化/聚类/flaky/补丁映射/diff→路径；输入是最小摘要 `RunSummary`（`From<VerdictReport>` 投影），IO 在 runs 层 |
@@ -50,11 +52,13 @@ AI 的标准验证循环：`verify → test → triage`。**判定以 triage 的
 | VM 内 init | `infra/init`、`infra/init-initramfs` | PID 1 脚本；`/init-hooks.sh` 为 builder 注入点 |
 | C 用例 | `infra/testcases/` | `test_<name>.c` + CMakeLists；`-static` 冻结 |
 | Rust 用例 | `infra/testcases/rust/` | 独立 workspace：`testfw` no_std 框架 + 用例 crate；裸 syscall 静态 ELF；`/tests/` 自动发现 |
+| VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 `/bin/`，不进 `/tests/` 不参与判定 |
 | skill | `skills/kernel-dev/`、`skills/kernel-virtuoso/` | `cargo xtask skill install` 装入内核树（后者 = AI 数据接口集成） |
 
 ## 运行工件（AI 分诊数据源）
 
-每次 `cargo xtask test` / `matrix` 写入 `target/runs/<unix_ms>-<arch>/`（保留最近 20 次）：
+每次 `cargo xtask test` / `matrix` 写入 `target/runs/<unix_ms>-<arch>/`（保留最近 20 次；
+`probe` 也写 run 目录，内容为 `serial.log` + `qemu-stderr.log` + `agent-events.jsonl`，无 verdict）：
 
 | 文件 | 内容 |
 |---|---|

@@ -28,5 +28,7 @@ pub fn read_magic(p: &Path) -> std::io::Result<[u8; 4]> {
 
 /// 文件是否以 \x7fELF 魔数开头（读取失败一律视为否）。
 pub fn is_elf(p: &Path) -> bool {
-    read_magic(p).map(|m| m == [0x7f, b'E', b'L', b'F']).unwrap_or(false)
+    read_magic(p)
+        .map(|m| m == [0x7f, b'E', b'L', b'F'])
+        .unwrap_or(false)
 }

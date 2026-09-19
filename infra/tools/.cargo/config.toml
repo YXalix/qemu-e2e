@@ -1,0 +1,5 @@
+# tools workspace 构建约定：
+# - musl 目标的 crt-static 是默认行为，无需额外 rustflags；
+# - rustc 对 musl 目标自含链接（随分发的 musl libc.a + rust-lld），宿主
+#   不需要 musl 交叉工具链，只需要 `rustup target add <triple>`；
+# - 交叉目标由 builder::tools 以 --target 显式传入，这里不固定 default-target。

@@ -79,6 +79,25 @@ enum Command {
         #[command(subcommand)]
         action: SkillAction,
     },
+    /// AI probe：经 virtio-serial agent 下发命令批，结构化事件流回吐
+    /// （tools/virtuoso-agent 通道；AI 交互入口，退出码语义 0/1/124）
+    Probe {
+        /// 覆盖目标架构（透传为 ARCH 环境变量）
+        #[arg(long)]
+        arch: Option<String>,
+        /// 墙钟总超时秒数（含 TCG 引导与握手；0 一律拒绝）
+        #[arg(long)]
+        timeout: Option<u64>,
+        /// 要执行的 shell 命令（可重复）
+        #[arg(long = "cmd")]
+        cmds: Vec<String>,
+        /// 命令清单文件（每行一条，# 注释）
+        #[arg(long = "cmd-file")]
+        cmd_file: Option<PathBuf>,
+        /// 机器可读 JSON 输出（事件行原样透传，供 AI 管道消费）
+        #[arg(long)]
+        json: bool,
+    },
     /// 多架构矩阵批量测试（Phase 2：launcher）
     Matrix {
         /// 目标架构；缺省为三架构全矩阵

@@ -79,8 +79,10 @@ pub fn normalize_line(line: &str) -> String {
             if let Some(close) = rest.find(']') {
                 let inner = &rest[1..close];
                 let trimmed = inner.trim();
-                let looks_like_ts =
-                    trimmed.contains('.') && trimmed.chars().all(|ch| ch.is_ascii_digit() || ch == '.' || ch == ' ');
+                let looks_like_ts = trimmed.contains('.')
+                    && trimmed
+                        .chars()
+                        .all(|ch| ch.is_ascii_digit() || ch == '.' || ch == ' ');
                 if looks_like_ts {
                     for _ in 0..close {
                         chars.next();
@@ -135,7 +137,10 @@ pub fn fingerprint_of(run: &RunSummary) -> Option<Fingerprint> {
     } else {
         run.verdict.clone()
     };
-    Some(Fingerprint { verdict: run.verdict.clone(), key })
+    Some(Fingerprint {
+        verdict: run.verdict.clone(),
+        key,
+    })
 }
 
 // ---------------------------------------------------------------- 聚类
@@ -158,7 +163,9 @@ pub struct Cluster {
 pub fn cluster(runs: &[RunSummary]) -> Vec<Cluster> {
     let mut buckets: Vec<Cluster> = Vec::new();
     for run in runs {
-        let Some(fp) = fingerprint_of(run) else { continue };
+        let Some(fp) = fingerprint_of(run) else {
+            continue;
+        };
         if let Some(c) = buckets.iter_mut().find(|c| c.key == fp.key) {
             c.count += 1;
             c.run_ids.push(run.run_id.clone());
@@ -207,7 +214,11 @@ pub fn flaky_tests(runs: &[RunSummary]) -> Vec<Flaky> {
             continue;
         }
         for (name, status) in &run.tests {
-            let bucket = if status == "pass" { &mut passed } else { &mut failed };
+            let bucket = if status == "pass" {
+                &mut passed
+            } else {
+                &mut failed
+            };
             match bucket.iter_mut().find(|(n, _)| n == name) {
                 Some((_, ids)) => {
                     if !ids.contains(&run.run_id) {
@@ -224,7 +235,11 @@ pub fn flaky_tests(runs: &[RunSummary]) -> Vec<Flaky> {
             failed
                 .iter()
                 .find(|(n, _)| *n == name)
-                .map(|(_, failed_in)| Flaky { test: name, passed_in, failed_in: failed_in.clone() })
+                .map(|(_, failed_in)| Flaky {
+                    test: name,
+                    passed_in,
+                    failed_in: failed_in.clone(),
+                })
         })
         .collect();
     out.sort_by(|a, b| a.test.cmp(&b.test));
@@ -244,16 +259,56 @@ pub struct Rule {
 
 /// 缺省映射表（覆盖常见内核子系统；未命中 → 全量回归）。
 pub const DEFAULT_RULES: &[Rule] = &[
-    Rule { path_prefix: "mm/", subsystem: "memory management", tests: &["test-example", "test-rs-example"] },
-    Rule { path_prefix: "kernel/sched/", subsystem: "scheduler", tests: &["test-example", "test-rs-example"] },
-    Rule { path_prefix: "fs/", subsystem: "filesystem / vfs", tests: &["test-example", "test-rs-example"] },
-    Rule { path_prefix: "drivers/virtio/", subsystem: "virtio drivers", tests: &["test-example", "test-rs-example"] },
-    Rule { path_prefix: "drivers/nvme/", subsystem: "nvme driver", tests: &["test-example", "test-rs-example"] },
-    Rule { path_prefix: "drivers/vfio/", subsystem: "vfio passthrough", tests: &["test-example", "test-rs-example"] },
-    Rule { path_prefix: "arch/arm64/", subsystem: "arm64 platform", tests: &["test-example", "test-rs-example"] },
-    Rule { path_prefix: "arch/x86/", subsystem: "x86_64 platform", tests: &["test-example", "test-rs-example"] },
-    Rule { path_prefix: "arch/riscv/", subsystem: "riscv64 platform", tests: &["test-example", "test-rs-example"] },
-    Rule { path_prefix: "include/", subsystem: "core headers (conservative)", tests: &["test-example", "test-rs-example"] },
+    Rule {
+        path_prefix: "mm/",
+        subsystem: "memory management",
+        tests: &["test-example", "test-rs-example"],
+    },
+    Rule {
+        path_prefix: "kernel/sched/",
+        subsystem: "scheduler",
+        tests: &["test-example", "test-rs-example"],
+    },
+    Rule {
+        path_prefix: "fs/",
+        subsystem: "filesystem / vfs",
+        tests: &["test-example", "test-rs-example"],
+    },
+    Rule {
+        path_prefix: "drivers/virtio/",
+        subsystem: "virtio drivers",
+        tests: &["test-example", "test-rs-example"],
+    },
+    Rule {
+        path_prefix: "drivers/nvme/",
+        subsystem: "nvme driver",
+        tests: &["test-example", "test-rs-example"],
+    },
+    Rule {
+        path_prefix: "drivers/vfio/",
+        subsystem: "vfio passthrough",
+        tests: &["test-example", "test-rs-example"],
+    },
+    Rule {
+        path_prefix: "arch/arm64/",
+        subsystem: "arm64 platform",
+        tests: &["test-example", "test-rs-example"],
+    },
+    Rule {
+        path_prefix: "arch/x86/",
+        subsystem: "x86_64 platform",
+        tests: &["test-example", "test-rs-example"],
+    },
+    Rule {
+        path_prefix: "arch/riscv/",
+        subsystem: "riscv64 platform",
+        tests: &["test-example", "test-rs-example"],
+    },
+    Rule {
+        path_prefix: "include/",
+        subsystem: "core headers (conservative)",
+        tests: &["test-example", "test-rs-example"],
+    },
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -300,7 +355,10 @@ mod tests {
             run_id: id.into(),
             arch: "arm64".into(),
             verdict: verdict.into(),
-            tests: tests.iter().map(|(n, s)| (n.to_string(), s.to_string())).collect(),
+            tests: tests
+                .iter()
+                .map(|(n, s)| (n.to_string(), s.to_string()))
+                .collect(),
             panics: vec![],
             oops: vec![],
         }
@@ -331,7 +389,12 @@ mod tests {
         let fp = fingerprint_of(&run("r1", "timeout", &[])).unwrap();
         assert_eq!(fp.key, "timeout");
 
-        let fp = fingerprint_of(&run("r2", "failed", &[("t_a", "fail"), ("t_ok", "pass"), ("t_b", "fail")])).unwrap();
+        let fp = fingerprint_of(&run(
+            "r2",
+            "failed",
+            &[("t_a", "fail"), ("t_ok", "pass"), ("t_b", "fail")],
+        ))
+        .unwrap();
         assert_eq!(fp.key, "failed tests: t_a, t_b");
     }
 
@@ -393,11 +456,17 @@ mod tests {
 
     #[test]
     fn suggest_maps_and_orders_by_prefix_length() {
-        let files = vec!["mm/hugetlb.c".to_string(), "drivers/virtio/virtio_blk.c".to_string()];
+        let files = vec![
+            "mm/hugetlb.c".to_string(),
+            "drivers/virtio/virtio_blk.c".to_string(),
+        ];
         let s = suggest_tests(&files, DEFAULT_RULES);
         assert_eq!(s.len(), 2);
         assert_eq!(s[0].matched_prefix, "drivers/virtio/");
-        assert_eq!(s[0].changed_files, vec!["drivers/virtio/virtio_blk.c".to_string()]);
+        assert_eq!(
+            s[0].changed_files,
+            vec!["drivers/virtio/virtio_blk.c".to_string()]
+        );
         assert!(!s[0].tests.is_empty());
     }
 

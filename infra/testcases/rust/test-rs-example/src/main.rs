@@ -11,7 +11,10 @@ use testfw::{run_and_exit, TestCase};
 
 fn basic_functionality() -> bool {
     testfw::check!(1 + 1 == 2, "Basic arithmetic works");
-    testfw::check!(core::mem::size_of::<usize>() >= 4, "usize is at least 32-bit")
+    testfw::check!(
+        core::mem::size_of::<usize>() >= 4,
+        "usize is at least 32-bit"
+    )
 }
 
 fn no_panic_under_alloc_free_env() -> bool {
@@ -23,7 +26,10 @@ fn no_panic_under_alloc_free_env() -> bool {
 
 static TESTS: &[TestCase] = &[
     ("basic_functionality", basic_functionality),
-    ("no_panic_under_alloc_free_env", no_panic_under_alloc_free_env),
+    (
+        "no_panic_under_alloc_free_env",
+        no_panic_under_alloc_free_env,
+    ),
 ];
 
 #[no_mangle]

@@ -56,8 +56,14 @@ pub fn shell_quote(arg: &str) -> String {
 
 /// `qemu-system-<arch> --version` 首行（verdict 运行指纹用）。
 pub fn qemu_version(arch: Arch) -> Option<String> {
-    let out = Command::new(arch.qemu_bin()).arg("--version").output().ok()?;
-    String::from_utf8_lossy(&out.stdout).lines().next().map(str::to_string)
+    let out = Command::new(arch.qemu_bin())
+        .arg("--version")
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -67,7 +73,10 @@ mod tests {
     #[test]
     fn shell_quote_safe_chars_verbatim_spaces_quoted() {
         assert_eq!(shell_quote("virt"), "virt");
-        assert_eq!(shell_quote("file=a.img,format=raw"), "file=a.img,format=raw");
+        assert_eq!(
+            shell_quote("file=a.img,format=raw"),
+            "file=a.img,format=raw"
+        );
         assert_eq!(shell_quote("/tmp/a b.img"), "'/tmp/a b.img'");
         assert_eq!(shell_quote("a'b"), "'a'\\''b'");
         assert_eq!(shell_quote(""), "''");
