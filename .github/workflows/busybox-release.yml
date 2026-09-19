@@ -11,13 +11,12 @@ name: busybox-release
 #   2. 或推送 tag：git tag busybox-v1.36.1 && git push origin busybox-v1.36.1
 # 产物（assets，每架构两个）：
 #   busybox-<version>-linux-<arch>                裸静态二进制
-#   rootfs-<version>-linux-<arch>.cpio.gz         通用 busybox rootfs（/init 为
-#                                                 console 交互 shell，不含任何
-#                                                 测试内容）
+#   rootfs-<version>-linux-<arch>.cpio.gz         通用 busybox rootfs
+# rootfs 的 /init 是冻结在下方 workflow 里的两行事（挂载 + shell），不引用
+# 任何仓库脚本 —— 资产内容只随 busybox 版本变化，仓库迭代不触发重发。
+# 测试专属内容（测试 init、/tests、modules.conf）一律不进 release，
+# 由 infra/build-initrd.sh 在本地构建时注入。
 # rootfs 可直接 cpio 解包使用，或经 infra/cpio2ext4.sh 转成 ext4 磁盘镜像。
-# 两阶段启动（initramfs 加载模块 → switch_root 到 rootfs）的完整组装见
-# infra/build-initrd.sh；本仓库测试专属的 /tests 与测试 init 由本地构建
-# 注入，不进 release。
 # 宿主侧下载：见 infra/fetch-busybox.sh 与 .env.example。
 
 on:
@@ -113,8 +112,20 @@ jobs:
               ln -sf busybox "${root}/bin/${applet}"
             done < /tmp/applets.txt
 
-            # 通用 /init：console 交互 shell，与测试解耦
-            cp "${GITHUB_WORKSPACE}/infra/init-rootfs" "${root}/init"
+            # 冻结的通用 /init：刻意不引用仓库脚本（如 infra/init-rootfs），
+            # 保证 release 资产不随仓库迭代变化。测试场景在本地构建时
+            # 用自己的 init 覆盖 /init。
+            cat > "${root}/init" <<'EOF'
+            #!/bin/sh
+            # Frozen generic rootfs init — interactive shell on console.
+            # Kept verbatim here so release assets depend only on the busybox version.
+            mount -t proc none /proc 2>/dev/null
+            mount -t sysfs none /sys 2>/dev/null
+            mount -t devtmpfs none /dev 2>/dev/null
+            mkdir -p /dev/pts /dev/shm 2>/dev/null
+            mount -t devpts devpts /dev/pts 2>/dev/null
+            exec setsid cttyhack /bin/sh
+            EOF
             chmod 755 "${root}/init"
 
             printf 'root:x:0:0:root:/root:/bin/sh\n' > "${root}/etc/passwd"

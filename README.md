@@ -105,8 +105,8 @@ Cross-compile freely (e.g. `ARCH=x86_64` on an arm64 host) — `make verify` war
 
 Boot is two-stage:
 
-1. **initramfs** (`initrd.img`, PID 1 = `infra/init-initramfs`) — mounts `proc`/`sysfs`/`devtmpfs`, insmods every module from `modules.conf` in order (drivers + ext4, modules stay resident across the pivot), then mounts `root=` and `switch_root`s into it.
-2. **rootfs** (`rootfs.img`, PID 1 = `infra/init`) — remounts the pseudo-filesystems idempotently, then either drops to a shell (interactive) or executes every binary in `/tests/` and powers off (auto-test).
+1. **initramfs** (`initrd.img`, PID 1 = `infra/init-initramfs`) — one job: make `root=` mountable. Mounts `proc`/`sysfs`/`devtmpfs` (+ device-node fallbacks for kernels with quirky devtmpfs), insmods the **boot-critical** modules from `modules-boot.conf` (virtio + ext4 and deps), then mounts `root=` and `switch_root`s into it.
+2. **rootfs** (`rootfs.img`, PID 1 = `infra/init`) — remounts pseudo-filesystems idempotently, insmods the **test** modules from `modules.conf` (now living in the rootfs at `/lib/modules/`), then either drops to a shell (interactive) or executes every binary in `/tests/` and powers off (auto-test).
 
 ## Makefile targets
 
@@ -139,8 +139,8 @@ kernel/                              # Linux kernel source tree
         ├── verify.sh                # prerequisite checker
         ├── run-qemu.sh              # QEMU launcher (multi-arch / KVM / GDB / NVMe)
         ├── build-initrd.sh          # BusyBox + modules → initrd.img; BusyBox + tests → rootfs.img
-        ├── init-initramfs           # stage-1 PID 1: insmod all, mount root=, switch_root
-        ├── init-rootfs              # generic rootfs init (release default, shell on console)
+        ├── init-initramfs           # stage-1 PID 1: insmod boot modules, mount root=, switch_root
+        ├── modules-boot.conf        # boot-critical modules only (virtio, ext4 + deps) → initramfs
         ├── init                     # test PID 1 (injected into rootfs.img; auto_test or shell)
         ├── cpio2ext4.sh             # convert a release rootfs cpio.gz into an auto-sized ext4 img
         ├── modules.conf             # one module per line, optional load-time params
@@ -221,7 +221,7 @@ When auto-testing, look for:
 
 ## Loading kernel modules
 
-`infra/modules.conf` is read by `build-initrd.sh` (to copy `.ko` files into the initramfs) and `init-initramfs` (to `insmod` them before the pivot). Format: one module per line, `#` for comments, tokens after the name passed verbatim to `insmod`. Boot-critical modules for the rootfs mount (`virtio_blk`, `ext4`, ...) live here too.
+`infra/modules-boot.conf` (boot-critical: virtio/ext4) is copied into the initramfs and insmodded by `init-initramfs` before the pivot. `infra/modules.conf` (test modules, e.g. NVMe) is copied into `rootfs.img /lib/modules/` and insmodded by the test init after the pivot — adding a test module never changes `initrd.img`. Both: one module per line, `#` for comments, tokens after the name passed verbatim to `insmod`.
 
 ```
 # dependencies first — there is no auto-resolution
@@ -248,7 +248,7 @@ mount -t hugetlbfs nodev /mnt/huge
 echo 20 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
 ```
 
-After editing `init` (test stage), `init-initramfs` (module/pivot stage) or `init-rootfs`, rebuild the boot pair:
+After editing `init` (test stage) or `init-initramfs` (pivot stage), rebuild the boot pair:
 
 ```bash
 make initrd && make qemu-test QEMU_TIMEOUT=30

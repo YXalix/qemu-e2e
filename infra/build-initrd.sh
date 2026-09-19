@@ -98,23 +98,22 @@ copy_module() {
     fi
 }
 
-# Copy every module listed in modules.conf into <dest> and keep the conf
+# Copy every module listed in <conf> into <dest> and keep the conf alongside
 copy_modules() {
-    local dest="$1"
+    local dest="$1" conf="$2"
     mkdir -p "${dest}"
-    local MODULES_CONF="${SCRIPT_DIR}/modules.conf"
-    if [ -f "$MODULES_CONF" ]; then
-        echo "Copying kernel modules..."
+    if [ -f "$conf" ]; then
+        echo "Copying kernel modules from $(basename "$conf")..."
         local line mod_name
         while IFS= read -r line || [ -n "$line" ]; do
             [ -z "$line" ] && continue
             [ "${line#\#}" != "$line" ] && continue
             mod_name="${line%% *}"
             copy_module "${dest}" "$mod_name"
-        done < "$MODULES_CONF"
-        cp "$MODULES_CONF" "${dest}/modules.conf"
+        done < "$conf"
+        cp "$conf" "${dest}/$(basename "$conf")"
     else
-        echo "  WARNING: modules.conf not found, booting without extra modules"
+        echo "  WARNING: $(basename "$conf") not found, skipping its modules"
     fi
 }
 
@@ -150,7 +149,9 @@ assemble_busybox_tree "${INITRAMFS_DIR}"
 cp "${SCRIPT_DIR}/init-initramfs" "${INITRAMFS_DIR}/init"
 chmod 755 "${INITRAMFS_DIR}/init"
 mkdir -p "${INITRAMFS_DIR}/mnt" "${INITRAMFS_DIR}/lib/modules"
-copy_modules "${INITRAMFS_DIR}/lib/modules"
+# Only boot-critical modules go into the initramfs (test modules live on
+# the rootfs and are loaded after the pivot — keeps initrd.img stable).
+copy_modules "${INITRAMFS_DIR}/lib/modules" "${SCRIPT_DIR}/modules-boot.conf"
 
 (cd "${INITRAMFS_DIR}" && find . -print0 | cpio --null -o -H newc 2>/dev/null) \
     | gzip -9 > "${INITRD_FILE}"
@@ -160,6 +161,9 @@ echo "Building rootfs.img (ext4 rootfs)..."
 assemble_busybox_tree "${ROOTFS_DIR}"
 cp "${SCRIPT_DIR}/init" "${ROOTFS_DIR}/init"
 chmod 755 "${ROOTFS_DIR}/init"
+mkdir -p "${ROOTFS_DIR}/lib/modules"
+# Test modules ride on the rootfs; the test init insmods them post-pivot.
+copy_modules "${ROOTFS_DIR}/lib/modules" "${SCRIPT_DIR}/modules.conf"
 install_testcases "${ROOTFS_DIR}"
 
 ROOTFS_SIZE_MB=$(( $(du -sm "${ROOTFS_DIR}" | cut -f1) + 2 ))

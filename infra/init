@@ -6,6 +6,49 @@
 # Configuration
 #==========================================
 TESTS_DIR="/tests"
+MODULES_DIR="/lib/modules"
+
+#==========================================
+# Module Management
+#==========================================
+
+# Load a single module with optional args.
+# Usage: mod_load <module> [key=val ...]
+mod_load() {
+    local mod="$1"
+    shift
+    local err
+    err=$(insmod "$MODULES_DIR/${mod}.ko" "$@" 2>&1) && return 0
+    LOG_ERROR "insmod ${mod}.ko $*: $err"
+    return 1
+}
+
+# Load all modules from modules.conf.
+# Each line is "<module> [key=val ...]" — extra tokens are passed to insmod.
+load_modules() {
+    LOG_INFO "Loading kernel modules..."
+
+    local loaded=0
+    local conf="${MODULES_DIR}/modules.conf"
+
+    if [ ! -f "$conf" ]; then
+        LOG_WARN "modules.conf not found, skipping"
+        return
+    fi
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        [ "${line#\#}" != "$line" ] && continue
+        # Split into module name + optional args.
+        # shellcheck disable=SC2086
+        set -- $line
+        if mod_load "$@"; then
+            loaded=$((loaded + 1))
+        fi
+    done < "$conf"
+
+    LOG_INFO "Modules: $loaded loaded"
+}
 
 #==========================================
 # Helper Functions
@@ -131,8 +174,8 @@ main() {
     # Mount filesystems
     mount_filesystems
 
-    # (Kernel modules are loaded by the initramfs stage-1 init
-    #  (infra/init-initramfs) before switch_root — see modules.conf.)
+    # Load test modules (boot-critical ones were loaded by the initramfs)
+    load_modules
 
     # Show status
     print_status
