@@ -1,11 +1,16 @@
 name: busybox-release
 
 # 预编译静态 BusyBox（arm64 / x86_64 / riscv64）并发布到 GitHub Release。
-# 产物命名：busybox-<version>-linux-<arch>
+#
+# 构建环境钉死在 ubuntu:22.04 容器：busybox 1.36.1 的 tc applet 无法在
+# 内核头文件 >= 6.8 下编译，且交叉 gcc 的头文件搜索行为随发行版漂移；
+# 容器化保证三架构构建可复现。
+#
 # 使用方式：
 #   1. workflow_dispatch 手动触发（默认 1.36.1）；
 #   2. 或推送 tag：git tag busybox-v1.36.1 && git push origin busybox-v1.36.1
-# 宿主侧通过 .env 的 BUSYBOX_RELEASE_REPO / BUSYBOX_DL_URL 下载（见 .env.example）。
+# 产物（assets）：busybox-<version>-linux-{arm64,x86_64,riscv64}
+# 宿主侧下载：见 infra/fetch-busybox.sh 与 .env.example。
 
 on:
   workflow_dispatch:
@@ -22,101 +27,76 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: busybox ${{ matrix.arch }}
+  build-and-release:
+    name: build & publish
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            cross: ''
-            pkgs: ''
-          - arch: arm64
-            cross: 'aarch64-linux-gnu-'
-            pkgs: gcc-aarch64-linux-gnu
-          - arch: riscv64
-            cross: 'riscv64-linux-gnu-'
-            pkgs: gcc-riscv64-linux-gnu
+    container:
+      image: ubuntu:22.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION_RAW: ${{ inputs.busybox_version || github.ref_name }}
     steps:
+      - name: Install toolchain
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            wget tar bzip2 gzip file make gcc libc6-dev curl ca-certificates \
+            gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
+
       - name: Resolve version
-        id: ver
         run: |
-          if [ -n "${{ inputs.busybox_version }}" ]; then
-            V="${{ inputs.busybox_version }}"
+          VERSION="${VERSION_RAW#busybox-v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "Building BusyBox ${VERSION} for x86_64 / arm64 / riscv64"
+
+      - name: Build static busybox (3 arches)
+        run: |
+          set -e
+          cd /tmp
+          wget -q "https://busybox.net/downloads/busybox-${VERSION}.tar.bz2"
+          tar xf "busybox-${VERSION}.tar.bz2"
+          cd "busybox-${VERSION}"
+
+          build_one() {
+            local arch="$1" cross="$2"
+            make -s clean >/dev/null 2>&1 || true
+            make defconfig CROSS_COMPILE="${cross}" >/dev/null
+            sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+            # tc applet 不进 initramfs；且无法在内核头文件 >= 6.8 下编译
+            sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config
+            make -j"$(nproc)" CROSS_COMPILE="${cross}" >/dev/null
+            file busybox | grep -qi 'statically linked' \
+              || { echo "ERROR: ${arch} busybox is not statically linked"; exit 1; }
+            cp busybox "/tmp/busybox-${VERSION}-linux-${arch}"
+            echo "OK: busybox-${VERSION}-linux-${arch}"
+          }
+
+          build_one x86_64 ""
+          build_one arm64  "aarch64-linux-gnu-"
+          build_one riscv64 "riscv64-linux-gnu-"
+          ls -lh /tmp/busybox-*-linux-*
+
+      - name: Publish release (REST API)
+        run: |
+          set -e
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          AUTH="Authorization: Bearer ${GH_TOKEN}"
+
+          # 幂等：release 已存在则复用，否则创建
+          REL=$(curl -fsSL -H "$AUTH" "${API}/releases/tags/busybox-v${VERSION}" 2>/dev/null || true)
+          if [ -z "$REL" ] || echo "$REL" | grep -q '"Not Found"'; then
+            curl -fsSL -X POST -H "$AUTH" -H "Accept: application/vnd.github+json" \
+              "${API}/releases" \
+              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static)\",\"body\":\"Statically-linked BusyBox ${VERSION} for the qemu-e2e / Virtuoso initramfs (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\"}" \
+              > /tmp/rel.json
           else
-            V="${GITHUB_REF_NAME#busybox-v}"
+            echo "$REL" > /tmp/rel.json
           fi
-          echo "version=$V" >> "$GITHUB_OUTPUT"
 
-      - name: Install cross toolchain
-        if: matrix.pkgs != ''
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ${{ matrix.pkgs }}
-
-      - name: Download BusyBox source
-        run: |
-          V="${{ steps.ver.outputs.version }}"
-          wget -q "https://busybox.net/downloads/busybox-${V}.tar.bz2"
-          tar xf "busybox-${V}.tar.bz2"
-
-      - name: Build static busybox
-        run: |
-          V="${{ steps.ver.outputs.version }}"
-          cd "busybox-${V}"
-          make defconfig CROSS_COMPILE="${{ matrix.cross }}"
-          sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
-          # tc applet cannot build against kernel headers >= 6.8
-          # (struct tc_cbq_wrropt removed from public headers); not needed in initramfs
-          sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config
-          make -j"$(nproc)" CROSS_COMPILE="${{ matrix.cross }}"
-          # 静态链接是硬性要求：VM 内无动态加载器
-          file busybox | grep -qi 'statically linked' \
-            || { echo "ERROR: busybox is not statically linked"; exit 1; }
-          cp busybox "../busybox-${V}-linux-${{ matrix.arch }}"
-
-      - name: Sanity check
-        run: |
-          file "busybox-${{ steps.ver.outputs.version }}-linux-${{ matrix.arch }}"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: busybox-linux-${{ matrix.arch }}
-          path: busybox-*-linux-*
-
-  release:
-    name: publish release
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Resolve version
-        id: ver
-        run: |
-          if [ -n "${{ inputs.busybox_version }}" ]; then
-            V="${{ inputs.busybox_version }}"
-          else
-            V="${GITHUB_REF_NAME#busybox-v}"
-          fi
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
-          path: dist
-
-      - name: Publish release (gh CLI)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          TAG="busybox-v${VERSION}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
-          else
-            gh release create "$TAG" dist/* \
-              --title "BusyBox ${VERSION} (static)" \
-              --notes "Statically-linked BusyBox ${VERSION} for the qemu-e2e / Virtuoso initramfs (defconfig + CONFIG_STATIC=y). Assets: busybox-${VERSION}-linux-{arm64,x86_64,riscv64}"
-          fi
+          UPLOAD_URL=$(sed -n 's/.*"upload_url": *"\([^"]*\)".*/\1/p' /tmp/rel.json | sed 's/{.*}//')
+          for f in /tmp/busybox-*-linux-*; do
+            echo "Uploading $(basename "$f")"
+            curl -fsSL -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \
+              "${UPLOAD_URL}?name=$(basename "$f")" --data-binary "@$f" > /dev/null
+          done
+          echo "Release ready: https://github.com/${GITHUB_REPOSITORY}/releases/tag/busybox-v${VERSION}"
