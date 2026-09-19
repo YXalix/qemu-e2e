@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "xtask",
+    "crates/overture",
+    "crates/ensemble",
+    "crates/auditor",
+    "crates/coda",
+    "crates/encore",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"

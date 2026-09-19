@@ -17,3 +17,5 @@ infra/testcases/compile_commands.json
 **.o
 **.ko
 **.order
+# Rust build artifacts
+/target
