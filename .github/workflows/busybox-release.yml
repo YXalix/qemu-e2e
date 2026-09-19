@@ -9,7 +9,12 @@ name: busybox-release
 # 使用方式：
 #   1. workflow_dispatch 手动触发（默认 1.36.1）；
 #   2. 或推送 tag：git tag busybox-v1.36.1 && git push origin busybox-v1.36.1
-# 产物（assets）：busybox-<version>-linux-{arm64,x86_64,riscv64}
+# 产物（assets，每架构三个）：
+#   busybox-<version>-linux-<arch>                裸静态二进制
+#   rootfs-<version>-linux-<arch>.cpio.gz         initramfs，qemu -initrd 直接可用
+#   rootfs-<version>-linux-<arch>.ext4.img        ext4 磁盘镜像，qemu -drive/-root 可用
+# rootfs 内含 busybox 全量 applet 符号链接、/init（infra/init）、/tests、
+# /lib/modules 目录骨架，下载后无需再加工即可启动。
 # 宿主侧下载：见 infra/fetch-busybox.sh 与 .env.example。
 
 on:
@@ -36,11 +41,15 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       VERSION_RAW: ${{ inputs.busybox_version || github.ref_name }}
     steps:
+      - name: Checkout (for infra/init)
+        uses: actions/checkout@v4
+
       - name: Install toolchain
         run: |
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            wget tar bzip2 gzip file make gcc libc6-dev curl ca-certificates \
+            wget tar bzip2 gzip file make gcc libc6-dev curl ca-certifications \
+            cpio e2fsprogs jq \
             gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu \
             libc6-dev-arm64-cross libc6-dev-riscv64-cross
 
@@ -50,7 +59,7 @@ jobs:
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           echo "Building BusyBox ${VERSION} for x86_64 / arm64 / riscv64"
 
-      - name: Build static busybox (3 arches)
+      - name: Build static busybox + rootfs (3 arches)
         run: |
           set -e
           cd /tmp
@@ -77,6 +86,49 @@ jobs:
           build_one riscv64 "riscv64-linux-gnu-"
           ls -lh /tmp/busybox-*-linux-*
 
+      - name: Assemble rootfs images (cpio.gz + ext4, 3 arches)
+        run: |
+          set -e
+          cd /tmp
+          # 三架构同为 defconfig，applet 集合一致；交叉二进制无法在 runner 上
+          # 执行（--install 需要 exec），所以用 x86_64 构建取 applet 列表。
+          ./busybox-${VERSION}-linux-x86_64 --list > /tmp/applets.txt
+
+          make_rootfs() {
+            local arch="$1" root="/tmp/rootfs-${arch}"
+            rm -rf "${root}"
+            mkdir -p "${root}"/{bin,sbin,lib/modules,usr/bin,usr/sbin,proc,sys,dev,tmp,mnt,etc/init.d,var/run,root,tests}
+
+            cp "/tmp/busybox-${VERSION}-linux-${arch}" "${root}/bin/busybox"
+            chmod 755 "${root}/bin/busybox"
+            while read -r applet; do
+              ln -sf busybox "${root}/bin/${applet}"
+            done < /tmp/applets.txt
+
+            # 可直接启动：/init 来自仓库 infra/init
+            cp "${GITHUB_WORKSPACE}/infra/init" "${root}/init"
+            chmod 755 "${root}/init"
+
+            printf 'root:x:0:0:root:/root:/bin/sh\n' > "${root}/etc/passwd"
+            printf 'root:x:0:\n' > "${root}/etc/group"
+
+            # initramfs（qemu -initrd 直接可用）
+            (cd "${root}" && find . -print0 | cpio --null -o -H newc 2>/dev/null) \
+              | gzip -9 > "/tmp/rootfs-${VERSION}-linux-${arch}.cpio.gz"
+
+            # ext4 磁盘镜像（qemu -drive + root= 直接可用）
+            rm -f "/tmp/rootfs-${VERSION}-linux-${arch}.ext4.img"
+            mke2fs -q -F -t ext4 -L rootfs -d "${root}" \
+              "/tmp/rootfs-${VERSION}-linux-${arch}.ext4.img" 64M
+
+            echo "OK: rootfs-${VERSION}-linux-${arch} (.cpio.gz / .ext4.img)"
+          }
+
+          make_rootfs x86_64
+          make_rootfs arm64
+          make_rootfs riscv64
+          ls -lh /tmp/rootfs-${VERSION}-linux-*
+
       - name: Publish release (REST API)
         run: |
           set -e
@@ -88,16 +140,24 @@ jobs:
           if [ -z "$REL" ] || echo "$REL" | grep -q '"Not Found"'; then
             curl -fsSL -X POST -H "$AUTH" -H "Accept: application/vnd.github+json" \
               "${API}/releases" \
-              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static)\",\"body\":\"Statically-linked BusyBox ${VERSION} for the qemu-e2e / Virtuoso initramfs (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\"}" \
+              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static + rootfs)\",\"body\":\"BusyBox ${VERSION} for the Virtuoso initramfs (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\\n\\nEach arch ships: bare static busybox, ready-to-boot initramfs (rootfs-*.cpio.gz, use with qemu -initrd, init=/init included) and an ext4 rootfs image (rootfs-*.ext4.img, use with qemu -drive).\"}" \
               > /tmp/rel.json
           else
             echo "$REL" > /tmp/rel.json
           fi
 
           UPLOAD_URL=$(sed -n 's/.*"upload_url": *"\([^"]*\)".*/\1/p' /tmp/rel.json | sed 's/{.*}//')
-          for f in /tmp/busybox-*-linux-*; do
-            echo "Uploading $(basename "$f")"
+          REL_ID=$(sed -n 's/.*"id": *\([0-9][0-9]*\).*/\1/p' /tmp/rel.json | head -1)
+          for f in /tmp/busybox-*-linux-* /tmp/rootfs-*-linux-*; do
+            name=$(basename "$f")
+            # 幂等：同名旧 asset 先删除，避免重复上传 422
+            if [ -n "$REL_ID" ]; then
+              old_id=$(curl -fsSL -H "$AUTH" "${API}/releases/${REL_ID}/assets" \
+                | jq -r --arg n "$name" '.[] | select(.name == $n) | .id' || true)
+              [ -n "$old_id" ] && curl -fsSL -X DELETE -H "$AUTH" "${API}/releases/assets/${old_id}"
+            fi
+            echo "Uploading ${name}"
             curl -fsSL -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \
-              "${UPLOAD_URL}?name=$(basename "$f")" --data-binary "@$f" > /dev/null
+              "${UPLOAD_URL}?name=${name}" --data-binary "@$f" > /dev/null
           done
           echo "Release ready: https://github.com/${GITHUB_REPOSITORY}/releases/tag/busybox-v${VERSION}"
