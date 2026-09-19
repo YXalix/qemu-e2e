@@ -95,9 +95,15 @@ jobs:
           ./busybox-${VERSION}-linux-x86_64 --list > /tmp/applets.txt
 
           make_rootfs() {
-            local arch="$1" root="/tmp/rootfs-${arch}"
+            # GitHub Actions 用 dash 执行：local 不可同行互引、无花括号展开
+            local arch="$1"
+            local root="/tmp/rootfs-${arch}"
             rm -rf "${root}"
-            mkdir -p "${root}"/{bin,sbin,lib/modules,usr/bin,usr/sbin,proc,sys,dev,tmp,mnt,etc/init.d,var/run,root,tests}
+            mkdir -p "${root}/bin" "${root}/sbin" "${root}/lib/modules" \
+                     "${root}/usr/bin" "${root}/usr/sbin" "${root}/proc" \
+                     "${root}/sys" "${root}/dev" "${root}/tmp" "${root}/mnt" \
+                     "${root}/etc/init.d" "${root}/var/run" "${root}/root" \
+                     "${root}/tests"
 
             cp "/tmp/busybox-${VERSION}-linux-${arch}" "${root}/bin/busybox"
             chmod 755 "${root}/bin/busybox"
