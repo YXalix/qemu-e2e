@@ -7,10 +7,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROOTFS_DIR="${SCRIPT_DIR}/rootfs"
 INITRD_FILE="${SCRIPT_DIR}/initrd.img"
-BUSYBOX_VERSION="1.36.1"
-BUSYBOX_REPO="https://gitcode.com/gh_mirrors/bu/busybox.git"
-BUSYBOX_BRANCH="1_36_stable"
-BUSYBOX_DIR="${SCRIPT_DIR}/busybox/busybox"
 
 # Source .env from project root
 if [ -f "${PROJECT_ROOT}/.env" ]; then
@@ -30,6 +26,15 @@ if [ ! -d "${KERNEL_PATH}/arch" ]; then
     exit 1
 fi
 
+# Architecture resolution (same logic as run-qemu.sh)
+ARCH="${ARCH:-$(uname -m)}"
+case "$ARCH" in
+    aarch64|arm64)  ARCH="arm64" ;;
+    x86_64|amd64)   ARCH="x86_64" ;;
+    riscv64)        ARCH="riscv64" ;;
+    *) echo "ERROR: Unsupported ARCH=$ARCH"; exit 1 ;;
+esac
+
 echo "Building initrd.img..."
 
 # Create rootfs directory
@@ -41,24 +46,12 @@ cd "${ROOTFS_DIR}"
 mkdir -p bin sbin lib lib64 usr/bin usr/sbin proc sys dev tmp mnt \
          etc/init.d var/run root
 
-# Build BusyBox if needed
-if [ ! -f "${BUSYBOX_DIR}/busybox" ]; then
-    echo "Building BusyBox..."
-    mkdir -p "${SCRIPT_DIR}/busybox"
-    cd "${SCRIPT_DIR}/busybox"
-
-    if [ ! -d "${BUSYBOX_DIR}" ]; then
-        git clone --depth 1 --branch "${BUSYBOX_BRANCH}" "${BUSYBOX_REPO}" "${BUSYBOX_DIR}"
-    fi
-
-    cd "${BUSYBOX_DIR}"
-    make defconfig
-    sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
-    make -j$(nproc)
-fi
+# Ensure per-arch static BusyBox (release download first, source build fallback)
+"${SCRIPT_DIR}/fetch-busybox.sh"
+BUSYBOX_BIN="${SCRIPT_DIR}/busybox/bin/busybox-${ARCH}"
 
 # Copy BusyBox
-cp "${BUSYBOX_DIR}/busybox" "${ROOTFS_DIR}/bin/"
+cp "${BUSYBOX_BIN}" "${ROOTFS_DIR}/bin/"
 cd "${ROOTFS_DIR}/bin"
 ./busybox --install -s .
 

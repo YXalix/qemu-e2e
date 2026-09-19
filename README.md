@@ -100,7 +100,7 @@ Cross-compile freely (e.g. `ARCH=x86_64` on an arm64 host) — `make verify` war
 | Machine | `virt` (arm64/riscv64) / `q35` (x86_64) |
 | Console | Serial only (`-nographic -serial mon:stdio`) |
 | Block | Optional 512 MB NVMe (`disk.qcow2` → `/dev/nvme0n1`) |
-| Userland | BusyBox 1.36.1, statically built and cached after first run |
+| Userland | BusyBox 1.36.1, statically linked, per-arch binary cached under `infra/busybox/bin/` (prebuilt release download first, source-build fallback) |
 | Cmdline | `console=<serial> root=/dev/ram0 rw=1 init=/init loglevel=8 auto_test` |
 
 PID 1 is `infra/init`. It mounts `proc`, `sysfs`, `devtmpfs`, `tmpfs`, `debugfs`, `devpts`, `tmpfs`/shm; insmods every module from `modules.conf` in order; then either drops to a shell (interactive) or executes every binary in `/tests/` and powers off (auto-test).
@@ -110,6 +110,7 @@ PID 1 is `infra/init`. It mounts `proc`, `sysfs`, `devtmpfs`, `tmpfs`, `debugfs`
 | Target | Description |
 |---|---|
 | `make verify` | Validate prerequisites: `.env`, host tools, `KERNEL_PATH`, kernel image, QEMU, modules, BusyBox cache. |
+| `make busybox` | Ensure the per-arch static BusyBox: prebuilt download from release first, source-build fallback. |
 | `make initrd` | (Re)build `infra/initrd.img` from BusyBox + modules + tests. |
 | `make qemu` | Boot interactively; lands in a BusyBox shell. |
 | `make qemu-kvm` | Same, with KVM acceleration (host arch == target arch only). |

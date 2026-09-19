@@ -16,7 +16,7 @@ CLAUDE_SKILLS_DIR := $(KERNEL_PATH_ABS)/.claude/skills
 SKILL_NAME := kernel-dev
 SKILL_DST := $(CLAUDE_SKILLS_DIR)/$(SKILL_NAME)/SKILL.md
 
-.PHONY: all help verify qemu qemu-kvm qemu-debug disk initrd qemu-test clean install-skill uninstall-skill
+.PHONY: all help verify busybox qemu qemu-kvm qemu-debug disk initrd qemu-test clean install-skill uninstall-skill
 
 all: help
 
@@ -25,6 +25,7 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  verify        - Check prerequisites before building/running"
+	@echo "  busybox       - Ensure static BusyBox for ARCH (release download / source fallback)"
 	@echo "  qemu          - Start QEMU VM"
 	@echo "  qemu-kvm      - Start QEMU VM with KVM acceleration"
 	@echo "  qemu-debug    - Start QEMU with GDB stub"
@@ -48,6 +49,10 @@ help:
 
 verify:
 	@cd $(QEMU_TEST_DIR) && ./verify.sh
+
+busybox:
+	@echo "Ensuring per-arch static BusyBox (release download / source fallback)..."
+	@cd $(QEMU_TEST_DIR) && ./fetch-busybox.sh
 
 qemu:
 	@echo "Starting QEMU..."

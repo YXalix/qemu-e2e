@@ -1,0 +1,119 @@
+name: busybox-release
+
+# 预编译静态 BusyBox（arm64 / x86_64 / riscv64）并发布到 GitHub Release。
+# 产物命名：busybox-<version>-linux-<arch>
+# 使用方式：
+#   1. workflow_dispatch 手动触发（默认 1.36.1）；
+#   2. 或推送 tag：git tag busybox-v1.36.1 && git push origin busybox-v1.36.1
+# 宿主侧通过 .env 的 BUSYBOX_RELEASE_REPO / BUSYBOX_DL_URL 下载（见 .env.example）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      busybox_version:
+        description: 'BusyBox version (e.g. 1.36.1)'
+        required: false
+        default: '1.36.1'
+  push:
+    tags:
+      - 'busybox-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: busybox ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            cross: ''
+            pkgs: ''
+          - arch: arm64
+            cross: 'aarch64-linux-gnu-'
+            pkgs: gcc-aarch64-linux-gnu
+          - arch: riscv64
+            cross: 'riscv64-linux-gnu-'
+            pkgs: gcc-riscv64-linux-gnu
+    steps:
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ -n "${{ inputs.busybox_version }}" ]; then
+            V="${{ inputs.busybox_version }}"
+          else
+            V="${GITHUB_REF_NAME#busybox-v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Install cross toolchain
+        if: matrix.pkgs != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ${{ matrix.pkgs }}
+
+      - name: Download BusyBox source
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          wget -q "https://busybox.net/downloads/busybox-${V}.tar.bz2"
+          tar xf "busybox-${V}.tar.bz2"
+
+      - name: Build static busybox
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          cd "busybox-${V}"
+          make defconfig CROSS_COMPILE="${{ matrix.cross }}"
+          sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          make -j"$(nproc)" CROSS_COMPILE="${{ matrix.cross }}"
+          # 静态链接是硬性要求：VM 内无动态加载器
+          file busybox | grep -qi 'statically linked' \
+            || { echo "ERROR: busybox is not statically linked"; exit 1; }
+          cp busybox "../busybox-${V}-linux-${{ matrix.arch }}"
+
+      - name: Sanity check
+        run: |
+          file "busybox-${{ steps.ver.outputs.version }}-linux-${{ matrix.arch }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: busybox-linux-${{ matrix.arch }}
+          path: busybox-*-linux-*
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ -n "${{ inputs.busybox_version }}" ]; then
+            V="${{ inputs.busybox_version }}"
+          else
+            V="${GITHUB_REF_NAME#busybox-v}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+
+      - name: Publish release (gh CLI)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          TAG="busybox-v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "BusyBox ${VERSION} (static)" \
+              --notes "Statically-linked BusyBox ${VERSION} for the qemu-e2e / Virtuoso initramfs (defconfig + CONFIG_STATIC=y). Assets: busybox-${VERSION}-linux-{arm64,x86_64,riscv64}"
+          fi

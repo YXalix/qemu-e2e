@@ -204,12 +204,12 @@ fi
 #==========================================
 # 8. BusyBox
 #==========================================
-BUSYBOX_BIN="${SCRIPT_DIR}/busybox/busybox/busybox"
+BUSYBOX_BIN="${SCRIPT_DIR}/busybox/bin/busybox-${ARCH}"
 
-if [ -f "$BUSYBOX_BIN" ]; then
-    log_pass "BusyBox: built"
+if [ -x "$BUSYBOX_BIN" ]; then
+    log_pass "BusyBox: cached (${ARCH})"
 else
-    log_info "BusyBox: not cached (will clone on first build)"
+    log_info "BusyBox: not cached for ${ARCH} (release download on first build, source build fallback)"
 fi
 
 #==========================================
