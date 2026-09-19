@@ -29,6 +29,7 @@ esac
 DEFAULT_KERNEL="${KERNEL_PATH}/${KERNEL_IMG}"
 KERNEL="${1:-$DEFAULT_KERNEL}"
 INITRD="${SCRIPT_DIR}/initrd.img"
+ROOTFS="${SCRIPT_DIR}/rootfs.img"
 DISK="${SCRIPT_DIR}/disk.qcow2"
 
 # Default kernel if not provided
@@ -48,7 +49,16 @@ if [ ! -f "$INITRD" ]; then
     exit 1
 fi
 
-# Check for disk image - use NVMe SSD interface
+if [ ! -f "$ROOTFS" ]; then
+    echo "ERROR: Rootfs image not found at $ROOTFS"
+    echo "Run: make initrd  (to build rootfs.img)"
+    exit 1
+fi
+
+# System disk: ext4 rootfs on virtio (the initramfs switch_roots into it)
+ROOTFS_OPT="-drive file=$ROOTFS,format=raw,if=virtio"
+
+# Optional extra test disk - NVMe interface
 DISK_OPT=""
 if [ -f "$DISK" ]; then
     DISK_OPT="-blockdev driver=qcow2,file.driver=file,file.filename=$DISK,node-name=ssd0,discard=unmap,file.discard=unmap,file.locking=off "
@@ -136,8 +146,9 @@ echo "QEMU E2E Test Environment"
 echo "=========================================="
 echo "  Kernel: $KERNEL"
 echo "  Initrd: $INITRD"
+echo "  Rootfs: $ROOTFS (virtio system disk)"
 if [ -n "$DISK_OPT" ]; then
-    echo "  Disk:   $DISK (512MB NVMe block device)"
+    echo "  Disk:   $DISK (NVMe test disk)"
 fi
 echo "  Memory: $TOTAL_MEM (per-node: $NUMA_MEMORY x $NUMA_NODES)"
 echo "  CPUs: $SMP"
@@ -176,7 +187,8 @@ $QEMU_BIN \
     -m $TOTAL_MEM \
     -kernel "$KERNEL" \
     -initrd "$INITRD" \
-    -append "console=$CONSOLE_DEV root=/dev/ram0 rw=1 init=/init loglevel=8${AUTO_TEST_FLAG}" \
+    -append "console=$CONSOLE_DEV root=/dev/vda rw init=/init loglevel=8${AUTO_TEST_FLAG}" \
+    $ROOTFS_OPT \
     $DISK_OPT \
     ${QEMU_OPTS:-} \
     $CONSOLE \

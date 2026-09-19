@@ -1,0 +1,83 @@
+#!/bin/sh
+# Stage-1 init (initramfs): load modules, mount the real root, switch_root.
+#
+# Runs as /init inside the minimal initramfs built by infra/build-initrd.sh.
+# /lib/modules/ carries every .ko (boot-critical + test modules) plus
+# modules.conf ("<module> [key=val ...]" per line). Modules stay resident
+# across switch_root, so the rootfs needs none of them.
+#
+# Boot: kernel -append "root=/dev/vda ..." -initrd initrd.img
+# Then: exec switch_root /mnt /init  (the rootfs's own /init takes over)
+
+# Mount essential filesystems (initramfs stage; errors tolerated)
+mount -t proc none /proc 2>/dev/null
+mount -t sysfs none /sys 2>/dev/null
+mount -t devtmpfs none /dev 2>/dev/null
+mount -t tmpfs none /tmp 2>/dev/null
+
+# Some kernels (e.g. openEuler with CONFIG_DEVTMPFS_MOUNT) leave the
+# initramfs /dev empty even with devtmpfs mounted — repopulate from sysfs.
+[ -e /dev/console ] || mknod -m 600 /dev/console c 5 1 2>/dev/null
+[ -e /dev/null ] || mknod -m 666 /dev/null c 1 3 2>/dev/null
+mdev -s 2>/dev/null || true
+
+# Load every module from modules.conf before pivoting.
+# Boot-critical modules (virtio_blk, ext4, ...) must succeed for root= to
+# appear; test modules failing here are warnings, not fatal.
+if [ -f /lib/modules/modules.conf ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        [ "${line#\#}" != "$line" ] && continue
+        # shellcheck disable=SC2086
+        set -- $line
+        mod="$1"
+        shift
+        if [ -f "/lib/modules/${mod}.ko" ]; then
+            if insmod "/lib/modules/${mod}.ko" "$@" 2>/dev/null; then
+                echo "[initramfs] insmod ${mod}.ko OK"
+            else
+                echo "[initramfs] WARN: insmod ${mod}.ko $* failed"
+            fi
+        else
+            echo "[initramfs] WARN: /lib/modules/${mod}.ko not found"
+        fi
+    done < /lib/modules/modules.conf
+fi
+
+# Resolve root= from the kernel cmdline (default: first virtio disk)
+ROOT=""
+for p in $(cat /proc/cmdline); do
+    case "$p" in
+        root=*) ROOT="${p#root=}" ;;
+    esac
+done
+ROOT="${ROOT:-/dev/vda}"
+
+# Device may lag behind insmod (async probe) — poll briefly
+n=0
+while [ ! -b "$ROOT" ] && [ "$n" -lt 20 ]; do
+    n=$((n + 1))
+    sleep 0.5
+done
+
+# Some kernels expose the disk in /proc/partitions with an EMPTY sysfs
+# dev attribute (observed on openEuler + modified QEMU), so mdev -s cannot
+# create the node — parse /proc/partitions and mknod it ourselves.
+if [ ! -b "$ROOT" ]; then
+    name="${ROOT##*/}"
+    # shellcheck disable=SC2046
+    set -- $(grep -w "$name" /proc/partitions 2>/dev/null | head -1)
+    if [ "$#" -eq 4 ]; then
+        echo "[initramfs] sysfs dev attr empty; mknod $ROOT b $1 $2 (from /proc/partitions)"
+        mknod -m 660 "$ROOT" b "$1" "$2" 2>/dev/null || true
+    fi
+fi
+
+if mount -o rw "$ROOT" /mnt 2>/tmp/.mount.err; then
+    echo "[initramfs] root=$ROOT mounted, switching..."
+    # busybox switch_root moves /proc /sys /dev mounts into the new root
+    exec switch_root /mnt /init
+fi
+
+echo "[initramfs] ERROR: cannot mount root=$ROOT: $(cat /tmp/.mount.err 2>/dev/null)"
+exec setsid cttyhack /bin/sh

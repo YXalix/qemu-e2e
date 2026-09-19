@@ -1,0 +1,25 @@
+#!/bin/sh
+# Generic rootfs init: interactive shell on console.
+#
+# This is the DEFAULT /init shipped in the release rootfs
+# (rootfs-<ver>-linux-<arch>.cpio.gz). It deliberately knows nothing about
+# tests — test scenarios inject their own /init and /tests at build time
+# (see infra/build-initrd.sh / infra/init).
+#
+# When reached via switch_root, /proc /sys /dev are already mounted and the
+# remounts below just no-op (stderr suppressed). When the rootfs boots
+# directly on a kernel with root drivers built-in, they do the real work.
+
+mount -t proc none /proc 2>/dev/null
+mount -t sysfs none /sys 2>/dev/null
+mount -t devtmpfs none /dev 2>/dev/null
+# devtmpfs may arrive empty (see infra/init-initramfs) — repopulate
+mdev -s 2>/dev/null || true
+mkdir -p /dev/pts /dev/shm 2>/dev/null
+mount -t devpts devpts /dev/pts 2>/dev/null
+mount -t tmpfs tmpfs /dev/shm 2>/dev/null
+
+echo ""
+echo "BusyBox rootfs ready (kernel: $(uname -r), arch: $(uname -m))"
+echo ""
+exec setsid cttyhack /bin/sh

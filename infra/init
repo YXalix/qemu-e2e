@@ -6,7 +6,6 @@
 # Configuration
 #==========================================
 TESTS_DIR="/tests"
-MODULES_DIR="/lib/modules"
 
 #==========================================
 # Helper Functions
@@ -28,64 +27,29 @@ LOG_ERROR() {
     echo " [ERROR] $1"
 }
 
-# Mount essential filesystems
+# Mount essential filesystems.
+# Reached via switch_root: /proc /sys /dev are already mounted by the
+# initramfs stage and these remounts no-op (stderr suppressed). Kept so the
+# rootfs also boots directly on kernels with root drivers built-in.
 mount_filesystems() {
     LOG_INFO "Mounting filesystems..."
 
-    mount -t proc none /proc
-    mount -t sysfs none /sys
-    mount -t devtmpfs none /dev
-    mount -t tmpfs none /tmp
+    mount -t proc none /proc 2>/dev/null
+    mount -t sysfs none /sys 2>/dev/null
+    mount -t devtmpfs none /dev 2>/dev/null
+    mount -t tmpfs none /tmp 2>/dev/null
     mount -t debugfs none /sys/kernel/debug 2>/dev/null || true
 
-    mkdir -p /dev/pts /dev/shm
-    mount -t devpts devpts /dev/pts
-    mount -t tmpfs tmpfs /dev/shm
+    mkdir -p /dev/pts /dev/shm 2>/dev/null
+    mount -t devpts devpts /dev/pts 2>/dev/null
+    mount -t tmpfs tmpfs /dev/shm 2>/dev/null
 
     LOG_OK "Filesystems mounted"
 }
 
 #==========================================
-# Module Management
+# System Status
 #==========================================
-
-# Load a single module with optional args.
-# Usage: mod_load <module> [key=val ...]
-mod_load() {
-    local mod="$1"
-    shift
-    local err
-    err=$(insmod "$MODULES_DIR/${mod}.ko" "$@" 2>&1) && return 0
-    LOG_ERROR "insmod ${mod}.ko $*: $err"
-    return 1
-}
-
-# Load all modules from modules.conf.
-# Each line is "<module> [key=val ...]" — extra tokens are passed to insmod.
-load_modules() {
-    LOG_INFO "Loading kernel modules..."
-
-    local loaded=0
-    local conf="${MODULES_DIR}/modules.conf"
-
-    if [ ! -f "$conf" ]; then
-        LOG_WARN "modules.conf not found, skipping"
-        return
-    fi
-
-    while IFS= read -r line || [ -n "$line" ]; do
-        [ -z "$line" ] && continue
-        [ "${line#\#}" != "$line" ] && continue
-        # Split into module name + optional args.
-        # shellcheck disable=SC2086
-        set -- $line
-        if mod_load "$@"; then
-            loaded=$((loaded + 1))
-        fi
-    done < "$conf"
-
-    LOG_INFO "Modules: $loaded loaded"
-}
 
 # Print system status information
 print_status() {
@@ -167,8 +131,8 @@ main() {
     # Mount filesystems
     mount_filesystems
 
-    # Load modules
-    load_modules
+    # (Kernel modules are loaded by the initramfs stage-1 init
+    #  (infra/init-initramfs) before switch_root — see modules.conf.)
 
     # Show status
     print_status

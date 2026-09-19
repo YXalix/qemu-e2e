@@ -14,7 +14,7 @@ make qemu-test QEMU_TIMEOUT=30
 Most kernel iteration loops look like: edit → `make` → ??? → push to a real machine → maybe panic → pray for serial output. `qemu-e2e` collapses that into a hermetic loop:
 
 - **Boots your built kernel directly** — no distro userland, no overlay images, no flashing hardware.
-- **Statically-linked C tests** in a BusyBox initramfs — exercise syscalls, ioctls, `/proc`, `/sys`, `/dev` against the kernel under test.
+- **Statically-linked C tests** in a BusyBox rootfs — exercise syscalls, ioctls, `/proc`, `/sys`, `/dev` against the kernel under test.
 - **Multi-architecture** out of the box — arm64, x86_64, riscv64.
 - **Reproducible** — the same `.env` and the same kernel produce the same boot every time.
 - **CI-friendly** — `make qemu-test QEMU_TIMEOUT=N` exits non-zero on test failure, kernel panic, or timeout. Drop it straight into a pipeline.
@@ -99,11 +99,14 @@ Cross-compile freely (e.g. `ARCH=x86_64` on an arm64 host) — `make verify` war
 | NUMA | `NUMA_NODES` nodes, one socket per node (default 2) |
 | Machine | `virt` (arm64/riscv64) / `q35` (x86_64) |
 | Console | Serial only (`-nographic -serial mon:stdio`) |
-| Block | Optional 512 MB NVMe (`disk.qcow2` → `/dev/nvme0n1`) |
+| Block | `rootfs.img` ext4 system disk on virtio (`/dev/vda`); optional 512 MB NVMe (`disk.qcow2` → `/dev/nvme0n1`) |
 | Userland | BusyBox 1.36.1, statically linked, per-arch binary cached under `infra/busybox/bin/` (prebuilt release download first, source-build fallback) |
-| Cmdline | `console=<serial> root=/dev/ram0 rw=1 init=/init loglevel=8 auto_test` |
+| Cmdline | `console=<serial> root=/dev/vda rw init=/init loglevel=8 auto_test` |
 
-PID 1 is `infra/init`. It mounts `proc`, `sysfs`, `devtmpfs`, `tmpfs`, `debugfs`, `devpts`, `tmpfs`/shm; insmods every module from `modules.conf` in order; then either drops to a shell (interactive) or executes every binary in `/tests/` and powers off (auto-test).
+Boot is two-stage:
+
+1. **initramfs** (`initrd.img`, PID 1 = `infra/init-initramfs`) — mounts `proc`/`sysfs`/`devtmpfs`, insmods every module from `modules.conf` in order (drivers + ext4, modules stay resident across the pivot), then mounts `root=` and `switch_root`s into it.
+2. **rootfs** (`rootfs.img`, PID 1 = `infra/init`) — remounts the pseudo-filesystems idempotently, then either drops to a shell (interactive) or executes every binary in `/tests/` and powers off (auto-test).
 
 ## Makefile targets
 
@@ -111,7 +114,7 @@ PID 1 is `infra/init`. It mounts `proc`, `sysfs`, `devtmpfs`, `tmpfs`, `debugfs`
 |---|---|
 | `make verify` | Validate prerequisites: `.env`, host tools, `KERNEL_PATH`, kernel image, QEMU, modules, BusyBox cache. |
 | `make busybox` | Ensure the per-arch static BusyBox: prebuilt download from release first, source-build fallback. |
-| `make initrd` | (Re)build `infra/initrd.img` from BusyBox + modules + tests. |
+| `make initrd` | (Re)build the boot pair: `infra/initrd.img` (minimal initramfs + modules) and `infra/rootfs.img` (ext4 rootfs + tests). |
 | `make qemu` | Boot interactively; lands in a BusyBox shell. |
 | `make qemu-kvm` | Same, with KVM acceleration (host arch == target arch only). |
 | `make qemu-debug` | Boot halted, with GDB stub on `:1234`. |
@@ -119,7 +122,7 @@ PID 1 is `infra/init`. It mounts `proc`, `sysfs`, `devtmpfs`, `tmpfs`, `debugfs`
 | `make disk` | Create `infra/disk.qcow2` (512 MB) for block-device tests. |
 | `make install-skill` | Copy the `kernel-dev` Claude Code skill into `$KERNEL_PATH/.claude/skills/`. |
 | `make uninstall-skill` | Remove it. |
-| `make clean` | Remove `disk.qcow2`, `initrd.img`, `testcases/build/`. |
+| `make clean` | Remove `disk.qcow2`, `initrd.img`, `rootfs.img`, `testcases/build/`. |
 
 ## Directory layout
 
@@ -135,12 +138,17 @@ kernel/                              # Linux kernel source tree
     └── infra/
         ├── verify.sh                # prerequisite checker
         ├── run-qemu.sh              # QEMU launcher (multi-arch / KVM / GDB / NVMe)
-        ├── build-initrd.sh          # BusyBox + modules + tests → initrd.img
-        ├── init                     # PID 1 inside the VM
+        ├── build-initrd.sh          # BusyBox + modules → initrd.img; BusyBox + tests → rootfs.img
+        ├── init-initramfs           # stage-1 PID 1: insmod all, mount root=, switch_root
+        ├── init-rootfs              # generic rootfs init (release default, shell on console)
+        ├── init                     # test PID 1 (injected into rootfs.img; auto_test or shell)
+        ├── cpio2ext4.sh             # convert a release rootfs cpio.gz into an auto-sized ext4 img
         ├── modules.conf             # one module per line, optional load-time params
-        ├── initrd.img               # generated
+        ├── initrd.img               # generated, minimal initramfs
+        ├── rootfs.img               # generated, ext4 rootfs
         ├── disk.qcow2               # generated, optional
-        ├── rootfs/                  # initrd staging area (gitignored)
+        ├── initramfs/               # initramfs staging area (gitignored)
+        ├── rootfs/                  # rootfs staging area (gitignored)
         └── testcases/
             ├── Makefile             # delegates to CMake
             ├── CMakeLists.txt       # one add_executable() per test binary
@@ -213,7 +221,7 @@ When auto-testing, look for:
 
 ## Loading kernel modules
 
-`infra/modules.conf` is read by both `build-initrd.sh` (to copy `.ko` files) and `init` (to `insmod` them at boot). Format: one module per line, `#` for comments, tokens after the name passed verbatim to `insmod`.
+`infra/modules.conf` is read by `build-initrd.sh` (to copy `.ko` files into the initramfs) and `init-initramfs` (to `insmod` them before the pivot). Format: one module per line, `#` for comments, tokens after the name passed verbatim to `insmod`. Boot-critical modules for the rootfs mount (`virtio_blk`, `ext4`, ...) live here too.
 
 ```
 # dependencies first — there is no auto-resolution
@@ -240,7 +248,7 @@ mount -t hugetlbfs nodev /mnt/huge
 echo 20 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
 ```
 
-After editing `init`, rebuild the initrd:
+After editing `init` (test stage), `init-initramfs` (module/pivot stage) or `init-rootfs`, rebuild the boot pair:
 
 ```bash
 make initrd && make qemu-test QEMU_TIMEOUT=30

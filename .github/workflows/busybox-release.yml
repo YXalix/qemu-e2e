@@ -11,10 +11,13 @@ name: busybox-release
 #   2. 或推送 tag：git tag busybox-v1.36.1 && git push origin busybox-v1.36.1
 # 产物（assets，每架构两个）：
 #   busybox-<version>-linux-<arch>                裸静态二进制
-#   rootfs-<version>-linux-<arch>.cpio.gz         initramfs，qemu -initrd 直接可用
-# rootfs 内含 busybox 全量 applet 符号链接、/init（infra/init）、/tests、
-# /lib/modules 目录骨架，下载后无需再加工即可启动。
-# 需要 ext4 磁盘镜像时本地转换：见 infra/cpio2ext4.sh。
+#   rootfs-<version>-linux-<arch>.cpio.gz         通用 busybox rootfs（/init 为
+#                                                 console 交互 shell，不含任何
+#                                                 测试内容）
+# rootfs 可直接 cpio 解包使用，或经 infra/cpio2ext4.sh 转成 ext4 磁盘镜像。
+# 两阶段启动（initramfs 加载模块 → switch_root 到 rootfs）的完整组装见
+# infra/build-initrd.sh；本仓库测试专属的 /tests 与测试 init 由本地构建
+# 注入，不进 release。
 # 宿主侧下载：见 infra/fetch-busybox.sh 与 .env.example。
 
 on:
@@ -99,11 +102,10 @@ jobs:
             local arch="$1"
             local root="/tmp/rootfs-${arch}"
             rm -rf "${root}"
-            mkdir -p "${root}/bin" "${root}/sbin" "${root}/lib/modules" \
+            mkdir -p "${root}/bin" "${root}/sbin" "${root}/lib" \
                      "${root}/usr/bin" "${root}/usr/sbin" "${root}/proc" \
                      "${root}/sys" "${root}/dev" "${root}/tmp" "${root}/mnt" \
-                     "${root}/etc/init.d" "${root}/var/run" "${root}/root" \
-                     "${root}/tests"
+                     "${root}/etc/init.d" "${root}/var/run" "${root}/root"
 
             cp "/tmp/busybox-${VERSION}-linux-${arch}" "${root}/bin/busybox"
             chmod 755 "${root}/bin/busybox"
@@ -111,8 +113,8 @@ jobs:
               ln -sf busybox "${root}/bin/${applet}"
             done < /tmp/applets.txt
 
-            # 可直接启动：/init 来自仓库 infra/init
-            cp "${GITHUB_WORKSPACE}/infra/init" "${root}/init"
+            # 通用 /init：console 交互 shell，与测试解耦
+            cp "${GITHUB_WORKSPACE}/infra/init-rootfs" "${root}/init"
             chmod 755 "${root}/init"
 
             printf 'root:x:0:0:root:/root:/bin/sh\n' > "${root}/etc/passwd"
@@ -141,7 +143,7 @@ jobs:
           if [ -z "$REL" ] || echo "$REL" | grep -q '"Not Found"'; then
             curl -fsSL -X POST -H "$AUTH" -H "Accept: application/vnd.github+json" \
               "${API}/releases" \
-              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static + rootfs)\",\"body\":\"BusyBox ${VERSION} for the Virtuoso initramfs (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\\n\\nEach arch ships: bare static busybox and a ready-to-boot initramfs (rootfs-*.cpio.gz, use with qemu -initrd, init=/init included). Need an ext4 rootfs instead? Convert locally: infra/cpio2ext4.sh.\"}" \
+              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static + rootfs)\",\"body\":\"BusyBox ${VERSION} for the Virtuoso kernel-testing harness (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\\n\\nEach arch ships: bare static busybox and a generic BusyBox rootfs (rootfs-*.cpio.gz, interactive shell on console, no test content). Convert to ext4 with infra/cpio2ext4.sh; assemble the two-stage boot pair (initramfs + ext4 rootfs) with infra/build-initrd.sh.\"}" \
               > /tmp/rel.json
           else
             echo "$REL" > /tmp/rel.json

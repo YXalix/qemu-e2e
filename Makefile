@@ -31,7 +31,7 @@ help:
 	@echo "  qemu-debug    - Start QEMU with GDB stub"
 	@echo "  qemu-test     - Start QEMU with timeout (for CI)"
 	@echo "  disk          - Create disk.qcow2 (block device for testing)"
-	@echo "  initrd        - Rebuild initrd.img"
+	@echo "  initrd        - Rebuild initrd.img + rootfs.img (two-stage boot pair)"
 	@echo "  install-skill - Install kernel-dev skill for Claude Code"
 	@echo "  uninstall-skill - Remove kernel-dev skill from Claude Code"
 	@echo "  clean         - Remove generated images"
@@ -100,7 +100,7 @@ disk:
 	fi
 
 initrd:
-	@echo "Rebuilding initrd.img..."
+	@echo "Rebuilding initrd.img (minimal initramfs) + rootfs.img (ext4 rootfs)..."
 	cd $(QEMU_TEST_DIR) && ./build-initrd.sh
 
 install-skill:
@@ -125,5 +125,5 @@ uninstall-skill:
 	fi
 
 clean:
-	rm -f $(QEMU_TEST_DIR)/disk.qcow2 $(QEMU_TEST_DIR)/initrd.img
+	rm -f $(QEMU_TEST_DIR)/disk.qcow2 $(QEMU_TEST_DIR)/initrd.img $(QEMU_TEST_DIR)/rootfs.img
 	rm -rf $(QEMU_TEST_DIR)/testcases/build
