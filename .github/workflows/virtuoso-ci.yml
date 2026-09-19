@@ -1,0 +1,61 @@
+name: virtuoso-ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-test:
+    name: Build & Test (unit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cargo Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Unit Tests
+        run: cargo test --workspace
+
+  # 内核 E2E（boot + 标记协议断言）需要内核树与 KVM/TCG 资源，
+  # 放在自建 runner（openEuler 宿主，.env 指向内核树）上手动触发。
+  # runner 上以 systemd 服务或 tmux 会话常驻 cargo xtask 均可；
+  # 产物 target/runs/ 会由 triage 消化，失败时把 runs 目录整体上传。
+  kernel-e2e:
+    name: E2E (self-hosted, manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, openeuler-kernel]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Virtuoso Verify
+        run: cargo xtask verify
+
+      - name: Execute E2E Suite
+        run: cargo xtask test --timeout 600
+
+      - name: Triage
+        if: always()
+        run: cargo xtask triage || true
+
+      - name: Upload Run Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: virtuoso-runs
+          path: target/runs/

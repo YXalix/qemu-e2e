@@ -1,5 +1,0 @@
-[package]
-name = "coda"
-version.workspace = true
-edition.workspace = true
-publish = false

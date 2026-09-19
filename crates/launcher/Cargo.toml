@@ -1,0 +1,10 @@
+[package]
+name = "launcher"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+anyhow = "1"
+guardian = { path = "../guardian" }
+common = { path = "../common" }

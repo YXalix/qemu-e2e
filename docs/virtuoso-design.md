@@ -1,4 +1,4 @@
-# Virtuoso — 内核 E2E 虚拟化测试基础设施现代化方案
+··# Virtuoso — 内核 E2E 虚拟化测试基础设施现代化方案
 
 > **qemu-e2e 的 Rust 全面改造设计文档 · v2.0**
 >
@@ -59,7 +59,9 @@
 * **大师** — 新方案中 AI 代理正是演奏家：开机器、读串口、判生死、写测试；
 * **通用词** — 国际通用、好记好念，内核测试领域无同名项目。
 
-子模块采用音乐系命名家族（见 §2.3），团队沟通时可直接说"让 overture 重建 initrd"、"auditor 在等 TEST_COMPLETE"。
+子模块最初采用音乐系命名家族；**Phase 3 重构起改为角色名词**（common / builder /
+launcher / judge / guardian / tracker / xtask，见 §2.3 与附录 B 决策记录），名字与
+职责一一对应，团队沟通时可直接说"让 builder 重建 initrd"、"judge 在等 TEST_COMPLETE"。
 
 ### 2.2 整体架构
 
@@ -74,25 +76,25 @@
 | Host: Virtuoso Rust Workspace (Control Plane)                                     |
 |                                                                                   |
 |  +------------------------+      +------------------------+    +---------------+  |
-|  |      cargo xtask       | ---> |       overture         | -->| target/bins   |  |
+|  |      cargo xtask       | ---> |        builder         | -->| target/bins   |  |
 |  |  (maestro: 总编排 CLI)  |      | initrd/内核镜像/C 用例  |    | target/initrd |  |
 |  +------------------------+      +------------------------+    +---------------+  |
 |              |                                                                   |
 |              v                                                                   |
 |  +------------------------+      +------------------------+                      |
-|  |         coda           | ---> |  nix / tempfile / pty  |   (RAII Guards)      |
+|  |        guardian        | ---> |  nix / tempfile / pty  |   (RAII Guards)      |
 |  | mount·进程组·临时目录    |      +------------------------+                      |
 |  +------------------------+                                                      |
 |              |                                                                   |
 |              v                                                                   |
 |  +------------------------+      +------------------------+    +---------------+  |
-|  |       ensemble         | ---> |     qemu-system-<arch> | -->| disk.qcow2    |  |
+|  |        launcher        | ---> |     qemu-system-<arch> | -->| disk.qcow2    |  |
 |  | 多架构矩阵·启动 DSL      |      |  virt / q35 · KVM·GDB  |    | vfio-pci      |  |
 |  +------------------------+      +------------------------+    +---------------+  |
 |              |                                                                   |
 |              v                                                                   |
 |  +------------------------+     +-------------------------------------+          |
-|  |        auditor         | --> |  events.jsonl（结构化事件流）          | --> AI   |
+|  |         judge          | --> |  events.jsonl（结构化事件流）          | --> AI   |
 |  | 串口监听·断言·分诊数据源  |     +-------------------------------------+          |
 |  +------------------------+                                                      |
 +-----------------------------------------|-----------------------------------------+
@@ -116,18 +118,20 @@ virtuoso/
 ├── .cargo/
 │   └── config.toml             # cargo xtask 别名
 ├── Cargo.toml                  # Root Workspace
-├── xtask/                      # maestro：命令行总编排
+├── xtask/                      # CLI 入口（只做分发、配置投影与呈现；Phase 3 重构后）
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs             # CLI 入口（clap）
+│       ├── main.rs             # CLI 入口（clap 子命令定义）
 │       ├── config.rs           # 类型化配置（.env 兼容 + virtuoso.toml）
-│       └── cli.rs              # 子命令定义
+│       ├── cli/                # 命令实现：mod（分发+解析 helpers）/ verify / build / vm / parity / diagnostics
+│       └── runs/               # 运行工件：rundir（目录/泵/落盘回读）+ render（triage/runs/cluster/suggest/replay）
 ├── crates/
-│   ├── overture/               # 序曲：构建器（内核镜像发现 / C 用例编译 / initrd 组装）
-│   ├── ensemble/               # 合奏：多架构矩阵 + QEMU 启动参数 DSL
-│   ├── auditor/                # 听审：串口监听、标记协议解析、断言与事件流
-│   ├── coda/                   # 终曲：RAII 资源治理（mount / 进程组 / 临时目录）
-│   └── encore/                 # 返场：可复现性、缓存、串口日志回放
+│   ├── common/                 # 基础层（零依赖）：Arch 矩阵 / which / ELF / 内存单位 / 时间 / 人类可读大小
+│   ├── builder/                # 构建器（内核镜像发现 / C 用例编译 / initrd 组装 / verify 检查引擎）
+│   ├── launcher/               # 多架构矩阵 + QEMU 启动 DSL（qemu.rs）+ Firecracker 后端（firecracker.rs）
+│   ├── judge/                  # 标记协议解析与判定 + verdict.json schema（report.rs）+ 退出码语义（exit.rs）
+│   ├── guardian/               # 进程组 RAII（lib.rs）+ 注册表/看门狗/Ctrl-C（registry.rs）
+│   └── tracker/                # 跨 run 聚类 / flaky / 补丁↔测试映射（原 encore 域）
 ├── skills/
 │   └── kernel-virtuoso/SKILL.md  # AI 组件（kernel-dev 的进化版）
 └── testcases/                  # C 测试用例（沿用 qemu-e2e 约定，Phase 3 增加 no_std Rust）
@@ -153,7 +157,7 @@ qemu-e2e 全部 8 个 target 一一对应，语义与退出码不变：
 | qemu-e2e（Make） | Virtuoso（cargo xtask） | 说明 |
 |---|---|---|
 | `make verify` | `cargo xtask verify` | 前置检查：工具链、内核镜像、QEMU、模块、BusyBox 缓存 |
-| `make initrd` | `cargo xtask build` | overture：C 用例编译 + initrd 组装 |
+| `make initrd` | `cargo xtask build` | builder：C 用例编译 + initrd 组装 |
 | `make qemu` | `cargo xtask shell` | 交互式 BusyBox shell（TCG） |
 | `make qemu-kvm` | `cargo xtask shell --kvm` | KVM 加速（仅同构） |
 | `make qemu-debug` | `cargo xtask debug` | 挂起启动 + GDB stub `:1234` |
@@ -161,13 +165,17 @@ qemu-e2e 全部 8 个 target 一一对应，语义与退出码不变：
 | `make disk` | `cargo xtask disk` | 512M `disk.qcow2`（幂等，已存在则跳过） |
 | `make clean` | `cargo xtask clean` | 清理生成物 |
 | `make install-skill` | `cargo xtask skill install` | AI skill 装入内核树 |
-| —（新增） | `cargo xtask matrix` | ensemble：多架构矩阵批量测试 |
+| —（新增） | `cargo xtask matrix` | launcher：多架构矩阵批量测试 |
 | —（新增） | `cargo xtask triage` | AI 分诊：events.jsonl → 根因分析报告 |
-| —（新增） | `cargo xtask replay <log>` | encore：串口日志回放断言 |
+| —（新增） | `cargo xtask replay <log>` | judge：串口日志回放断言 |
 
 ---
 
 ## 3. 核心模块详细设计
+
+> 命名注记（Phase 3 重构）：本节成文于音乐系命名时期，文中 overture / ensemble /
+> auditor / coda / encore 依次对应现行 builder / launcher / judge / guardian /
+> tracker；模块划分与设计意图不变，另有 common 基础层承载横切类型（见附录 B）。
 
 ### 3.1 类型化配置（xtask/src/config.rs）
 
@@ -577,3 +585,61 @@ exit 124   # wallclock timeout（内核挂死 / runaway loop）
 * **为什么 Phase 1 先包装后重写**：8 个 target 的 parity 验证是后续重写的行为基线，先锁定基线可让 Phase 2 的每一步替换都有对照测试。
 * **退出码以 xtask 为准（Phase 1 parity 实测结论）**：`make` 将脚本失败统一折叠为退出码 2（含 `exit 124` 被吞），README 声明的"超时 124"在 make 路径下实际不可达；xtask 保留脚本真实退出码与 124 超时码，`cargo xtask parity <target>` 以三态判定（严格相等 / CI 等价双非零 / 失败）固化该结论，`--strict` 可强制严格对照。
 * **BusyBox 供给走 CI 预编译 Release（随 Phase 1 落地）**：原实现本地源码编译且不分架构，交叉测试（arm64 宿主测 x86_64 内核）会缓存错误架构的 BusyBox；改为 `busybox-release` workflow 预编译发布 Release，`fetch-busybox.sh` 按架构下载（ELF 魔数校验）。供给链四层：显式 URL（`BUSYBOX_DL_URL`）→ `gh release download`（自带认证，私有仓库可用）→ 直链 wget（公开仓库）→ 源码归档兜底（busybox.net tarball → GitHub mirror）。仓库需公开 + 容器化两个实战教训：**交叉编译必须显式安装 `libc6-dev-<arch>-cross`**（仅 Recommends，`--no-install-recommends` 会漏装，`include_next` 会掉进宿主 `/usr/include`）；busybox 1.36.1 的 tc applet 无法在内核头文件 ≥ 6.8 下编译——构建环境已钉死 `ubuntu:22.04` 容器，同时发布改用 REST API（单容器 job，无 node 系 action 依赖）。
+* **Phase 2 落地记录（2026-09）**：四 crate 接管完成 ——
+  - **auditor**：标记协议 v1 解析 + `judge` 对账（`Verdict` 八态，含 panic-假通过防护：`-no-reboot` 下 panic 使 QEMU exit 0，以标记协议对账识破），11 个单测；
+  - **ensemble**：`QemuInvocation` DSL + `Arch` 矩阵唯一事实源（从 xtask/config 迁入）。argv 与 run-qemu.sh **逐字对齐**（实测：`QEMU=echo` 双向 diff，shell/test 两路径 IDENTICAL）。勘误：脚本实际恒用 `virt` machine（q35 从未生效），DSL 以脚本真实行为为准；
+  - **overture**：BusyBox 四层供给（ELF 魔数校验）、modules.conf 语义、C 用例编译、cpio newc + `du -sm+2` ext4 组装、verify 十一项检查、`InitHook`（rootfs 内 `/init-hooks.sh`，init 侧守卫 source）。实测新旧构建产物内容 diff：initramfs 433 项 IDENTICAL、rootfs 顶层与模块集 MATCH；
+  - **coda**：`ProcessGroupGuard` RAII（Drop/超时/Ctrl-C 三路径收割，pgid=0 惰性防自杀），替代 Makefile PID 文件 hack。（重构清理：删除无人调用的 terminate/grace 机制，收割统一为 KILL 路径。）
+  - **xtask**：test/`matrix`（三架构串行 + 总表）走新链路；`virtuoso.toml` 覆盖层（未知键解析期报错）；verify Rust 化。分层：`runs.rs` 承载运行工件与 triage/runs/replay 呈现，verdict.json schema 由 `report_json` 单点定义，`tasks.rs` 只保留编排。（分层：`runs.rs` 承载运行工件与 triage/runs/replay 呈现，verdict.json schema 由 `report_json` 单点定义；`tasks.rs` 只保留编排。）Makefile 全部 target 改为 `cargo xtask` 转发壳；`infra/*.sh` 保留为基线参考。实机验证：arm64/TCG boot → `verdict: passed`；`make qemu-test QEMU_TIMEOUT=0` 拒绝语义保留。CI：`virtuoso-ci.yml`（build/clippy/test + 自建 runner 手动 E2E）。
+* **Phase 3 落地记录（2026-09）**：AI 与全栈现代化三项落地 ——
+  - **no_std Rust 测试框架（§4 测试用例 Rust 化）**：`infra/testcases/rust/` 独立 workspace
+    （主 workspace `exclude`），`testfw` 框架 crate + `test-rs-example` 骨架。`PASS/FAIL/SKIP/INFO`
+    宏与 C `test_common.h` 一一对齐，`run_and_exit` 对齐共享 `main.c` 语义（失败 exit 1，
+    `Test Results`/`TEST_COMPLETE` 仍由 init 汇编）——协议 v1 对 C/Rust 一视同仁，init 零改动。
+    **构建决策偏差**：原案 build-std + 裸机目标需 nightly 与 rust-std 下载（实测环境镜像超时不可得），
+    改为 **stable + 宿主 rust-std + `#![no_std] #![no_main]` 自定义 `_start`**：write/exit_group
+    裸 syscall（write=64/1/64，exit_group=94/231/94），freestanding `memcpy/memmove/memset/memcmp`
+    补齐（linux-gnu 的 compiler_builtins 默认留给 libc），`-static -nostdlib -nostartfiles -no-pie`
+    冻结在 `rust/.cargo/config.toml`（产物为无 libc 纯静态 ELF）。交叉架构在宿主缺对应 rust-std 时
+    显式 WARN 跳过（`overture::testcase::install_rust`，降级非掩盖——构建失败仍然 bail）。
+    实机：arm64/TCG，C+Rust 双用例 `Test Results: 2/2 passed` → `verdict: passed`；
+  - **encore（§3.6/3.7 AI triage 深化）**：语义收敛在最小摘要 `RunSummary`（verdict.json schema
+    演进不外溢）；失败指纹 = verdict 类 + 归一化证据（剥离内核时间戳、数字折叠为 `N`；panic/oops
+    优先 → timeout → 失败测试集），`cluster`/`flaky_tests`（flaky 判定只信 passed/failed 的 run）/
+    `suggest_tests`（子系统路径前缀 → 最小测试集，缺省表 DEFAULT_RULES）。xtask 新命令：
+    `cargo xtask cluster [--json]`、`cargo xtask suggest [--diff <f>] [--json]`（缺省对 KERNEL_PATH
+    做 git diff）、`cargo xtask test --replay-until-fail N`（返场，首个非 passed 即停）；
+  - **Firecracker 第二后端（ensemble::firecracker）**：config-file JSON（v1 API 冻结字段）+
+    API 逐 PUT 序列 + `spawn`（独立进程组，串口走 stdout，与 QEMU 同收割约定）。
+    `Backend` 枚举：CLI `--backend` > `BACKEND` 配置（virtuoso.toml `backend` 键）> 缺省 qemu；
+    `verify --backend firecracker` 输出五项 preflight。硬约束 preflight 逐项给出可操作诊断：
+    仅 x86_64/aarch64、KVM 必需、aarch64 内核必须 ELF、无 initramfs 引导要求
+    virtio/virtio-blk/ext4/串口 `=y`。本机（无 KVM/binary）preflight 如实拒绝；
+    实机 microVM 引导待具备 KVM 的自建 runner 验证；
+  - **kernel-virtuoso skill（§3.7）**：`skills/kernel-virtuoso/SKILL.md` —— 数据接口集成
+    （events.jsonl 唯一结构化事实源、分诊可回溯、AI 只读分析、脚手架生成、补丁映射、
+    flaky 返场）；`cargo xtask skill install` 同时装 kernel-dev 与 kernel-virtuoso。
+* **Phase 3 分层重构：角色名词命名 + 依赖分层（2026-09）**。动机：音乐隐喻名
+  （overture/ensemble/auditor/coda/encore）不查文档猜不出职责；且存在层向颠倒
+  （builder 前身 overture 依赖 launcher 前身 ensemble 只为用 `Arch`）、verdict.json
+  schema 困在 CLI 层（tracker 前身 encore 需手工投影）、退出码语义三处重复、
+  xtask 单体近 800 行等问题。落地：
+  - **命名**：crate 全部改为角色名词 —— `common`（基础层，零依赖）、`builder`、
+    `launcher`、`judge`、`guardian`、`tracker`；xtask 保留（cargo 社区约定名）。
+  - **新基础层 common**：`Arch` 矩阵唯一事实来源移入 common::arch（launcher
+    re-export 保持 API），`which`/ELF/可执行位/内存量解析/UTC 时间/人类可读大小
+    收敛于此；builder→launcher 反向依赖消除。
+  - **schema 归位**：`VerdictReport` + `RunMeta` 从 xtask/runs.rs 移入
+    `judge::report`（构造 `VerdictReport::build`）；`judge::exit` 成为退出码语义
+    唯一表（0/124/137→124/130；normalize + semantics）；tracker 通过
+    `From<VerdictReport> for RunSummary` 闭环，diff→路径提取下沉 tracker。
+  - **监管收敛**：ACTIVE_PGID 全局 + Ctrl-C 守护 + 看门狗从 xtask 移入
+    `guardian::registry`；`Supervised`（登记+收割守卫组合句柄）与 launcher 的
+    `spawn_supervised` 消除三处 spawn 样板。
+  - **预检下沉**：firecracker 硬校验 `preflight` 与诊断视图 `preflight_checks`
+    下沉 launcher::firecracker（xtask 两处重复实现合一）；verify 的模块存在性
+    输入收集下沉 builder::verify::module_presence。
+  - **xtask 拆分**：tasks.rs(776) → cli/{mod,verify,build,vm,parity,diagnostics}；
+    runs.rs(809) → runs/{rundir,render}；config 只管解析，诊断呈现在 cli/diagnostics。
+  - **不变量**：标记协议 v1、退出码 0/124/137、argv 逐字对齐、.env 语义、静态链接
+    约束全部未动；verdict.json/events.jsonl 序列化输出逐字节一致（schema 仅换定义位置）。

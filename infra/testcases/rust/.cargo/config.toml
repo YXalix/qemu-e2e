@@ -1,0 +1,10 @@
+# VM 内无动态加载器：-static 冻结约束（与 C 侧 CMakeLists 的 -static 对齐）；
+# -nostdlib -nostartfiles：无 libc、无 crt0，入口由框架 _start 提供，
+# 系统调用走裸 syscall（编译产物为纯静态 ELF，约几十 KB）。
+[target.'cfg(target_os = "linux")']
+rustflags = [
+    "-C", "link-arg=-nostdlib",
+    "-C", "link-arg=-nostartfiles",
+    "-C", "link-arg=-static",
+    "-C", "link-arg=-no-pie",
+]

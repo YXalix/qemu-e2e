@@ -2,6 +2,13 @@
 
 A small, hackable harness for booting a freshly-built Linux kernel under QEMU and running real test programs against it. Designed to drop into a kernel source tree as `qemu-e2e/` and give you a one-command answer to *"does my patch actually work?"*.
 
+**Phase 2: the Rust workspace is the single behavior authority.** Building
+([builder](crates/builder)), VM launching ([launcher](crates/launcher)),
+verdicts ([judge](crates/judge)) and process governance
+([guardian](crates/guardian)) live in typed, unit-tested crates; the `Makefile`
+targets forward to `cargo xtask`, and the shell scripts under `infra/` are
+kept as behavioral baselines. See [AGENTS.md](AGENTS.md) for the code map.
+
 ```bash
 make qemu-test QEMU_TIMEOUT=30
 # ...
@@ -123,6 +130,27 @@ Boot is two-stage:
 | `make install-skill` | Copy the `kernel-dev` Claude Code skill into `$KERNEL_PATH/.claude/skills/`. |
 | `make uninstall-skill` | Remove it. |
 | `make clean` | Remove `disk.qcow2`, `initrd.img`, `rootfs.img`, `testcases/build/`. |
+
+## Observability — run artifacts, triage, replay
+
+Every `cargo xtask test` (same semantics as `make qemu-test`) archives a run under
+`target/runs/<id>-<arch>/` (last 20 kept): `serial.log` (guest console incl. panics),
+`qemu-stderr.log`, `build.log`, structured `events.jsonl`, and a `verdict.json` summary
+(kernel/QEMU fingerprint, per-test results, marker reconciliation). The verdict is
+authoritative: **exit code alone is not** — with `-no-reboot`, a kernel panic makes QEMU
+exit 0, which the marker parser catches as a false pass.
+
+```bash
+cargo xtask test --timeout 60    # run + archive artifacts
+cargo xtask triage [--json]      # triage the latest run (verdict, tests, panics, serial tail)
+cargo xtask triage --run <id>    # triage a specific run
+cargo xtask runs [--json]        # list historical runs
+cargo xtask replay --log <f>     # offline marker-protocol assertion on any serial log
+```
+
+`triage`/`runs`/`replay` print machine-readable JSON with `--json`, so agents and CI can
+pipe them directly. AI-facing repo guide: [AGENTS.md](AGENTS.md); failure playbook:
+[docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Directory layout
 

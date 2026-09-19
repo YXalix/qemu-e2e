@@ -1,5 +1,0 @@
-[package]
-name = "encore"
-version.workspace = true
-edition.workspace = true
-publish = false

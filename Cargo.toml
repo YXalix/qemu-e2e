@@ -2,11 +2,15 @@
 resolver = "2"
 members = [
     "xtask",
-    "crates/overture",
-    "crates/ensemble",
-    "crates/auditor",
-    "crates/coda",
-    "crates/encore",
+    "crates/builder",
+    "crates/launcher",
+    "crates/judge",
+    "crates/guardian",
+    "crates/tracker",
+]
+exclude = [
+    # 测试用例固件是独立 workspace（no_std，裸 syscall），不进主依赖图
+    "infra/testcases/rust",
 ]
 
 [workspace.package]

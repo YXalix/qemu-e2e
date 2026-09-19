@@ -1,5 +1,0 @@
-[package]
-name = "ensemble"
-version.workspace = true
-edition.workspace = true
-publish = false

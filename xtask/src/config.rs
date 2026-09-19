@@ -1,82 +1,24 @@
-//! 类型化配置层（Phase 1：诊断用；Phase 2 起接管运行时配置）。
+//! 类型化配置层。Phase 2：`.env` 全量兼容 + 可选 `virtuoso.toml`（推荐，
+//! 覆盖 .env 同名键）；非法配置在解析期报错（如 SMP 不被 NUMA_NODES 整除）。
 //!
 //! 兼容性约定（与 qemu-e2e 的 Makefile `-include .env` 及脚本内
-//! `set -a; . .env` 语义一致）：**.env 中的值优先于进程环境变量**。
+//! `set -a; . .env` 语义一致）：**.env 中的值优先于进程环境变量**；
+//! `virtuoso.toml` 优先于 .env。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-/// 目标架构矩阵 —— qemu-e2e 中散落在 3 个 shell 脚本里的表格的唯一事实来源。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Arch {
-    Arm64,
-    X86_64,
-    Riscv64,
-}
-
-impl Arch {
-    /// 与 verify.sh / run-qemu.sh 相同的别名归一逻辑。
-    pub fn parse(s: &str) -> Option<Arch> {
-        match s {
-            "aarch64" | "arm64" => Some(Arch::Arm64),
-            "x86_64" | "amd64" => Some(Arch::X86_64),
-            "riscv64" => Some(Arch::Riscv64),
-            _ => None,
-        }
-    }
-
-    /// 宿主机架构（脚本中的 `uname -m` 等价物）。
-    pub fn host_default() -> Option<Arch> {
-        Self::parse(std::env::consts::ARCH)
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Arch::Arm64 => "arm64",
-            Arch::X86_64 => "x86_64",
-            Arch::Riscv64 => "riscv64",
-        }
-    }
-
-    pub fn qemu_bin(self) -> &'static str {
-        match self {
-            Arch::Arm64 => "qemu-system-aarch64",
-            Arch::X86_64 => "qemu-system-x86_64",
-            Arch::Riscv64 => "qemu-system-riscv64",
-        }
-    }
-
-    /// 相对内核树的镜像路径。
-    pub fn kernel_img(self) -> &'static str {
-        match self {
-            Arch::Arm64 => "arch/arm64/boot/Image",
-            Arch::X86_64 => "arch/x86/boot/bzImage",
-            Arch::Riscv64 => "arch/riscv/boot/Image",
-        }
-    }
-
-    pub fn console(self) -> &'static str {
-        match self {
-            Arch::Arm64 => "ttyAMA0",
-            Arch::X86_64 | Arch::Riscv64 => "ttyS0",
-        }
-    }
-
-    pub fn machine(self) -> &'static str {
-        match self {
-            Arch::X86_64 => "q35",
-            _ => "virt",
-        }
-    }
-}
+pub use launcher::Arch;
 
 /// `.env` 解析（KEY=VALUE / `export KEY=VALUE`，支持 `#` 注释与成对引号）。
+/// 可选 `virtuoso.toml` 覆盖同名键（Phase 2 推荐配置面，强类型校验）。
 #[derive(Debug, Default)]
 pub struct EnvFile {
     pub vars: BTreeMap<String, String>,
     pub path: Option<PathBuf>,
+    pub toml_path: Option<PathBuf>,
 }
 
 impl EnvFile {
@@ -113,7 +55,27 @@ impl EnvFile {
             }
         }
         let path = path.is_file().then_some(path);
-        Ok(Self { vars, path })
+
+        // ---- virtuoso.toml 覆盖层（存在的键优先于 .env）----
+        let toml_path = project_root.join("virtuoso.toml");
+        let toml_path = if toml_path.is_file() {
+            apply_toml(&mut vars, &toml_path)?;
+            Some(toml_path)
+        } else {
+            None
+        };
+
+        Ok(Self { vars, path, toml_path })
+    }
+
+    /// BusyBox 供给配置（BUSYBOX_* 变量 → builder::busybox::Supply）。
+    pub fn busybox_supply(&self) -> builder::busybox::Supply {
+        builder::busybox::Supply {
+            version: self.get("BUSYBOX_VERSION").filter(|s| !s.is_empty()),
+            release_repo: self.get("BUSYBOX_RELEASE_REPO").filter(|s| !s.is_empty()),
+            dl_url: self.get("BUSYBOX_DL_URL").filter(|s| !s.is_empty()),
+            force_source_build: self.get("BUSYBOX_SOURCE_BUILD").as_deref() == Some("1"),
+        }
     }
 
     /// .env 优先，其次进程环境变量（与 Makefile/脚本行为对齐）。
@@ -160,6 +122,11 @@ impl Config {
         })
     }
 
+    /// BusyBox 供给配置（透传 env 层）。
+    pub fn busybox_supply(&self) -> builder::busybox::Supply {
+        self.env.busybox_supply()
+    }
+
     /// 解析目标架构；无法解析时返回 None（诊断层告警，具体行为仍由脚本裁决以保持 parity）。
     pub fn arch(&self) -> Option<Arch> {
         self.env
@@ -197,137 +164,159 @@ impl Config {
             .unwrap_or_else(|| "1".into())
     }
 
-    /// Phase 1 配置诊断（cargo xtask verify 前置输出）。
-    pub fn print_diagnostics(&self, arch_override: Option<&str>) {
-        println!("[CONFIG] Virtuoso Phase-1 wrapper — typed config diagnostics");
-        println!(
-            "  .env: {}",
-            self.env
-                .path
-                .as_deref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "absent (defaults; cp .env.example .env)".into())
-        );
+}
 
-        // 架构
-        let arch_raw = arch_override
-            .map(str::to_string)
-            .or_else(|| self.env.get("ARCH"));
-        let host = Arch::host_default();
-        match arch_raw.as_deref().and_then(Arch::parse).or(host) {
-            Some(arch) => {
-                let src = if arch_override.is_some() {
-                    "CLI --arch"
-                } else if self.env.get("ARCH").is_some() {
-                    "config"
-                } else {
-                    "host default"
-                };
-                println!(
-                    "  arch: {} ({src}; qemu={}, machine={}, console={})",
-                    arch.name(),
-                    arch.qemu_bin(),
-                    arch.machine(),
-                    arch.console()
-                );
-                if host.is_some_and(|h| h != arch) {
-                    println!(
-                        "  WARN: cross-compile ARCH={} differs from host ({}), ensure cross-toolchain is available",
-                        arch.name(),
-                        std::env::consts::ARCH
-                    );
-                }
+/// 接受 string 或 integer 标量并统一成 String（timeout_secs = 60 与 = "60"
+/// 等价，兼容 Makefile 透传语义）。其余类型（bool/array…）在解析期报错。
+struct StrVal(String);
+
+impl<'de> serde::Deserialize<'de> for StrVal {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl serde::de::Visitor<'_> for V {
+            type Value = StrVal;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("字符串或整数")
             }
-            None => {
-                if let Some(raw) = arch_raw {
-                    println!("  ERROR: Unsupported ARCH={raw}");
-                }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<StrVal, E> {
+                Ok(StrVal(v.to_string()))
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<StrVal, E> {
+                Ok(StrVal(v.to_string()))
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<StrVal, E> {
+                Ok(StrVal(v.to_string()))
             }
         }
-
-        // 内核路径与镜像
-        match self.kernel_path() {
-            Ok((kp, explicit)) => {
-                println!(
-                    "  kernel_path: {} ({})",
-                    kp.display(),
-                    if explicit { "from config" } else { "auto-detected" }
-                );
-                if let Some(arch) = self.arch() {
-                    let img = kp.join(arch.kernel_img());
-                    println!(
-                        "  kernel_image: {} — {}",
-                        arch.kernel_img(),
-                        if img.is_file() { "found" } else { "MISSING (build the kernel first)" }
-                    );
-                }
-            }
-            Err(e) => println!("  ERROR: {e}"),
-        }
-
-        // CPU / NUMA
-        let smp = self.env.get("SMP").unwrap_or_else(|| "8".into());
-        let nodes_raw = self.env.get("NUMA_NODES").unwrap_or_else(|| "1".into());
-        let mem = self.env.get("NUMA_MEMORY").unwrap_or_else(|| "1G".into());
-        let (smp_n, nodes_n) = (smp.trim().parse::<u32>().ok(), nodes_raw.trim().parse::<u32>().ok());
-        match (smp_n, nodes_n) {
-            (Some(s), Some(n)) => {
-                let total = total_memory(&mem, n)
-                    .unwrap_or_else(|| format!("{mem} (unparsed)"));
-                println!("  cpu/mem: smp={s}, numa_nodes={n}, per-node={mem}, total={total}");
-                if n > 1 && s % n != 0 {
-                    println!(
-                        "  WARN: SMP ({s}) not divisible by NUMA_NODES ({n}) — run-qemu.sh will reject"
-                    );
-                }
-            }
-            _ => println!("  WARN: SMP/NUMA_NODES 非数字（{smp} / {nodes_raw}），交由脚本裁决"),
-        }
-
-        // 超时
-        let t = self.timeout_raw();
-        println!(
-            "  timeout: {t}s{}",
-            if t == "0" { " (cargo xtask test will reject 0)" } else { "" }
-        );
-
-        // QEMU 二进制
-        if let Some(arch) = self.arch() {
-            let override_q = self.env.get("QEMU");
-            let found = match &override_q {
-                Some(q) => which_exists(q),
-                None => which_exists(arch.qemu_bin()),
-            };
-            let label = override_q.as_deref().unwrap_or(arch.qemu_bin());
-            println!(
-                "  qemu: {label} — {}",
-                if found { "found" } else { "NOT FOUND (install qemu-system or set QEMU=)" }
-            );
-        }
-        println!();
+        d.deserialize_any(V)
     }
 }
 
-fn total_memory(mem: &str, nodes: u32) -> Option<String> {
-    let digits = mem.find(|c: char| !c.is_ascii_digit()).unwrap_or(mem.len());
-    let n: u64 = mem[..digits].parse().ok()?;
-    let suffix = mem[digits..].trim();
-    let total = n.saturating_mul(nodes as u64);
-    match suffix.to_ascii_uppercase().as_str() {
-        "G" => Some(format!("{total}G")),
-        "M" => Some(format!("{total}M")),
-        "" => Some(format!("{total}")),
-        _ => None,
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TomlOverlay {
+    kernel_path: Option<StrVal>,
+    arch: Option<StrVal>,
+    timeout_secs: Option<StrVal>,
+    smp: Option<StrVal>,
+    qemu: Option<StrVal>,
+    backend: Option<StrVal>,
+    qemu_opts: Option<Vec<String>>,
+    numa: Option<NumaSection>,
+    busybox: Option<BusyboxSection>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NumaSection {
+    memory_per_node: Option<StrVal>,
+    nodes: Option<StrVal>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BusyboxSection {
+    version: Option<StrVal>,
+    release_repo: Option<StrVal>,
+    dl_url: Option<StrVal>,
+    force_source_build: Option<bool>,
+}
+
+impl StrVal {
+    fn into_string(self) -> String {
+        self.0
     }
 }
 
-fn which_exists(bin: &str) -> bool {
-    if bin.contains('/') {
-        return Path::new(bin).is_file();
+/// virtuoso.toml → env 键映射（存在的键覆盖 .env）。schema 用 serde 结构体
+/// 表达：未知键与非法类型一律在解析期报错（Phase 2 的强类型目标之一）。
+fn apply_toml(vars: &mut BTreeMap<String, String>, path: &Path) -> anyhow::Result<()> {
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("读取 {} 失败", path.display()))?;
+    let cfg: TomlOverlay = toml::from_str(&raw)
+        .with_context(|| format!("{} 解析失败（未知键或非法类型）", path.display()))?;
+
+    fn put(vars: &mut BTreeMap<String, String>, key: &str, v: Option<StrVal>) {
+        if let Some(v) = v {
+            vars.insert(key.to_string(), v.into_string());
+        }
     }
-    std::env::var_os("PATH")
-        .map(|paths| {
-            std::env::split_paths(&paths).any(|dir| dir.join(bin).is_file())
-        })
-        .unwrap_or(false)
+
+    put(vars, "KERNEL_PATH", cfg.kernel_path);
+    put(vars, "ARCH", cfg.arch);
+    put(vars, "QEMU_TIMEOUT", cfg.timeout_secs);
+    put(vars, "SMP", cfg.smp);
+    put(vars, "QEMU", cfg.qemu);
+    put(vars, "BACKEND", cfg.backend);
+    if let Some(list) = cfg.qemu_opts {
+        if !list.is_empty() {
+            vars.insert("QEMU_OPTS".into(), list.join(" "));
+        }
+    }
+    if let Some(numa) = cfg.numa {
+        put(vars, "NUMA_MEMORY", numa.memory_per_node);
+        put(vars, "NUMA_NODES", numa.nodes);
+    }
+    if let Some(bb) = cfg.busybox {
+        put(vars, "BUSYBOX_VERSION", bb.version);
+        put(vars, "BUSYBOX_RELEASE_REPO", bb.release_repo);
+        put(vars, "BUSYBOX_DL_URL", bb.dl_url);
+        if bb.force_source_build == Some(true) {
+            vars.insert("BUSYBOX_SOURCE_BUILD".into(), "1".into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toml_overlay_applies_to_env_vars() {
+        let dir = std::env::temp_dir().join(format!("virtuoso-cfg-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("virtuoso.toml");
+        std::fs::write(
+            &path,
+            r#"
+arch = "arm64"
+timeout_secs = 60
+smp = 4
+qemu_opts = ["-device vfio-pci,host=01:00.0"]
+[numa]
+nodes = 2
+memory_per_node = "1G"
+[busybox]
+version = "1.36.1"
+force_source_build = true
+"#,
+        )
+        .unwrap();
+        let mut vars = BTreeMap::new();
+        apply_toml(&mut vars, &path).unwrap();
+        assert_eq!(vars.get("ARCH").map(String::as_str), Some("arm64"));
+        assert_eq!(vars.get("QEMU_TIMEOUT").map(String::as_str), Some("60"));
+        assert_eq!(vars.get("SMP").map(String::as_str), Some("4"));
+        assert_eq!(
+            vars.get("QEMU_OPTS").map(String::as_str),
+            Some("-device vfio-pci,host=01:00.0")
+        );
+        assert_eq!(vars.get("NUMA_NODES").map(String::as_str), Some("2"));
+        assert_eq!(vars.get("BUSYBOX_VERSION").map(String::as_str), Some("1.36.1"));
+        assert_eq!(vars.get("BUSYBOX_SOURCE_BUILD").map(String::as_str), Some("1"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unknown_key_is_rejected_at_parse_time() {
+        let cfg: Result<TomlOverlay, _> = toml::from_str("arch = \"arm64\"\nshmp = 4\n");
+        assert!(cfg.is_err(), "拼写错误的键必须在解析期报错");
+    }
+
+    #[test]
+    fn wrong_type_is_rejected_at_parse_time() {
+        assert!(toml::from_str::<TomlOverlay>("qemu_opts = [1, 2]").is_err());
+        assert!(toml::from_str::<TomlOverlay>("arch = true").is_err());
+    }
 }

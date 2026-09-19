@@ -24,3 +24,9 @@ infra/testcases/compile_commands.json
 
 # Local editor settings
 .vscode/
+
+# no_std rust testcase firmware build dir
+infra/testcases/rust/target/
+
+# ZCode session-local data
+.zcode/

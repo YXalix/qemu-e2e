@@ -1,9 +1,15 @@
-//! Virtuoso Phase 1 — qemu-e2e 的 cargo-xtask 对等包装层。
+//! Virtuoso — kernel E2E 虚拟化测试装置的 CLI 入口。
 //!
-//! 设计文档：docs/virtuoso-design.md（§2.4 CLI 映射、§6 Phase 1）
+//! 本 crate 只保留 clap 定义与子命令分发：命令实现在 `cli`（verify/build/vm/
+//! parity），运行工件与呈现命令在 `runs`（rundir/render），类型化配置在
+//! `config`。领域逻辑全部在库 crate（common/builder/launcher/judge/guardian/
+//! tracker）。
+//!
+//! 设计文档：docs/virtuoso-design.md
 
+mod cli;
 mod config;
-mod tasks;
+mod runs;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -27,6 +33,9 @@ enum Command {
         /// 覆盖目标架构（透传为 ARCH 环境变量）
         #[arg(long)]
         arch: Option<String>,
+        /// 启动后端（qemu | firecracker）；firecracker 追加 microVM preflight
+        #[arg(long)]
+        backend: Option<String>,
     },
     /// 构建 initrd：C 用例 + modules.conf + BusyBox（make initrd 对等）
     Build,
@@ -35,10 +44,15 @@ enum Command {
         /// KVM 加速（仅宿主与目标同构时可用）
         #[arg(long)]
         kvm: bool,
+        /// 启动后端（qemu | firecracker）
+        #[arg(long)]
+        backend: Option<String>,
     },
     /// 调试启动：挂起等待 GDB 连接 :1234（make qemu-debug 对等）
     Debug,
-    /// CI 模式：重建 initrd → 超时运行 → 标记协议判定退出码（make qemu-test 对等）
+    /// CI 模式：重建 initrd → 超时运行 → 标记协议判定退出码（make qemu-test 对等）。
+    /// --replay-until-fail N：对可疑 flaky 场景自动返场最多 N 次，出现首个
+    /// 非 passed verdict 即停（tracker 返场语义）。
     Test {
         /// 墙钟超时秒数；0 一律拒绝。缺省读 .env 的 QEMU_TIMEOUT
         #[arg(long)]
@@ -46,6 +60,12 @@ enum Command {
         /// 覆盖目标架构（透传为 ARCH 环境变量）
         #[arg(long)]
         arch: Option<String>,
+        /// 返场次数上限（缺省 1 = 单次执行）
+        #[arg(long = "replay-until-fail")]
+        replay_until_fail: Option<u32>,
+        /// 启动后端（qemu | firecracker）
+        #[arg(long)]
+        backend: Option<String>,
     },
     /// 创建 512M disk.qcow2（NVMe 用块设备，幂等；make disk 对等）
     Disk,
@@ -59,19 +79,35 @@ enum Command {
         #[command(subcommand)]
         action: SkillAction,
     },
-    /// 多架构矩阵批量测试（Phase 2：ensemble）
+    /// 多架构矩阵批量测试（Phase 2：launcher）
     Matrix {
         /// 目标架构；缺省为三架构全矩阵
         #[arg(long)]
         arch: Option<String>,
     },
-    /// AI 串口日志分诊（Phase 2：auditor events.jsonl）
-    Triage,
-    /// 历史串口日志回放断言（Phase 2：encore）
+    /// 最近一次测试运行的分诊报告（--json 输出 verdict 供管道消费）
+    Triage {
+        /// 指定运行（target/runs 下的目录名）；缺省 = latest
+        #[arg(long)]
+        run: Option<String>,
+        /// 机器可读 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
+    /// 列出历史测试运行（最新在前；--json 输出数组）
+    Runs {
+        /// 机器可读 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
+    /// 对任一串口日志做标记协议回放断言（不启动 QEMU）
     Replay {
         /// 串口日志文件
         #[arg(long = "log")]
         log: PathBuf,
+        /// 机器可读 JSON 输出
+        #[arg(long)]
+        json: bool,
     },
     /// parity 校验：同一 target 分别以 make 与 cargo xtask 执行并比较退出码
     Parity {
@@ -83,6 +119,21 @@ enum Command {
         /// 要求退出码严格相等（缺省容忍 make 将脚本失败折叠为 2 的行为）
         #[arg(long)]
         strict: bool,
+    },
+    /// 跨 run 失败指纹聚类（tracker）：flaky 用例清单 + 失败首现 run（Phase 3）
+    Cluster {
+        /// 机器可读 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
+    /// 补丁↔测试映射（tracker）：git diff 的子系统路径 → 推荐最小测试集（Phase 3）
+    Suggest {
+        /// 统一 diff 文件；缺省对 KERNEL_PATH 内核树做 git diff（含暂存区）
+        #[arg(long = "diff")]
+        diff: Option<PathBuf>,
+        /// 机器可读 JSON 输出
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -96,8 +147,8 @@ enum SkillAction {
 
 fn main() {
     let cli = Cli::parse();
-    tasks::install_ctrlc_guard();
-    match tasks::dispatch(cli.command) {
+    guardian::registry::install_ctrlc_guard();
+    match cli::dispatch(cli.command) {
         Ok(code) => std::process::exit(code),
         Err(e) => {
             eprintln!("ERROR: {e:#}");
