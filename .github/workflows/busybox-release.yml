@@ -67,6 +67,9 @@ jobs:
           cd "busybox-${V}"
           make defconfig CROSS_COMPILE="${{ matrix.cross }}"
           sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          # tc applet cannot build against kernel headers >= 6.8
+          # (struct tc_cbq_wrropt removed from public headers); not needed in initramfs
+          sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config
           make -j"$(nproc)" CROSS_COMPILE="${{ matrix.cross }}"
           # 静态链接是硬性要求：VM 内无动态加载器
           file busybox | grep -qi 'statically linked' \
