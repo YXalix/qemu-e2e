@@ -21,3 +21,6 @@ infra/testcases/compile_commands.json
 **.order
 # Rust build artifacts
 /target
+
+# Local editor settings
+.vscode/
