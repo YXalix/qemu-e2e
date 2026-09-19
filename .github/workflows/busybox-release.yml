@@ -115,17 +115,18 @@ jobs:
             # 冻结的通用 /init：刻意不引用仓库脚本（如 infra/init-rootfs），
             # 保证 release 资产不随仓库迭代变化。测试场景在本地构建时
             # 用自己的 init 覆盖 /init。
-            cat > "${root}/init" <<'EOF'
-            #!/bin/sh
-            # Frozen generic rootfs init — interactive shell on console.
-            # Kept verbatim here so release assets depend only on the busybox version.
-            mount -t proc none /proc 2>/dev/null
-            mount -t sysfs none /sys 2>/dev/null
-            mount -t devtmpfs none /dev 2>/dev/null
-            mkdir -p /dev/pts /dev/shm 2>/dev/null
-            mount -t devpts devpts /dev/pts 2>/dev/null
-            exec setsid cttyhack /bin/sh
-            EOF
+            # （用 printf 拼接而非 heredoc：YAML 块缩进会让 EOF 终止符对不上）
+            printf '%s\n' \
+              '#!/bin/sh' \
+              '# Frozen generic rootfs init — interactive shell on console.' \
+              '# Kept verbatim here so release assets depend only on the busybox version.' \
+              'mount -t proc none /proc 2>/dev/null' \
+              'mount -t sysfs none /sys 2>/dev/null' \
+              'mount -t devtmpfs none /dev 2>/dev/null' \
+              'mkdir -p /dev/pts /dev/shm 2>/dev/null' \
+              'mount -t devpts devpts /dev/pts 2>/dev/null' \
+              'exec setsid cttyhack /bin/sh' \
+              > "${root}/init"
             chmod 755 "${root}/init"
 
             printf 'root:x:0:0:root:/root:/bin/sh\n' > "${root}/etc/passwd"
