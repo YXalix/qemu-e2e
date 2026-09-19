@@ -307,7 +307,8 @@ fn run_parity(target: &str, force: bool, strict: bool) -> anyhow::Result<i32> {
         inner,
         CliCommand::Shell { .. } | CliCommand::Debug | CliCommand::Test { .. }
     );
-    let heavy_build = matches!(inner, CliCommand::Build | CliCommand::BusyBox);
+    // busybox 不再属于重型 target：常态是 release 秒级下载（缓存缺失时的源码兜底才会变重）
+    let heavy_build = matches!(inner, CliCommand::Build);
     if (boots_vm || heavy_build) && !force {
         eprintln!("ERROR: target `{target}` 会启动 VM 或执行 BusyBox 全量构建；确认后请加 --force");
         return Ok(2);

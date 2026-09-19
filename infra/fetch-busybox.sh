@@ -58,19 +58,21 @@ try_wget_download() {
     echo "BusyBox: downloaded (${ARCH})"
 }
 
-# 推导发布仓库：显式 BUSYBOX_RELEASE_REPO -> GitHub remote 自动推导
+# 推导发布仓库：显式 BUSYBOX_RELEASE_REPO -> 扫描所有 git remote 取 GitHub 的那个
 resolve_repo() {
     if [ -n "${BUSYBOX_RELEASE_REPO:-}" ]; then
         printf '%s' "$BUSYBOX_RELEASE_REPO"
         return 0
     fi
-    local origin
-    origin="$(git -C "$PROJECT_ROOT" remote get-url origin 2>/dev/null || true)"
-    case "$origin" in
-        *github.com[:/]*)
-            printf '%s' "$origin" | sed -E 's#.*github\.com[:/]##; s#\.git$##'
-            ;;
-    esac
+    local url
+    for url in $(git -C "$PROJECT_ROOT" remote -v 2>/dev/null | awk '$NF == "(fetch)" { print $2 }' | sort -u); do
+        case "$url" in
+            *github.com[:/]*)
+                printf '%s' "$url" | sed -E 's#.*github\.com[:/]##; s#\.git$##'
+                return 0
+                ;;
+        esac
+    done
 }
 
 if [ -x "$BIN" ]; then
