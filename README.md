@@ -240,6 +240,10 @@ Rules:
 
 ## Customizing the boot environment
 
+> Full architecture reference for maintainers and AI: **[docs/initramfs-rootfs-guide.md](docs/initramfs-rootfs-guide.md)** —
+> two-stage boot design, asset supply chain, build pipeline, kernel quirks,
+> and which file to touch for common changes.
+
 `infra/init` is a small POSIX shell script. Edit `main()` between `load_modules` and the auto-test block to add setup the harness doesn't do by default. Example — pre-allocate huge pages and mount hugetlbfs:
 
 ```sh
