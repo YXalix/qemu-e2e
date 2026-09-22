@@ -1,0 +1,20 @@
+# mdBook 配置：docs/ 是文档唯一事实来源，本文件只描述"怎么呈现"。
+# 本地构建：cargo xtask docs（产物在 target/book，git 忽略）；
+# 线上发布：push main 自动构建到 gh-pages（.github/workflows/docs.yml）。
+
+[book]
+title = "Virtuoso — 内核 E2E 虚拟化测试装置"
+authors = ["YXalix"]
+description = "内核 E2E 虚拟化测试装置：构建、启动、判定、治理、跨 run 聚类"
+language = "zh-CN"
+src = "docs"
+
+[build]
+build-dir = "target/book"
+create-missing = false
+
+[output.html]
+site-url = "/virtuoso/"
+default-theme = "rust"
+git-repository-url = "https://github.com/YXalix/virtuoso"
+edit-url-template = "https://github.com/YXalix/virtuoso/edit/main/{path}"

@@ -1,379 +1,49 @@
-# qemu-e2e — End-to-End Kernel Testing in QEMU
+# Virtuoso — 内核 E2E 虚拟化测试装置
 
-A small, hackable harness for booting a freshly-built Linux kernel under QEMU and running real test programs against it. Designed to drop into a kernel source tree as `qemu-e2e/` and give you a one-command answer to *"does my patch actually work?"*.
+内核 E2E 虚拟化测试装置：把 freshly-built 内核直接启动在 QEMU / Firecracker
+microVM 里跑真实测试程序，一条命令回答 *"does my patch actually work?"*。
 
-**Phase 2: the Rust workspace is the single behavior authority.** Building
-([builder](crates/builder)), VM launching ([launcher](crates/launcher)),
-verdicts ([judge](crates/judge)) and process governance
-([guardian](crates/guardian)) live in typed, unit-tested crates; the `Makefile`
-targets forward to `cargo xtask`, and the shell scripts under `infra/` are
-kept as behavioral baselines. See [AGENTS.md](AGENTS.md) for the code map.
+构建（builder）、启动（launcher）、判定（judge）、进程治理（guardian）、
+跨 run 聚类（tracker）全部在类型化的 Rust workspace 中，`cargo xtask` 是唯一
+CLI 入口，`Makefile` 只是转发壳。
 
-```bash
-make qemu-test QEMU_TIMEOUT=30
-# ...
-# Test Results: 1/1 passed
-# TEST_COMPLETE: ALL TESTS PASSED
-```
+**📖 在线文档：<https://yxalix.github.io/virtuoso/>**
 
-## Why this exists
+## 快速开始
 
-Most kernel iteration loops look like: edit → `make` → ??? → push to a real machine → maybe panic → pray for serial output. `qemu-e2e` collapses that into a hermetic loop:
-
-- **Boots your built kernel directly** — no distro userland, no overlay images, no flashing hardware.
-- **Statically-linked C tests** in a BusyBox rootfs — exercise syscalls, ioctls, `/proc`, `/sys`, `/dev` against the kernel under test.
-- **Multi-architecture** out of the box — arm64, x86_64, riscv64.
-- **Reproducible** — the same `virtuoso.toml` and the same kernel produce the same boot every time.
-- **CI-friendly** — `make qemu-test QEMU_TIMEOUT=N` exits non-zero on test failure, kernel panic, or timeout. Drop it straight into a pipeline.
-- **Debuggable** — KVM acceleration, GDB stub, interactive shell, virtio data disks, component-based VM config with kernel-module requirements.
-
-It is intentionally *not* a distro builder, not a container runtime, and not a fuzzer. It's the smallest thing that lets a kernel patch and a test program meet.
-
-## Setup
-
-### 1. Build the kernel
+前置条件与内核构建步骤见[使用指南](https://yxalix.github.io/virtuoso/user-guide.html)。
+装置设计为放进内核源码树内运行（如 `kernel/virtuoso/`），放别处时在
+`virtuoso.toml` 设 `kernel_path`。
 
 ```bash
-git clone https://gitcode.com/openeuler/kernel.git && cd kernel
-cp arch/arm64/configs/openeuler_defconfig .config   # or your own .config
-make -j"$(nproc)"
-make modules -j"$(nproc)"        # only if any module is =m
+cargo xtask verify             # 前置检查 + 类型化配置诊断
+cargo xtask test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
+cargo xtask triage             # 分诊报告（判定以 verdict 为准）
 ```
 
-`qemu-e2e/` is meant to live *inside* this tree:
+## 常用命令
 
-```bash
-git clone https://gitcode.com/nashzhou/qemu-e2e.git
-# result: kernel/qemu-e2e/
-```
-
-If you keep the harness elsewhere, set `kernel_path` in `virtuoso.toml` (see below).
-
-### 2. Install host packages
-
-```bash
-# openEuler / CentOS / Fedora
-sudo dnf install -y gcc make cmake wget cpio gzip qemu-system-aarch64 qemu-img
-
-# Debian / Ubuntu
-sudo apt install -y gcc make cmake wget cpio gzip qemu-system-arm qemu-utils
-```
-
-For x86_64 or riscv64 targets, install the matching `qemu-system-x86_64` / `qemu-system-riscv64`.
-
-### 3. Configure and verify
-
-```bash
-cd qemu-e2e
-cargo xtask verify               # checks tools, kernel image, modules
-cargo xtask test --timeout 60
-```
-
-`cargo xtask verify` is the fastest way to know if everything is wired up — it prints typed config diagnostics plus colored PASS/FAIL/WARN lines for every prerequisite.
-
-## Configuration (`virtuoso.toml`)
-
-`virtuoso.toml` at the project root is the single config surface. The tracked
-template ships the **default regular-boot config as active lines**; every
-optional setting is present as a comment — uncomment to enable. Unknown keys
-and bad types are rejected at parse time. (A legacy `.env` is still read with
-a deprecation WARN; component config only exists in TOML.)
-
-Global keys: `arch` / `timeout_secs` / `smp` / `backend` / `auto_test` /
-`kernel_path` / `kernel_image` / `qemu` / `qemu_opts` / `firecracker_bin`.
-
-VM capabilities are **components** under `[components.*]`. Each component
-accepts `enabled`, `require` (kernel modules it needs, one conf-line per
-entry: `"<module> [key=val ...]"`) and `stage` (`boot` = needed before the
-root mount, default `runtime`). The builder generates the rootfs module list
-from the union of enabled components' `require`.
-
-```toml
-[components.tools_disk]   # tools.img data disk → /dev/vdb mounted at /tools
-enabled = true            # (default when the section is absent)
-
-# [components.agent]       # AI probe channel (virtio-serial); default off
-# enabled = true
-# require = ["virtio_console"]
-
-# [components.vfio]        # PCI passthrough → -device vfio-pci,host=<bdf>
-# enabled = true
-# devices = ["0000:01:00.0"]
-
-# [components.numa]        # multi-node NUMA; default single-node
-# enabled = true
-# nodes = 2
-# memory_per_node = "1G"
-```
-
-### Architecture matrix
-
-| `ARCH` | QEMU binary | Kernel image | Console |
-|---|---|---|---|
-| `arm64` (default) | `qemu-system-aarch64` | `arch/arm64/boot/Image` | `ttyAMA0` |
-| `x86_64` | `qemu-system-x86_64` | `arch/x86/boot/bzImage` | `ttyS0` |
-| `riscv64` | `qemu-system-riscv64` | `arch/riscv/boot/Image` | `ttyS0` |
-
-Cross-compile freely (e.g. `ARCH=x86_64` on an arm64 host) — `make verify` warns when the target differs from the host.
-
-## VM environment
-
-| | |
+| 命令 | 作用 |
 |---|---|
-| Memory | `NUMA_MEMORY` per node × `NUMA_NODES` (default 2 GB with `NUMA_NODES=2`) |
-| CPUs | `SMP` total, split evenly across NUMA nodes (default 8) |
-| NUMA | `NUMA_NODES` nodes, one socket per node (default 2) |
-| Machine | `virt` (arm64/riscv64) / `q35` (x86_64) |
-| Console | Serial only (`-nographic -serial mon:stdio`) |
-| Block | `rootfs.img` ext4 system disk on virtio (`/dev/vda`); `tools.img` data disk (`[components.tools_disk]` → `/dev/vdb`) |
-| Userland | BusyBox 1.36.1, statically linked, per-arch binary cached under `target/build/busybox/bin/` (prebuilt release download first, source-build fallback) |
-| Cmdline | `console=<serial> root=/dev/vda rw init=/init loglevel=8 auto_test` |
+| `cargo xtask build` | 重建 initrd.img / rootfs.img / tools.img |
+| `cargo xtask shell [--kvm]` | 交互式 VM（BusyBox shell） |
+| `cargo xtask debug` | GDB stub `:1234` 挂起启动 |
+| `cargo xtask matrix [--arch a]` | 多架构矩阵（x86_64 / arm64 / riscv64） |
+| `cargo xtask probe --cmd '…'` | AI 交互通道（virtio-serial agent 命令批） |
+| `cargo xtask cluster` / `suggest` | 跨 run 失败聚类 / 补丁→最小测试集 |
+| `cargo xtask docs [--serve]` | 文档构建 / 本地预览（mdBook） |
 
-Boot is two-stage:
+## 文档
 
-1. **initramfs** (`initrd.img`, PID 1 = `infra/init-initramfs`) — one job: make `root=` mountable. Mounts `proc`/`sysfs`/`devtmpfs` (+ device-node fallbacks for kernels with quirky devtmpfs), insmods the **boot-critical** modules from `modules-boot.conf` (virtio + ext4 and deps), then mounts `root=` and `switch_root`s into it.
-2. **rootfs** (`rootfs.img`, PID 1 = `infra/init`) — remounts pseudo-filesystems idempotently, insmods the modules listed in the generated `/lib/modules/modules.conf` (union of enabled components' `require`), then either drops to a shell (interactive) or executes every binary in `/tests/` and powers off (auto-test).
+`docs/` 是文档唯一事实来源，经 mdBook 发布到 GitHub Pages；本地
+`cargo xtask docs` 构建到 `target/book`，push main 自动更新站点。
 
-## Makefile targets
-
-| Target | Description |
-|---|---|
-| `make verify` | Validate prerequisites: `virtuoso.toml`, host tools, `kernel_path`, kernel image, QEMU, modules, BusyBox cache. |
-| `make busybox` | Ensure the per-arch static BusyBox: prebuilt download from release first, source-build fallback. |
-| `make initrd` | (Re)build the boot pair: `target/artifacts/initrd.img` (minimal initramfs + modules) and `target/artifacts/rootfs.img` (ext4 rootfs + tests). |
-| `make qemu` | Boot interactively; lands in a BusyBox shell. |
-| `make qemu-kvm` | Same, with KVM acceleration (host arch == target arch only). |
-| `make qemu-debug` | Boot halted, with GDB stub on `:1234`. |
-| `make qemu-test` | CI mode: rebuild initrd, run with `QEMU_TIMEOUT=N`, exit non-zero on failure or timeout. |
-| `make disk` | Create `target/artifacts/disk.qcow2` (512 MB) for block-device tests. |
-| `make install-skill` | Copy the `kernel-dev` Claude Code skill into `$KERNEL_PATH/.claude/skills/`. |
-| `make uninstall-skill` | Remove it. |
-| `make clean` | Remove `disk.qcow2`, `initrd.img`, `rootfs.img`, `testcases/build/`. |
-
-## Observability — run artifacts, triage, replay
-
-Every `cargo xtask test` (same semantics as `make qemu-test`) archives a run under
-`target/runs/<id>-<arch>/` (last 20 kept): `serial.log` (guest console incl. panics),
-`qemu-stderr.log`, `build.log`, structured `events.jsonl`, and a `verdict.json` summary
-(kernel/QEMU fingerprint, per-test results, marker reconciliation). The verdict is
-authoritative: **exit code alone is not** — with `-no-reboot`, a kernel panic makes QEMU
-exit 0, which the marker parser catches as a false pass.
-
-```bash
-cargo xtask test --timeout 60    # run + archive artifacts
-cargo xtask triage [--json]      # triage the latest run (verdict, tests, panics, serial tail)
-cargo xtask triage --run <id>    # triage a specific run
-cargo xtask runs [--json]        # list historical runs
-cargo xtask replay --log <f>     # offline marker-protocol assertion on any serial log
-```
-
-`triage`/`runs`/`replay` print machine-readable JSON with `--json`, so agents and CI can
-pipe them directly. AI-facing repo guide: [AGENTS.md](AGENTS.md); failure playbook:
-[docs/troubleshooting.md](docs/troubleshooting.md).
-
-## Directory layout
-
-```
-kernel/                              # Linux kernel source tree
-└── qemu-e2e/                        # ← this framework
-    ├── Makefile                     # top-level targets (forwards to cargo xtask)
-    ├── virtuoso.toml                # single config surface: globals + [components.*]
-    ├── README.md
-    ├── skills/
-    │   └── kernel-dev/SKILL.md      # Claude Code skill (assistant guidance)
-    └── infra/
-        ├── init-initramfs           # stage-1 PID 1: insmod boot modules, mount root=, switch_root
-        ├── modules-boot.conf        # frozen boot-critical module set (virtio, ext4 + deps) → initramfs
-        ├── init                     # test PID 1 (injected into rootfs.img; auto_test or shell)
-        ├── initrd.img               # generated, minimal initramfs
-        ├── rootfs.img               # generated, ext4 rootfs
-        ├── disk.qcow2               # generated, optional
-        ├── initramfs/               # initramfs staging area (gitignored)
-        ├── rootfs/                  # rootfs staging area (gitignored)
-        └── testcases/
-            ├── Makefile             # delegates to CMake
-            ├── CMakeLists.txt       # one add_executable() per test binary
-            └── src/
-                ├── main.c           # shared entry — calls run_tests()
-                ├── test_common.h/c  # PASS/FAIL/SKIP/INFO macros + counters
-                └── test_example.c   # skeleton; copy and rename
-```
-
-## Writing a test case
-
-Each test binary shares `main.c`, which prints a header, calls **`void run_tests(void)`** (which *you* implement), and prints a summary. Use the macros from `test_common.h` — they update the counters `main.c` reports.
-
-### 1. Create `infra/testcases/src/test_<name>.c`
-
-```c
-#include "test_common.h"
-
-static void test_my_feature(void)
-{
-    printf("\nTest: my feature does the thing\n");
-
-    /* exercise the kernel via syscalls / ioctls / /proc / /sys */
-    if (/* expected condition */)
-        PASS("the thing happened");
-    else
-        FAIL("expected X, got Y");
-}
-
-void run_tests(void)
-{
-    test_my_feature();
-    /* add more test_*() calls here */
-}
-```
-
-Macros: `PASS(fmt, ...)`, `FAIL(fmt, ...)`, `SKIP(fmt, ...)`, `INFO(fmt, ...)`. Don't write your own `main()` — the shared one is linked in.
-
-### 2. Register the binary in `infra/testcases/CMakeLists.txt`
-
-```cmake
-add_executable(test-<name>
-    src/main.c
-    src/test_common.c
-    src/test_<name>.c
-)
-set_target_properties(test-<name> PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-```
-
-The build is `-static -O2 -Wall`; do **not** relax `-static` — the VM has no dynamic loader.
-
-### 3. Rebuild and run
-
-```bash
-make initrd && make qemu-test QEMU_TIMEOUT=30
-```
-
-`init` auto-discovers everything in `/tests/`, so newly-added binaries are picked up with no further wiring.
-
-### Output markers
-
-When auto-testing, look for:
-
-- `[PASS] / [FAIL] / [SKIP] / [INFO]` — per-assertion lines.
-- `Test Results: N/M passed` — per-binary tally.
-- `TEST_COMPLETE: ALL TESTS PASSED` — overall success (harness exits 0).
-- `TEST_COMPLETE: SOME TESTS FAILED` — overall failure (harness exits non-zero).
-- Exit code `124` — harness wallclock timeout (kernel hang or runaway loop).
-
-## Loading kernel modules
-
-Module supply is **generated from the components** declared in `virtuoso.toml`:
-
-- `infra/modules-boot.conf` (frozen base set: virtio/ext4 + deps) is copied into
-  the initramfs and insmodded by `init-initramfs` before the pivot. Components
-  that need a module that early add `stage = "boot"`; those entries are appended
-  after the base set.
-- Everything else comes from enabled components' `require` and is written by the
-  builder into `rootfs.img /lib/modules/modules.conf`, insmodded by the test init
-  after the pivot. Entries are conf lines — tokens after the module name are
-  passed verbatim to `insmod`:
-
-  ```toml
-  # [components.mydev]
-  # enabled = true
-  # require = ["nvme-core", "nvme", "my_driver param1=1 param2=foo"]
-  ```
-
-Rules:
-
-- **Order matters.** `init` calls `insmod` in list order (dependencies first —
-  there is no auto-resolution).
-- **Module must be built.** A name without a matching `.ko` under `kernel_path`
-  aborts the build with `Module X.ko not found`.
-- **Prefer `=m` over `=y`** for modules under iteration — faster cycle, no kernel rebuild.
-
-## Customizing the boot environment
-
-> Full architecture reference for maintainers and AI: **[docs/initramfs-rootfs-guide.md](docs/initramfs-rootfs-guide.md)** —
-> two-stage boot design, asset supply chain, build pipeline, kernel quirks,
-> and which file to touch for common changes.
-
-`infra/init` is a small POSIX shell script. Edit `main()` between `load_modules` and the auto-test block to add setup the harness doesn't do by default. Example — pre-allocate huge pages and mount hugetlbfs:
-
-```sh
-mkdir -p /mnt/huge
-mount -t hugetlbfs nodev /mnt/huge
-echo 20 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-```
-
-After editing `init` (test stage) or `init-initramfs` (pivot stage), rebuild the boot pair:
-
-```bash
-make initrd && make qemu-test QEMU_TIMEOUT=30
-```
-
-## Debugging
-
-### Interactive shell
-
-```bash
-make qemu          # TCG, useful for cross-arch
-make qemu-kvm      # native speed, host arch only
-```
-
-Exit with `Ctrl-A` then `x`.
-
-### Source-level kernel debugging
-
-Build the kernel with `CONFIG_DEBUG_INFO=y` (and ideally `CONFIG_DEBUG_INFO_DWARF5=y`, `CONFIG_GDB_SCRIPTS=y`).
-
-Terminal 1:
-
-```bash
-make qemu-debug   # halts at boot, listening on :1234
-```
-
-Terminal 2:
-
-```bash
-cd "$KERNEL_PATH"
-gdb-multiarch vmlinux -ex 'target remote :1234'
-```
-
-### Block device tests
-
-```bash
-make disk         # creates target/artifacts/disk.qcow2 (512 MB, NVMe)
-make qemu         # appears as /dev/nvme0n1 in the VM
-```
-
-### PCI passthrough
-
-Enable the vfio component in `virtuoso.toml`:
-
-```toml
-[components.vfio]
-enabled = true
-devices = ["0000:01:00.0"]
-```
-
-Host needs IOMMU enabled (`intel_iommu=on` / `iommu=pt`).
-
-## Claude Code integration
-
-A `kernel-dev` skill lives under `skills/kernel-dev/SKILL.md` and teaches Claude Code how to drive this harness — running the dev loop, writing tests in the project's idiom, parsing serial output, and triaging failures.
-
-```bash
-make install-skill          # copies skill into $KERNEL_PATH/.claude/skills/
-make uninstall-skill        # removes it
-```
-
-Once installed, Claude discovers the skill automatically when invoked from the kernel tree.
-
-## Contributing
-
-Issues and PRs welcome. When adding features, please:
-
-- Keep the harness POSIX-shell-compatible where possible (`init` runs under BusyBox `sh`, not bash).
-- Update `crates/builder/src/verify.rs` with any new prerequisite.
-- Add a corresponding `test_*.c` for any new behavior the harness exposes.
-- Update both this README and `skills/kernel-dev/SKILL.md` if user-visible behavior changes.
+- [使用指南](docs/user-guide.md) — 上手、配置、写用例、模块、调试、组件
+- [Initramfs 与 Rootfs 构建指南](docs/initramfs-rootfs-guide.md) — 两段式引导逐行解读、"改哪个文件"手册
+- [Troubleshooting](docs/troubleshooting.md) — Symptom → Solution 速查
+- [架构与设计](docs/virtuoso-design.md) — 总体架构、核心模块设计、冻结契约、标记协议 v1（冻结）
+- [AGENTS.md](AGENTS.md) — AI 面向的仓库地图与不变量
 
 ## License
 
-See `LICENSE`.
+[MIT](LICENSE)。

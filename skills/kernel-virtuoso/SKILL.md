@@ -1,6 +1,6 @@
 ---
 name: kernel-virtuoso
-description: AI 分诊数据接口（kernel-dev 的 Phase 3 进化版）——基于 virtuoso harness 的 events.jsonl / verdict.json / 指纹聚类做串口日志分诊、测试脚手架生成与补丁↔测试映射。Use when triaging failed E2E runs, generating new test scaffolds, mapping a patch to a minimal test set, or hunting flaky tests.
+description: AI 分诊数据接口——基于 virtuoso harness 的 events.jsonl / verdict.json / 指纹聚类做串口日志分诊、测试脚手架生成与补丁↔测试映射。Use when triaging failed E2E runs, generating new test scaffolds, mapping a patch to a minimal test set, or hunting flaky tests.
 user_invocable: true
 version: 1.0.0
 ---
@@ -68,7 +68,7 @@ cargo xtask test --replay-until-fail N    # 最多 N 轮，首个非 passed 即�
 
 ### 5. 测试脚手架生成
 
-**Rust 用例（Phase 3 起新用例默认 Rust）**：复制
+**Rust 用例（新用例默认 Rust）**：复制
 `infra/testcases/rust/test-rs-example/` 为 `test-<name>/`，在 `TESTS` 注册
 `("名称", 函数)`，断言用 `testfw::check!`。产物为静态 ELF，构建时自动装入
 rootfs `/tests/`。

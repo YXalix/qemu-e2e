@@ -258,7 +258,7 @@ qemu-system-aarch64 -M virt -cpu cortex-a72 -m 1G -nographic -no-reboot \
 | `infra/init` | 阶段 2 PID 1（测试 init，构建时注入 rootfs） | — |
 | `infra/modules-boot.conf` | boot 冻结基础集 → initramfs | — |
 | `virtuoso.toml` | 唯一配置面：全局键 + 组件 require 并集 → rootfs modules.conf | — |
-| `crates/builder/` | busybox 供给 + 两段式镜像组装（原 shell 流水线的 Rust 接管） | — |
+| `crates/builder/` | busybox 供给 + 两段式镜像组装 | — |
 | `target/artifacts/initrd.img` / `rootfs.img` / `tools.img` | 构建产物 | ✅ |
 | `target/build/busybox/`、`rootfs/`、`initramfs/`、`tools/` | 缓存与暂存目录 | ✅ |
 | `.github/workflows/busybox-release.yml` | release 生成（含冻结 init） | — |

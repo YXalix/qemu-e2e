@@ -1,18 +1,18 @@
-# Makefile for Virtuoso (Phase 2)
+# Makefile for Virtuoso
 #
-# Phase 2 起 Rust workspace 是唯一行为权威；本文件只是转发壳，
+# Rust workspace 是唯一行为权威；本文件只是转发壳，
 # 保留 make 旧习惯。实际逻辑见 xtask/ 与 crates/（AGENTS.md 有 Code Map）。
 
 -include .env
 
 QEMU_TIMEOUT ?= 0
 
-.PHONY: all help verify busybox qemu qemu-kvm qemu-debug initrd qemu-test clean install-skill uninstall-skill
+.PHONY: all help verify busybox qemu qemu-kvm qemu-debug initrd qemu-test clean install-skill uninstall-skill docs
 
 all: help
 
 help:
-	@echo "Virtuoso — kernel E2E virtualization test harness (Phase 2: Rust authoritative)"
+	@echo "Virtuoso — kernel E2E virtualization test harness (Rust authoritative)"
 	@echo ""
 	@echo "All targets forward to 'cargo xtask' (single behavior source)."
 	@echo ""
@@ -27,6 +27,7 @@ help:
 	@echo "  install-skill - Install kernel-dev skill for Claude Code"
 	@echo "  uninstall-skill - Remove kernel-dev skill from Claude Code"
 	@echo "  clean         - Remove generated images"
+	@echo "  docs          - Build mdBook docs (docs/ -> target/book)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make qemu                       # Run interactively"
@@ -34,6 +35,7 @@ help:
 	@echo "  make qemu-debug                 # Debug with GDB"
 	@echo "  make qemu-test QEMU_TIMEOUT=60  # Auto-test with 60s timeout"
 	@echo "  make install-skill              # Install skill into kernel tree"
+	@echo "  make docs                       # Build documentation site"
 
 verify:
 	@cargo xtask verify
@@ -68,3 +70,6 @@ uninstall-skill:
 
 clean:
 	@cargo xtask clean
+
+docs:
+	@cargo xtask docs

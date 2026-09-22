@@ -1,18 +1,14 @@
 # Virtuoso Agent Guide
 
-Virtuoso 是 qemu-e2e（QEMU 内核 E2E 测试装置）的 Rust 化工程。**当前处于 Phase 3
-（AI 与全栈现代化，Phase 2 已完成）：Rust workspace 是唯一行为权威**，crate 采用
-角色名词命名（Phase 3 重构前的音乐隐喻名：overture→builder、ensemble→launcher、
-auditor→judge、coda→guardian、encore→tracker）——
+Virtuoso 是 QEMU 内核 E2E 测试装置。**Rust workspace 是唯一行为权威**，crate 以
+角色名词命名——
 common（基础层）、builder（构建）、launcher（启动 DSL + Firecracker 后端）、
 judge（判定 + verdict.json schema）、guardian（进程治理）、tracker（跨 run 聚类/返场）
-接管全部实际逻辑；`Makefile` 是转发壳。原 shell 基线脚本（run-qemu/verify/
-build-initrd/cpio2ext4/fetch-busybox/init-rootfs）已全部被 Rust 接管并于 2026-09
-移除；`infra/` 只保留 VM 内源资产（init、init-initramfs、modules-boot.conf（冻结
-基础集）、testcases/、tools/），git 跟踪（rootfs 的 modules.conf 由组件 require
-并集生成，不再手写）；构建产物与缓存一律落 `target/`（数据面，git 忽略）：
-`target/artifacts/`（initrd.img / rootfs.img / tools.img）+ `target/build/`
-（busybox 供给缓存、initramfs/rootfs/tools 暂存目录）。
+接管全部实际逻辑；`Makefile` 是转发壳；`infra/` 只保留 VM 内源资产（init、
+init-initramfs、modules-boot.conf（冻结基础集）、testcases/、tools/），git 跟踪
+（rootfs 的 modules.conf 由组件 require 并集生成）；构建产物与缓存一律落
+`target/`（数据面，git 忽略）：`target/artifacts/`（initrd.img / rootfs.img /
+tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools 暂存目录）。
 
 ## 快速命令（复制即用）
 
@@ -33,6 +29,7 @@ cargo xtask probe --cmd 'uname -a' [--cmd-file f] [--json]
                                # AI 交互通道：virtio-serial agent 命令批（结构化事件流）
 cargo xtask verify --backend firecracker  # microVM preflight（test/shell 同参数）
 cargo xtask skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核树
+cargo xtask docs [--serve]     # mdBook 文档构建到 target/book / 本地预览
 ```
 
 AI 的标准验证循环：`verify → test → triage`。**判定以 triage 的 verdict 为准**，
@@ -59,6 +56,7 @@ AI 的标准验证循环：`verify → test → triage`。**判定以 triage 的
 | Rust 用例 | `infra/testcases/rust/` | 独立 workspace：`testfw` no_std 框架 + 用例 crate；裸 syscall 静态 ELF；`/tests/` 自动发现 |
 | VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 tools.img 的 `/bin/`（VM 内挂 `/tools`，init-hooks 注入 PATH），不进 `/tests/` 不参与判定 |
 | skill | `skills/kernel-dev/`、`skills/kernel-virtuoso/` | `cargo xtask skill install` 装入内核树（后者 = AI 数据接口集成） |
+| 文档站 | `docs/` + 根 `book.toml` | **docs/ 是文档唯一事实来源**（mdBook src 直指它）；`cli/docs.rs` 接线 `cargo xtask docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
 
 ## 运行工件（AI 分诊数据源）
 
@@ -125,24 +123,27 @@ pmem 组件（启用时 WARN 忽略）。
 
 ## 冻结的不变量（不要破坏）
 
-1. **标记协议 v1**（`infra/init` 输出，设计文档附录 A）：
+1. **标记协议 v1**（`infra/init` 输出，架构文档附录 A）：
    `--- Running: X ---`、`PASSED:/FAILED: X`、`Test Results: N/M passed`、
    `TEST_COMPLETE: ALL TESTS PASSED|SOME TESTS FAILED`。改文本等于破坏所有下游解析。
 2. **test 退出码**：0=通过、124=超时、其余=失败。
-3. **argv 冻结**：`QemuInvocation::argv` 的输出冻结在原 `infra/run-qemu.sh`
-   （已删除）的基线上，由 `crates/launcher/src/qemu.rs` 的 `argv_*` 单测把守；
+3. **argv 冻结**：`QemuInvocation::argv` 的输出冻结在既定基线上，由
+   `crates/launcher/src/qemu.rs` 的 `argv_*` 单测把守；
    人工复核用 `QEMU=echo cargo xtask shell` 打印 argv。数据盘（tools.img 等，
    追加 `-drive …,if=virtio` → `/dev/vdb` 起）与 agent 通道属调用方增量：
-   **缺省（无盘无 agent）argv 与基线逐字一致**。NVMe 测试盘（disk.qcow2）已于
-   2026-09 移除，块设备抽象统一为 `DataDisk`（QEMU/Firecracker 双后端多盘）。
+   **缺省（无盘无 agent）argv 与基线逐字一致**；块设备抽象统一为 `DataDisk`
+   （QEMU/Firecracker 双后端多盘）。
 4. 测试必须静态链接（`-static`），禁止用 `|| true` 掩盖失败。
-5. `.env` 的值优先于进程环境变量（Makefile `-include .env` 遗产语义）——但
-   `.env` 已废弃：仅在文件存在时打 WARN 兼容读取（仅标量键），组件化配置只能
-   写 `virtuoso.toml`；优先级 toml > .env > 进程 env。
+5. **配置只写 `virtuoso.toml`**：`.env` 非配置面，仅当文件存在时打 WARN 兼容
+   读取（仅标量键，其值优先于进程环境变量）；优先级 toml > .env > 进程 env。
 
 ## 详细文档
 
-- `docs/virtuoso-design.md` —— 总体设计、阶段路线、决策记录（§6 有 Phase 2/3 落地记录）
+`docs/` 是文档唯一事实来源（mdBook：`book.toml` src 直指 docs/，`cargo xtask docs`
+构建，push main 自动发布 gh-pages）；改动文档只动 `docs/`，别处引用不复制内容。
+
+- `docs/user-guide.md` —— 日常操作手册：上手、配置、写用例、模块、调试、组件
+- `docs/virtuoso-design.md` —— 总体架构、核心模块设计、冻结契约、标记协议 v1 冻结文本
 - `docs/initramfs-rootfs-guide.md` —— 两段式引导逐行解读、"改哪个文件"手册
 - `docs/troubleshooting.md` —— Symptom → Solution 速查
 

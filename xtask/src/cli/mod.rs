@@ -4,12 +4,14 @@
 //! - build   → `cli::build`（build / busybox / clean / skill）
 //! - vm      → `cli::vm`（shell / debug / test / matrix：启动、看门狗、判定接线）
 //! - parity  → `cli::parity`（make ↔ xtask 行为对照）
+//! - docs    → `cli::docs`（mdBook 文档构建 / 本地预览）
 //! - 呈现命令 → `runs::render`（triage / runs / cluster / suggest / replay）
 //!
 //! 行为基线（退出码语义）不变：0=通过、124=超时、其余=失败（单点在 judge::exit）。
 
 mod build;
 mod diagnostics;
+mod docs;
 mod parity;
 mod probe;
 mod verify;
@@ -92,6 +94,7 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
             let cfg = Config::load()?;
             runs::run_suggest(&cfg, diff, json)
         }
+        CliCommand::Docs { serve, open } => docs::run_docs(serve, open),
     }
 }
 

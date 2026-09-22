@@ -18,7 +18,7 @@ use std::path::PathBuf;
 #[command(
     name = "virtuoso",
     version,
-    about = "Virtuoso — kernel E2E virtualization test harness (qemu-e2e Phase-1 wrapper)",
+    about = "Virtuoso — kernel E2E virtualization test harness",
     long_about = None
 )]
 struct Cli {
@@ -96,7 +96,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// 多架构矩阵批量测试（Phase 2：launcher）
+    /// 多架构矩阵批量测试（launcher）
     Matrix {
         /// 目标架构；缺省为三架构全矩阵
         #[arg(long)]
@@ -137,13 +137,13 @@ enum Command {
         #[arg(long)]
         strict: bool,
     },
-    /// 跨 run 失败指纹聚类（tracker）：flaky 用例清单 + 失败首现 run（Phase 3）
+    /// 跨 run 失败指纹聚类（tracker）：flaky 用例清单 + 失败首现 run
     Cluster {
         /// 机器可读 JSON 输出
         #[arg(long)]
         json: bool,
     },
-    /// 补丁↔测试映射（tracker）：git diff 的子系统路径 → 推荐最小测试集（Phase 3）
+    /// 补丁↔测试映射（tracker）：git diff 的子系统路径 → 推荐最小测试集
     Suggest {
         /// 统一 diff 文件；缺省对 KERNEL_PATH 内核树做 git diff（含暂存区）
         #[arg(long = "diff")]
@@ -151,6 +151,15 @@ enum Command {
         /// 机器可读 JSON 输出
         #[arg(long)]
         json: bool,
+    },
+    /// 文档：mdBook 构建到 target/book（docs/ 是唯一事实来源；发布走 gh-pages）
+    Docs {
+        /// 本地预览（mdbook serve，http://localhost:3000，改文件实时刷新）
+        #[arg(long)]
+        serve: bool,
+        /// 构建完成后打开浏览器
+        #[arg(long)]
+        open: bool,
     },
 }
 
