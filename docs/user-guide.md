@@ -47,8 +47,9 @@ Verdict 全集（`judge::Verdict`）：`passed` / `failed` / `timeout` / `panic`
 
 ## 2. 配置：`virtuoso.toml`
 
-唯一配置面。优先级：`virtuoso.toml` > `.env`（已废弃，存在时 WARN 兼容读取）>
-进程环境变量；未知键 / 非法类型解析期报错。仓库根的 `virtuoso.toml` 模板即
+唯一配置面。标量键优先级：进程环境变量 > `virtuoso.toml`（同名键 env 覆盖
+toml，临时改参不动文件，持久配置写 toml）；未知键 / 非法类型解析期报错。
+仓库根的 `virtuoso.toml` 模板即
 缺省常规启动配置，可选能力全部以注释形式在场，取消注释即启用。
 
 ### 2.1 全局键

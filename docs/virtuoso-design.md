@@ -93,7 +93,7 @@ virtuoso/
 ├── xtask/
 │   └── src/
 │       ├── main.rs             # clap 子命令定义
-│       ├── config.rs           # 类型化配置（virtuoso.toml；.env 兼容读取）
+│       ├── config.rs           # 类型化配置（virtuoso.toml 唯一配置面）
 │       ├── cli/                # verify / build / vm / probe / docs / parity / mod（分发+解析 helpers）/ diagnostics
 │       └── runs/               # rundir（run 目录、输出泵、verdict 落盘回读）+ render（triage/runs/cluster/suggest/replay 呈现）
 ├── crates/
@@ -152,8 +152,9 @@ console / machine / 交叉前缀）、`which` 与 ELF 探测、内存量解析�
 
 `virtuoso.toml` 是唯一配置面：全局键（arch / timeout_secs / smp / backend /
 auto_test / kernel_path / kernel_image / qemu / qemu_opts / firecracker_bin）+
-`[components.*]` 组件段。优先级 `virtuoso.toml` > `.env`（存在时 WARN 兼容读取，
-仅标量键）> 进程环境变量；未知键 / 非法类型解析期报错。仓库根的 `virtuoso.toml`
+`[components.*]` 组件段。标量键优先级：进程环境变量 > `virtuoso.toml`
+（同名键 env 覆盖 toml，临时改参不动文件）；未知键 / 非法类型解析期报错。
+仓库根的 `virtuoso.toml`
 模板即缺省常规启动配置，可选能力以注释形式在场。
 
 VM 能力按组件声明，每个组件段支持：
@@ -304,7 +305,7 @@ PASS/FAIL 宏语义）：
 | 退出码 | 0=通过、124=超时（137 归一）、其余=失败；唯一表在 `judge::exit` |
 | QEMU argv | 缺省（无数据盘、无 agent）输出与冻结基线逐字一致，`argv_*` 单测把守 |
 | 静态链接 | 测试必须 `-static`；禁止 `|| true` 掩盖失败 |
-| 配置优先级 | `virtuoso.toml` > `.env`（兼容 WARN）> 进程环境变量 |
+| 配置优先级 | 标量键：进程环境变量 > `virtuoso.toml`（同名键 env 覆盖） |
 | AI 接口 | skill 只依赖标记协议 v1 与工件 schema（verdict.json / events.jsonl），不依赖 harness 内部实现 |
 
 ---

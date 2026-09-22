@@ -61,8 +61,8 @@ before root mount / `runtime` after pivot, default `runtime`):
 `devices`), `[components.numa]` (multi-node topology via `nodes` /
 `memory_per_node`), `[components.pmem]` (persistent memory, arm64/riscv64).
 The builder generates the rootfs module list from the enabled components'
-`require` union. A `.env` file is not a config surface — it is only read with
-a WARN when present; component config only exists in TOML.
+`require` union. Scalar precedence: process environment variables override
+`virtuoso.toml` fields of the same name; component config only exists in TOML.
 
 ## Primary Workflow: The Kernel Dev Loop
 

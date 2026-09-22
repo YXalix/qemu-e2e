@@ -32,7 +32,7 @@ jobs:
         run: cargo test --workspace
 
   # 内核 E2E（boot + 标记协议断言）需要内核树与 KVM/TCG 资源，
-  # 放在自建 runner（openEuler 宿主，.env 指向内核树）上手动触发。
+  # 放在自建 runner（openEuler 宿主，virtuoso.toml 指向内核树）上手动触发。
   # runner 上以 systemd 服务或 tmux 会话常驻 cargo xtask 均可；
   # 产物 target/runs/ 会由 triage 消化，失败时把 runs 目录整体上传。
   kernel-e2e:

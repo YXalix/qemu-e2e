@@ -3,81 +3,14 @@
 //! 内核模块，builder 按启用组件的并集生成模块清单）。非法配置一律解析期
 //! 报错（未知键、非法类型、SMP 不被 NUMA 节点数整除）。
 //!
-//! `.env` 已废弃：存在时打 WARN 仍兼容读取（仅标量键），优先级
-//! **virtuoso.toml > .env > 进程环境变量**（.env 优先于进程 env 是旧
-//! Makefile `-include .env` 的遗产语义，仅为平滑迁移保留）。
+//! 标量键取值优先级：**进程环境变量 > virtuoso.toml** —— 同名键环境变量
+//! 覆盖 toml 字段（CI/命令行临时改参不动文件），都未设置时用内置缺省。
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
 pub use launcher::Arch;
-
-/// `.env` 解析（KEY=VALUE / `export KEY=VALUE`，支持 `#` 注释与成对引号）。
-/// 遗留兼容层：新配置一律写 `virtuoso.toml`。
-#[derive(Debug, Default)]
-pub struct EnvFile {
-    pub vars: BTreeMap<String, String>,
-    /// .env 路径（存在才 Some；存在即已打废弃 WARN）。
-    pub path: Option<PathBuf>,
-    /// virtuoso.toml 路径（存在才 Some）。
-    pub toml_path: Option<PathBuf>,
-}
-
-impl EnvFile {
-    pub fn load(project_root: &Path) -> anyhow::Result<Self> {
-        let path = project_root.join(".env");
-        let mut vars = BTreeMap::new();
-        if path.is_file() {
-            eprintln!(
-                "WARN: {} 已废弃 —— 请把配置迁移到 virtuoso.toml（组件化配置只能写在 toml）",
-                path.display()
-            );
-            let content = std::fs::read_to_string(&path)
-                .with_context(|| format!("读取 {} 失败", path.display()))?;
-            for line in content.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-                let line = line.strip_prefix("export ").map(str::trim).unwrap_or(line);
-                let Some((k, v)) = line.split_once('=') else {
-                    continue;
-                };
-                let k = k.trim();
-                if k.is_empty() || !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-                    continue;
-                }
-                let v = v.trim();
-                // 成对引号剥除（内联注释的展开交给脚本，这里保持原样以免破坏 QEMU_OPTS）
-                let v = if v.len() >= 2
-                    && ((v.starts_with('"') && v.ends_with('"'))
-                        || (v.starts_with('\'') && v.ends_with('\'')))
-                {
-                    &v[1..v.len() - 1]
-                } else {
-                    v
-                };
-                vars.insert(k.to_string(), v.to_string());
-            }
-        }
-        let path = path.is_file().then_some(path);
-
-        let toml_path = project_root.join("virtuoso.toml");
-        let toml_path = toml_path.is_file().then_some(toml_path);
-
-        Ok(Self { vars, path, toml_path })
-    }
-
-    /// .env 优先，其次进程环境变量（与 Makefile/脚本行为对齐）。
-    pub fn get(&self, key: &str) -> Option<String> {
-        if let Some(v) = self.vars.get(key) {
-            return Some(v.clone());
-        }
-        std::env::var(key).ok()
-    }
-}
 
 /// 项目根定位：从当前目录逐级向上寻找含 `infra/init`（PID 1 脚本）的目录。
 pub fn find_project_root() -> Option<PathBuf> {
@@ -92,6 +25,22 @@ pub fn find_project_root() -> Option<PathBuf> {
     }
 }
 
+/// 标量取值链：进程环境变量 > virtuoso.toml 字段（同名键 env 覆盖 toml；
+/// 空串视为未设置，继续回落）。无文件编辑的临时改参走 env，持久配置写 toml。
+fn scalar(toml_val: Option<&StrVal>, env_key: &str) -> Option<String> {
+    if let Ok(v) = std::env::var(env_key) {
+        if !v.trim().is_empty() {
+            return Some(v);
+        }
+    }
+    if let Some(v) = toml_val {
+        if !v.0.trim().is_empty() {
+            return Some(v.0.clone());
+        }
+    }
+    None
+}
+
 pub struct Config {
     pub project_root: PathBuf,
     /// VM 内源资产（init、modules-boot.conf、testcases、tools）——git 跟踪。
@@ -102,7 +51,8 @@ pub struct Config {
     pub artifacts_dir: PathBuf,
     /// 构建暂存与缓存（busybox 供给链、initramfs/rootfs 组装目录）——git 忽略。
     pub build_dir: PathBuf,
-    pub env: EnvFile,
+    /// virtuoso.toml 路径（存在才 Some）。
+    pub toml_path: Option<PathBuf>,
     /// virtuoso.toml 类型化解析结果（文件存在才 Some；未知键/非法类型已在
     /// 解析期报错）。
     pub toml: Option<VirtuosoToml>,
@@ -117,7 +67,6 @@ impl Config {
         })?;
         let infra_dir = project_root.join("infra");
         let target_dir = project_root.join("target");
-        let env = EnvFile::load(&project_root)?;
         let toml_path = project_root.join("virtuoso.toml");
         let toml = if toml_path.is_file() {
             Some(parse_toml(&toml_path)?)
@@ -130,24 +79,14 @@ impl Config {
             project_root,
             infra_dir,
             target_dir,
-            env,
+            toml_path: toml_path.is_file().then_some(toml_path),
             toml,
         })
     }
 
     /// virtuoso.toml 路径（存在才 Some）。
     pub fn toml_path(&self) -> Option<&Path> {
-        self.env.toml_path.as_deref()
-    }
-
-    /// 标量取值链：virtuoso.toml 字段 → env 变量（.env 或进程环境）。
-    fn scalar(&self, toml_val: Option<&StrVal>, env_key: &str) -> Option<String> {
-        if let Some(v) = toml_val {
-            if !v.0.trim().is_empty() {
-                return Some(v.0.clone());
-            }
-        }
-        self.env.get(env_key)
+        self.toml_path.as_deref()
     }
 
     /// 取 toml 全局标量字段（None 当字段未写或 toml 文件不存在）。
@@ -155,22 +94,22 @@ impl Config {
         self.toml.as_ref().and_then(|t| f(t).as_ref())
     }
 
-    /// BusyBox 供给配置（toml [busybox] 优先于 BUSYBOX_* 变量）。
+    /// BusyBox 供给配置（BUSYBOX_* 变量优先，回落 toml [busybox] 段）。
     pub fn busybox_supply(&self) -> builder::busybox::Supply {
         let toml = self.toml.as_ref().and_then(|t| t.busybox.as_ref());
         builder::busybox::Supply {
-            version: self
-                .scalar(toml.and_then(|b| b.version.as_ref()), "BUSYBOX_VERSION")
+            version: scalar(toml.and_then(|b| b.version.as_ref()), "BUSYBOX_VERSION")
                 .filter(|s| !s.is_empty()),
-            release_repo: self
-                .scalar(toml.and_then(|b| b.release_repo.as_ref()), "BUSYBOX_RELEASE_REPO")
+            release_repo: scalar(
+                toml.and_then(|b| b.release_repo.as_ref()),
+                "BUSYBOX_RELEASE_REPO",
+            )
+            .filter(|s| !s.is_empty()),
+            dl_url: scalar(toml.and_then(|b| b.dl_url.as_ref()), "BUSYBOX_DL_URL")
                 .filter(|s| !s.is_empty()),
-            dl_url: self
-                .scalar(toml.and_then(|b| b.dl_url.as_ref()), "BUSYBOX_DL_URL")
-                .filter(|s| !s.is_empty()),
-            force_source_build: match toml.and_then(|b| b.force_source_build) {
-                Some(v) => v,
-                None => self.env.get("BUSYBOX_SOURCE_BUILD").as_deref() == Some("1"),
+            force_source_build: match std::env::var("BUSYBOX_SOURCE_BUILD") {
+                Ok(v) => v == "1",
+                Err(_) => toml.and_then(|b| b.force_source_build).unwrap_or(false),
             },
         }
     }
@@ -182,14 +121,12 @@ impl Config {
 
     /// arch 原始字符串（诊断层呈现来源用）。
     pub fn arch_str(&self) -> Option<String> {
-        self.scalar(self.tv(|t| &t.arch), "ARCH")
+        scalar(self.tv(|t| &t.arch), "ARCH")
     }
 
     /// (KERNEL_PATH, 是否显式指定)。未指定时 = 项目根上一级（qemu-e2e 自动探测语义）。
     pub fn kernel_path(&self) -> anyhow::Result<(PathBuf, bool)> {
-        match self
-            .scalar(self.tv(|t| &t.kernel_path), "KERNEL_PATH")
-            .filter(|s| !s.is_empty())
+        match scalar(self.tv(|t| &t.kernel_path), "KERNEL_PATH").filter(|s| !s.is_empty())
         {
             Some(p) => Ok((PathBuf::from(p), true)),
             None => {
@@ -204,54 +141,56 @@ impl Config {
 
     /// kernel_image 覆盖（firecracker aarch64 等 ELF 场景用）。
     pub fn kernel_image(&self) -> Option<String> {
-        self.scalar(self.tv(|t| &t.kernel_image), "KERNEL_IMAGE")
+        scalar(self.tv(|t| &t.kernel_image), "KERNEL_IMAGE")
             .filter(|s| !s.trim().is_empty())
     }
 
     /// QEMU_TIMEOUT 原始字符串（"0" 由 test 命令拒绝）。
     pub fn timeout_raw(&self) -> String {
-        self.scalar(self.tv(|t| &t.timeout_secs), "QEMU_TIMEOUT")
+        scalar(self.tv(|t| &t.timeout_secs), "QEMU_TIMEOUT")
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "0".into())
     }
 
-    /// AUTO_TEST 开关（缺省 true —— 常规启动即跑测试）。
+    /// AUTO_TEST 开关（缺省 true —— 常规启动即跑测试；env 覆盖 toml）。
     pub fn auto_test(&self) -> bool {
-        match self.toml.as_ref().and_then(|t| t.auto_test) {
-            Some(v) => v,
-            None => self.env.get("AUTO_TEST").as_deref() != Some("0"),
+        match std::env::var("AUTO_TEST") {
+            Ok(v) => v != "0",
+            Err(_) => self.toml.as_ref().and_then(|t| t.auto_test).unwrap_or(true),
         }
     }
 
     /// QEMU 二进制覆盖。
     pub fn qemu_override(&self) -> Option<String> {
-        self.scalar(self.tv(|t| &t.qemu), "QEMU").filter(|s| !s.is_empty())
+        scalar(self.tv(|t| &t.qemu), "QEMU").filter(|s| !s.is_empty())
     }
 
     /// firecracker 二进制（缺省 "firecracker"）。
     pub fn firecracker_bin(&self) -> String {
-        self.scalar(self.tv(|t| &t.firecracker_bin), "FIRECRACKER_BIN")
+        scalar(self.tv(|t| &t.firecracker_bin), "FIRECRACKER_BIN")
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "firecracker".into())
     }
 
     /// backend 原始字符串（qemu | firecracker；None = 缺省 qemu）。
     pub fn backend_str(&self) -> Option<String> {
-        self.scalar(self.tv(|t| &t.backend), "BACKEND")
+        scalar(self.tv(|t| &t.backend), "BACKEND")
             .filter(|s| !s.trim().is_empty())
     }
 
-    /// QEMU 透传参数（toml `qemu_opts` 数组 + 启用的 vfio 组件设备 +
-    /// 遗留 `QEMU_OPTS` 空白切分，按此顺序拼接）。
+    /// QEMU 透传参数：`QEMU_OPTS` 环境变量（空白切分）优先，否则 toml
+    /// `qemu_opts` 数组；vfio 组件设备恒追加在后（组件增量，不参与优先级）。
     pub fn qemu_extra(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Some(list) = self.toml.as_ref().and_then(|t| t.qemu_opts.as_ref()) {
-            out.extend(list.iter().cloned());
-        }
+        let mut out: Vec<String> = match std::env::var("QEMU_OPTS") {
+            Ok(s) if !s.trim().is_empty() => s.split_whitespace().map(str::to_string).collect(),
+            _ => self
+                .toml
+                .as_ref()
+                .and_then(|t| t.qemu_opts.as_ref())
+                .map(|list| list.to_vec())
+                .unwrap_or_default(),
+        };
         out.extend(self.vfio_opts());
-        if let Some(s) = self.env.get("QEMU_OPTS") {
-            out.extend(s.split_whitespace().map(str::to_string));
-        }
         out
     }
 
@@ -276,9 +215,7 @@ impl Config {
     /// 组件化取值：smp 全局；nodes/memory 来自启用的 [components.numa]，
     /// 未启用（缺省单节点）回落遗留变量，再回落 1 / "1G"。
     pub fn topo_params(&self) -> (String, String, String) {
-        let smp = self
-            .scalar(self.tv(|t| &t.smp), "SMP")
-            .unwrap_or_else(|| "8".into());
+        let smp = scalar(self.tv(|t| &t.smp), "SMP").unwrap_or_else(|| "8".into());
         let numa = self
             .toml
             .as_ref()
@@ -291,9 +228,8 @@ impl Config {
                 raw.filter(|s| !s.trim().is_empty())
                     .unwrap_or_else(|| "2".into())
             }
-            None => self
-                .env
-                .get("NUMA_NODES")
+            None => std::env::var("NUMA_NODES")
+                .ok()
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| "1".into()),
         };
@@ -303,9 +239,8 @@ impl Config {
                 raw.filter(|s| !s.trim().is_empty())
                     .unwrap_or_else(|| "1G".into())
             }
-            None => self
-                .env
-                .get("NUMA_MEMORY")
+            None => std::env::var("NUMA_MEMORY")
+                .ok()
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| "1G".into()),
         };
@@ -746,5 +681,32 @@ require = ["libnvdimm", "nfit", "nd_pmem"]
         assert!(parse("qemu_opts = [1, 2]").is_err());
         assert!(parse("arch = true").is_err());
         assert!(parse("[components.agent]\nstage = \"middle\"\n").is_err());
+    }
+
+    #[test]
+    fn scalar_env_overrides_toml() {
+        // 优先级冻结：进程环境变量 > virtuoso.toml。env 改动是进程全局的，
+        // 用互斥锁串行化，键名用专用前缀避免污染真实配置键。
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _g = LOCK.lock().unwrap();
+        let toml = StrVal("arm64".into());
+        std::env::set_var("VIRTUOSO_TEST_SCALAR", "riscv64");
+        assert_eq!(
+            scalar(Some(&toml), "VIRTUOSO_TEST_SCALAR").as_deref(),
+            Some("riscv64"),
+            "同名键进程环境变量必须覆盖 toml"
+        );
+        std::env::remove_var("VIRTUOSO_TEST_SCALAR");
+        assert_eq!(
+            scalar(Some(&toml), "VIRTUOSO_TEST_SCALAR").as_deref(),
+            Some("arm64"),
+            "env 未设置时回落 toml"
+        );
+        // 空串视为未设置：env 与 toml 的空值都继续回落
+        std::env::set_var("VIRTUOSO_TEST_SCALAR", "");
+        assert_eq!(scalar(Some(&toml), "VIRTUOSO_TEST_SCALAR").as_deref(), Some("arm64"));
+        std::env::remove_var("VIRTUOSO_TEST_SCALAR");
+        assert_eq!(scalar(Some(&StrVal("  ".into())), "VIRTUOSO_TEST_SCALAR"), None);
+        assert_eq!(scalar(None, "VIRTUOSO_TEST_SCALAR"), None);
     }
 }

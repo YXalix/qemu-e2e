@@ -1,6 +1,3 @@
-# Local environment overrides
-.env
-
 # Test build directory
 infra/testcases/build/
 infra/testcases/.*

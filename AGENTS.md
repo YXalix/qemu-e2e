@@ -41,7 +41,7 @@ AI 的标准验证循环：`verify → test → triage`。**判定以 triage 的
 |---|---|---|
 | CLI 入口 | `xtask/src/main.rs` | clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
 | CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix）/ `probe.rs`（AI 交互通道）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
-| 类型化配置 | `xtask/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；`.env` 已废弃（存在 WARN 仍读，诊断呈现在 `cli/diagnostics.rs`） |
+| 类型化配置 | `xtask/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `cli/diagnostics.rs` |
 | 运行工件与分诊 | `xtask/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
 | 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
 | 构建器 | `crates/builder/src/` | busybox 四层供给 / **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / C 用例 / **no_std Rust 用例** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / cpio+ext4 组装 / verify 检查引擎 |
@@ -79,8 +79,9 @@ QEMU 以 **exit 0** 退出 —— 只看退出码会假通过；verdict 用 `TES
 
 ## 配置（组件化）
 
-`virtuoso.toml` 是唯一配置面；优先级：`virtuoso.toml` > `.env`（废弃，存在 WARN）>
-进程环境变量；未知键/非法类型解析期报错。**未配置项以注释形式存在于仓库根的
+`virtuoso.toml` 是唯一配置面；标量键优先级：**进程环境变量 > `virtuoso.toml`**
+（同名键 env 覆盖 toml，便于临时改参不动文件）；未知键/非法类型解析期报错。
+**未配置项以注释形式存在于仓库根的
 `virtuoso.toml` 模板**（活动行 = 默认常规启动配置）。VM 能力按组件配置，每个
 `[components.*]` 段可用 `enabled` / `require`（KO 依赖，条目 = conf 行
 `"<module> [key=val ...]"`）/ `stage`（`boot`｜`runtime`，缺省 runtime）：
@@ -134,8 +135,8 @@ pmem 组件（启用时 WARN 忽略）。
    **缺省（无盘无 agent）argv 与基线逐字一致**；块设备抽象统一为 `DataDisk`
    （QEMU/Firecracker 双后端多盘）。
 4. 测试必须静态链接（`-static`），禁止用 `|| true` 掩盖失败。
-5. **配置只写 `virtuoso.toml`**：`.env` 非配置面，仅当文件存在时打 WARN 兼容
-   读取（仅标量键，其值优先于进程环境变量）；优先级 toml > .env > 进程 env。
+5. **配置优先级：进程环境变量 > `virtuoso.toml`**：同名标量键以进程环境变量
+   为准（CI/命令行临时改参不动文件）；持久配置只写 `virtuoso.toml`。
 
 ## 详细文档
 

@@ -3,8 +3,6 @@
 # Rust workspace 是唯一行为权威；本文件只是转发壳，
 # 保留 make 旧习惯。实际逻辑见 xtask/ 与 crates/（AGENTS.md 有 Code Map）。
 
--include .env
-
 QEMU_TIMEOUT ?= 0
 
 .PHONY: all help verify busybox qemu qemu-kvm qemu-debug initrd qemu-test clean install-skill uninstall-skill docs

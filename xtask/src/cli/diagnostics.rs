@@ -14,9 +14,6 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
             "  virtuoso.toml: absent (使用内置缺省；仓库根有完整注释模板)"
         ),
     }
-    if let Some(p) = &cfg.env.path {
-        println!("  .env: {} (DEPRECATED — 迁移到 virtuoso.toml)", p.display());
-    }
 
     // 架构
     let arch_raw = arch_override.map(str::to_string).or_else(|| cfg.arch_str());
@@ -25,6 +22,8 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
         Some(arch) => {
             let src = if arch_override.is_some() {
                 "CLI --arch"
+            } else if std::env::var("ARCH").map(|v| !v.trim().is_empty()).unwrap_or(false) {
+                "env ARCH"
             } else if cfg.arch_str().is_some() {
                 "config"
             } else {

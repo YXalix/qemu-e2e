@@ -18,7 +18,7 @@ use crate::Progress;
 
 pub const DEFAULT_VERSION: &str = "1.36.1";
 
-/// 供给配置（源自 .env / virtuoso.toml 的 BUSYBOX_* 变量）。
+/// 供给配置（BUSYBOX_* 环境变量优先，回落 virtuoso.toml [busybox] 段）。
 #[derive(Debug, Clone, Default)]
 pub struct Supply {
     pub version: Option<String>,
@@ -91,7 +91,7 @@ pub fn ensure(
             progress.line("WARNING: release download failed, falling back to source build");
         } else {
             progress.line("WARNING: no release source available.");
-            progress.line("  Set BUSYBOX_RELEASE_REPO=<owner>/<repo> in .env (or push to GitHub with the busybox-release workflow).");
+            progress.line("  Set BUSYBOX_RELEASE_REPO=<owner>/<repo> (env or virtuoso.toml [busybox] release_repo; or push to GitHub with the busybox-release workflow).");
         }
     }
 
@@ -233,7 +233,7 @@ fn build_from_source(
 
     if host_norm != arch.name() {
         progress.line(&format!(
-            "WARNING: source-built BusyBox is {host_norm} but target ARCH={}.\n  Cross-arch initramfs needs a prebuilt release binary:\n  run the busybox-release workflow, then set BUSYBOX_RELEASE_REPO in .env.",
+            "WARNING: source-built BusyBox is {host_norm} but target ARCH={}.\n  Cross-arch initramfs needs a prebuilt release binary:\n  run the busybox-release workflow, then set BUSYBOX_RELEASE_REPO (env or toml [busybox] release_repo).",
             arch.name()
         ));
     }
