@@ -78,16 +78,6 @@ rootfs `/tests/`。
 
 两者共用同一标记协议 v1，init 按 `/tests/` 下可执行文件自动发现——**不需要**改 init。
 
-### 6. Firecracker microVM（可选后端）
-
-```
-virtuoso doctor --backend firecracker   # 一屏体检（verify 同引擎，含 Firecracker preflight 组）
-virtuoso verify --backend firecracker   # preflight：KVM / binary / ELF 内核 / =y 内建项
-virtuoso test --backend firecracker
-```
-
-约束：仅 x86_64/aarch64；KVM 必需；无 initramfs（virtio-blk/ext4/串口必须 `=y`）。
-
 ## 判定纪律
 
 - `verdict: passed` 才算通过；退出码只是接口契约（0=通过、124=超时）；

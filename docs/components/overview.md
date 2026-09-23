@@ -52,15 +52,4 @@ require = ["virtio_console"]
 - 判断 `stage` 的标准：**这个模块是不是"root 挂上之前就必须在内核里"**？
   是 → `stage = "boot"`，否 → 缺省 runtime。
 
-## 后端支持矩阵
-
-| 组件 | QEMU | Firecracker |
-|---|---|---|
-| `tools_disk` | ✓ | ✓（多 drive） |
-| `agent` | ✓ | ✗（WARN 忽略） |
-| `vfio` | ✓ | ✗（`devices` 不被消费，无直通参数面） |
-| `numa` | ✓ | 扁平化（拓扑折算为 vCPU 总数 + 总内存，无多节点） |
-| `pmem` | ✓（arm64/riscv64） | ✗（WARN 忽略） |
-
-`virtuoso probe` 恒开 agent 通道（强制并入 `virtio_console`，不依赖组件开关），
-Firecracker 后端下 probe 不可用。
+`virtuoso probe` 恒开 agent 通道（强制并入 `virtio_console`，不依赖组件开关）。

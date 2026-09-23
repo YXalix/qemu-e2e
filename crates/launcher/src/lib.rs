@@ -1,13 +1,11 @@
-//! launcher — 启动器：多架构矩阵与 QEMU/Firecracker 启动 DSL。
+//! launcher — 启动器：多架构矩阵与 QEMU 启动 DSL。
 //!
 //! `QemuInvocation` 强类型封装全部启动形态（KVM/TCG、NUMA、GDB stub、
 //! 多 virtio-blk 数据盘、vfio-pci 透传），argv 冻结在原 `infra/run-qemu.sh`
 //! （已删除的 shell 基线）上，由 qemu.rs 的 `argv_*` 单测把守；
 //! `QEMU=echo virtuoso shell` 可打印 argv 人工对照。架构矩阵定义在
-//! common::Arch —— builder（交叉前缀）与 xtask 共同复用。Firecracker 后端
-//! 见 `firecracker`。
+//! common::Arch —— builder（交叉前缀）与 xtask 共同复用。
 
-pub mod firecracker;
 pub mod numa;
 pub mod qemu;
 
@@ -19,18 +17,15 @@ pub use numa::NumaTopology;
 pub use qemu::{Accel, QemuInvocation};
 
 /// 附加到 VM 的数据盘（rootfs 之外的 virtio-blk 块设备，如 tools.img）。
-/// `id` 是宿主侧标识（Firecracker drive_id；QEMU argv 不使用），guest 内
-/// 按 `-drive` 追加顺序映射为 /dev/vdb、/dev/vdc…（rootfs 恒为 /dev/vda）。
+/// guest 内按 `-drive` 追加顺序映射为 /dev/vdb、/dev/vdc…（rootfs 恒为 /dev/vda）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataDisk {
-    pub id: String,
     pub path: PathBuf,
 }
 
 impl DataDisk {
-    pub fn new(id: impl Into<String>, path: impl Into<PathBuf>) -> Self {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
-            id: id.into(),
             path: path.into(),
         }
     }
@@ -69,32 +64,6 @@ impl PmemSpec {
             mem_limit: mem_limit.into(),
             ram_backend: ram_backend.into(),
             dtb: dtb.into(),
-        }
-    }
-}
-
-/// 启动后端（Phase 3）：QEMU（缺省，全形态）与 Firecracker（microVM，
-/// x86_64/aarch64 + KVM，见 `firecracker` 模块）。判定协议对后端不感知。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Backend {
-    #[default]
-    Qemu,
-    Firecracker,
-}
-
-impl Backend {
-    pub fn parse(s: &str) -> Option<Backend> {
-        match s.trim() {
-            "qemu" | "QEMU" => Some(Backend::Qemu),
-            "firecracker" | "fc" => Some(Backend::Firecracker),
-            _ => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Backend::Qemu => "qemu",
-            Backend::Firecracker => "firecracker",
         }
     }
 }

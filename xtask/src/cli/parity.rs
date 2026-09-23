@@ -10,27 +10,17 @@ use crate::{Command as CliCommand, SkillAction};
 
 pub fn run_parity(target: &str, force: bool, strict: bool) -> anyhow::Result<i32> {
     let inner: CliCommand = match target {
-        "verify" => CliCommand::Verify {
-            arch: None,
-            backend: None,
-        },
+        "verify" => CliCommand::Verify { arch: None },
         "initrd" => CliCommand::Build,
         "busybox" => CliCommand::BusyBox,
         "clean" => CliCommand::Clean,
-        "qemu" => CliCommand::Shell {
-            kvm: false,
-            backend: None,
-        },
-        "qemu-kvm" => CliCommand::Shell {
-            kvm: true,
-            backend: None,
-        },
+        "qemu" => CliCommand::Shell { kvm: false },
+        "qemu-kvm" => CliCommand::Shell { kvm: true },
         "qemu-debug" => CliCommand::Debug,
         "qemu-test" => CliCommand::Test {
             timeout: None,
             arch: None,
             replay_until_fail: None,
-            backend: None,
         },
         "install-skill" => CliCommand::Skill {
             action: SkillAction::Install,

@@ -2,7 +2,7 @@
 
 Virtuoso 是 QEMU 内核 E2E 测试装置。**Rust workspace 是唯一行为权威**，crate 以
 角色名词命名——
-common（基础层）、builder（构建）、launcher（启动 DSL + Firecracker 后端）、
+common（基础层）、builder（构建）、launcher（启动 DSL）、
 judge（判定 + verdict.json schema）、guardian（进程治理）、tracker（跨 run 聚类/返场）
 接管全部实际逻辑；`Makefile` 是转发壳；`infra/` 只保留 VM 内源资产（init、
 init-initramfs、modules-boot.conf（冻结基础集）、testcases/、tools/），git 跟踪
@@ -31,7 +31,6 @@ virtuoso shell [--kvm]      # 交互式 VM
 virtuoso debug              # GDB stub :1234 挂起启动
 virtuoso probe --cmd 'uname -a' [--cmd-file f] [--json]
                                # AI 交互通道：virtio-serial agent 命令批（结构化事件流）
-virtuoso verify --backend firecracker  # microVM preflight（test/shell 同参数）
 virtuoso skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核树
 virtuoso docs [--serve]     # mdBook 文档构建到 target/book / 本地预览
 ```
@@ -45,13 +44,12 @@ builder::verify 检查引擎（新增前置条件只动引擎，两侧呈现自�
 | 领域 | 入口 | 说明 |
 |---|---|---|
 | CLI 入口 | `xtask/src/main.rs` | 规范 bin 名 `virtuoso`（工作区别名 cargo xtask / cargo v）：clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
-| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查；`engine_report`/`firecracker_checks` 投影与 doctor 共用）/ `doctor.rs`（一屏体检：引擎检查按前缀分组呈现）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix）/ `probe.rs`（AI 交互通道）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
+| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查；`engine_report` 投影与 doctor 共用）/ `doctor.rs`（一屏体检：引擎检查按前缀分组呈现）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix）/ `probe.rs`（AI 交互通道）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
 | 类型化配置 | `xtask/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `cli/diagnostics.rs` |
 | 运行工件与分诊 | `xtask/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
 | 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
 | 构建器 | `crates/builder/src/` | busybox 四层供给 / **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / C 用例 / **no_std Rust 用例** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / cpio+ext4 组装 / verify 检查引擎 |
-| 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 由单测冻结在历史 shell 基线；`QEMU=echo` 可打印对照；`data_disks` = 多 virtio-blk 数据盘，缺省空；`agent_serial` = AI 通道，缺省关）/ `numa.rs` / `lib.rs`（`Backend` 枚举 + `DataDisk`） |
-| 第二后端 | `crates/launcher/src/firecracker.rs` | microVM（x86_64/aarch64+KVM）：config JSON / API PUT 序列 / 多 drive（`data_disks`）/ `preflight`+`preflight_checks`；`spawn_supervised` 一体登记监管 |
+| 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 由单测冻结在历史 shell 基线；`QEMU=echo` 可打印对照；`data_disks` = 多 virtio-blk 数据盘，缺省空；`agent_serial` = AI 通道，缺省关）/ `numa.rs` / `lib.rs`（`DataDisk` 块设备抽象） |
 | 判定引擎 | `crates/judge/src/` | `lib.rs`（标记协议 v1 解析 + `judge` 对账，panic 假通过防护）/ `report.rs`（verdict.json schema + `RunMeta`）/ `exit.rs`（**退出码语义唯一表**） |
 | 跨 run 语义 | `crates/tracker/src/lib.rs` | 失败指纹归一化/聚类/flaky/补丁映射/diff→路径；输入是最小摘要 `RunSummary`（`From<VerdictReport>` 投影），IO 在 runs 层 |
 | 报告 schema | `crates/judge/src/report.rs::VerdictReport` | verdict.json 唯一 schema（serde 结构体）：构造（`VerdictReport::build`）与回读共用 |
@@ -96,7 +94,6 @@ QEMU 以 **exit 0** 退出 —— 只看退出码会假通过；verdict 用 `TES
 arch = "arm64"           # x86_64 | arm64 | riscv64
 timeout_secs = 60        # 0 一律拒绝
 smp = 8                  # 多节点 NUMA 时须被 nodes 整除（解析期校验）
-backend = "qemu"         # 或 "firecracker"（microVM：x86_64/aarch64 + KVM）
 auto_test = true
 qemu_opts = ["-device ivshmem-plain,memdev=hostmem"]   # 透传兜底
 
@@ -124,8 +121,7 @@ builder 把启用组件的 require 并集（schema 固定顺序
 tools_disk→agent→vfio→numa→pmem，去重保首个）生成 rootfs
 `/lib/modules/modules.conf`；`stage = "boot"` 的条目追加到
 initramfs 的 modules-boot.conf 冻结基础集之后。`virtuoso probe` 恒开 agent 通道
-（强制并入 virtio_console，不依赖组件开关）。firecracker 后端不支持 agent 通道与
-pmem 组件（启用时 WARN 忽略）。
+（强制并入 virtio_console，不依赖组件开关）。
 
 ## 冻结的不变量（不要破坏）
 
@@ -138,7 +134,7 @@ pmem 组件（启用时 WARN 忽略）。
    人工复核用 `QEMU=echo virtuoso shell` 打印 argv。数据盘（tools.img 等，
    追加 `-drive …,if=virtio` → `/dev/vdb` 起）与 agent 通道属调用方增量：
    **缺省（无盘无 agent）argv 与基线逐字一致**；块设备抽象统一为 `DataDisk`
-   （QEMU/Firecracker 双后端多盘）。
+   （多 virtio-blk 数据盘）。
 4. 测试必须静态链接（`-static`），禁止用 `|| true` 掩盖失败。
 5. **配置优先级：进程环境变量 > `virtuoso.toml`**：同名标量键以进程环境变量
    为准（CI/命令行临时改参不动文件）；持久配置只写 `virtuoso.toml`。

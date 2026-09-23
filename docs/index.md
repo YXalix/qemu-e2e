@@ -1,7 +1,7 @@
 # Virtuoso — 内核 E2E 虚拟化测试装置
 
 Virtuoso 是内核 E2E 虚拟化测试装置：把 freshly-built 内核直接启动在
-QEMU（或 Firecracker microVM）里跑真实测试程序，用一条命令回答
+QEMU 里跑真实测试程序，用一条命令回答
 **"does my patch actually work?"**。
 
 > *内核是乐器，Virtuoso 是演奏家——每个 patch 都值得一场完整的独奏。*
@@ -32,7 +32,7 @@ virtuoso triage             # 以 verdict 为准的判定报告
 ## 一句话架构
 
 Rust workspace 是唯一行为权威：`common`（基础层）→ `builder`（构建）→
-`launcher`（启动 DSL + QEMU/Firecracker 双后端）→ `judge`（判定）→
+`launcher`（启动 DSL）→ `judge`（判定）→
 `guardian`（进程治理）→ `tracker`（跨 run 聚类），入口 CLI 是 `virtuoso`（xtask crate），
 `Makefile` 是转发壳。每次运行落盘 `target/runs/<id>-<arch>/`，
 `verdict.json` 是判定的唯一事实（exit code 不是——`-no-reboot` 下内核

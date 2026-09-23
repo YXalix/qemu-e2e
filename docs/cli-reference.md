@@ -8,14 +8,14 @@
 
 | 命令 | 层 | 说明 |
 |---|---|---|
-| `verify [--arch a] [--backend b]` | builder | 前置检查 + 类型化配置诊断；firecracker 追加 microVM preflight |
-| `doctor [--arch a] [--backend b] [--json]` | builder | 同一检查引擎的 flutter-doctor 风格一屏体检（✓/✗/! 组件行）；报 ✗ 时用 verify 看全量 |
+| `verify [--arch a]` | builder | 前置检查 + 类型化配置诊断 |
+| `doctor [--arch a] [--json]` | builder | 同一检查引擎的 flutter-doctor 风格一屏体检（✓/✗/! 组件行）；报 ✗ 时用 verify 看全量 |
 | `build` | builder | 重建 initrd.img / rootfs.img / tools.img |
 | `busybox` | builder | 确保当前架构静态 BusyBox（Release 下载优先，源码兜底） |
 | `clean` | builder | 清理生成镜像与暂存目录 |
-| `shell [--kvm] [--backend b]` | launcher | 交互式 VM（BusyBox shell） |
+| `shell [--kvm]` | launcher | 交互式 VM（BusyBox shell） |
 | `debug` | launcher | 挂起启动 + GDB stub `:1234` |
-| `test [--timeout N] [--arch a] [--replay-until-fail N] [--backend b]` | 全链路 | 构建 → 启动 → 判定 → 工件落盘；返场模式首个非 passed 即停 |
+| `test [--timeout N] [--arch a] [--replay-until-fail N]` | 全链路 | 构建 → 启动 → 判定 → 工件落盘；返场模式首个非 passed 即停 |
 | `matrix [--arch a]` | launcher | 多架构矩阵（缺省三架构，宿主内串行） |
 | `probe --cmd/--cmd-file [--json] [--timeout N]` | launcher+judge | AI 交互通道：virtio-serial agent 命令批，结构化事件流 |
 | `triage [--run id] [--json]` | runs | 最近（或指定）run 的分诊报告 |
@@ -29,8 +29,8 @@
 
 ## 通用行为
 
-- `--arch` / `--backend` 覆盖 `virtuoso.toml` 的同名键（等价环境变量
-  `ARCH` / `BACKEND`，见[配置参考](guide/configuration.md)）；
+- `--arch` 覆盖 `virtuoso.toml` 的同名键（等价环境变量 `ARCH`，
+  见[配置参考](guide/configuration.md)）；
 - `--json` 输出可直接进管道（jq 等）；
 - 退出码语义：0=通过、124=超时（137 归一）、130=Ctrl-C、其余=失败——
   详见[冻结契约](architecture/contracts.md)；

@@ -37,7 +37,6 @@ impl NumaTopology {
     }
 
     /// 总内存字符串（run-qemu.sh 的乘法规则：数字前缀 × 节点数，保留单位后缀）。
-    /// 单位表与 firecracker 的 MiB 换算共用 common::units。
     pub fn total_memory(&self) -> Result<String, String> {
         let (n, unit) = common::units::parse_memory(&self.memory_per_node)?;
         let total = n.saturating_mul(self.nodes as u64);

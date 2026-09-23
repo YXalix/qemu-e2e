@@ -15,13 +15,11 @@
 | `arch` | `ARCH` | `x86_64` \| `arm64`（缺省）\| `riscv64` |
 | `timeout_secs` | `TIMEOUT_SECS` | 墙钟超时秒数；0 一律拒绝 |
 | `smp` | `SMP` | vCPU 总数；多节点 NUMA 时必须被节点数整除（解析期校验） |
-| `backend` | `BACKEND` | `qemu`（缺省）\| `firecracker`（microVM，x86_64/aarch64 + KVM） |
 | `auto_test` | `AUTO_TEST` | true = 跑完 `/tests/` 自动关机；false = 落入交互 shell |
 | `kernel_path` | `KERNEL_PATH` | 内核树路径（装置在树内时可自动探测） |
-| `kernel_image` | `KERNEL_IMAGE` | 内核镜像覆盖（firecracker aarch64 需 ELF 时用） |
+| `kernel_image` | `KERNEL_IMAGE` | 内核镜像覆盖（缺省 = 内核树内 arch 对应镜像） |
 | `qemu` | `QEMU` | QEMU 二进制覆盖（`QEMU=echo` 可打印 argv 对照） |
 | `qemu_opts` | — | 透传兜底参数数组（如 ivshmem） |
-| `firecracker_bin` | `FIRECRACKER_BIN` | firecracker 可执行文件路径 |
 
 ## `[components.*]` 组件段
 

@@ -25,23 +25,17 @@ timeout_secs = 60
 # vCPU 总数（NUMA 多节点时须被节点数整除，解析期校验）
 smp = 8
 
-# 启动后端：qemu | firecracker（microVM：x86_64/aarch64 + KVM）
-backend = "qemu"
-
 # 测试模式（kernel cmdline auto_test）；false = 交互引导不自动跑测试
 auto_test = true
 
 # 内核源码树（构建期从内核树找 .ko / 内核镜像）。缺省 = 项目根上一级。
 kernel_path = "/root/kernel"
 
-# 内核镜像覆盖（firecracker aarch64 需要 ELF vmlinux 时常用）
-# kernel_image = "/path/to/vmlinux"
+# 内核镜像覆盖（缺省 = 内核树内 arch 对应镜像）
+# kernel_image = "/path/to/Image"
 
 # QEMU 二进制覆盖（等价旧 QEMU= 语义）
 # qemu = "qemu-system-aarch64"
-
-# firecracker 二进制（缺省 "firecracker"）
-# firecracker_bin = "firecracker"
 
 # QEMU 透传兜底（数组，逐项透传；vfio 直通优先用组件，见下）
 # qemu_opts = ["-device ivshmem-plain,memdev=hostmem"]
@@ -83,7 +77,7 @@ enabled = true
 # of_pmem 免 ndctl 注册 /dev/pmem0（DAX=1，mkfs 后 mount -o dax 即 fsdax）。
 # size = pmem 区大小（缺省 "256M"，2MiB 对齐、须小于总内存）；段缺省 = 关闭
 # （argv 保持冻结基线）。注意：QEMU nvdimm 的 ACPI NFIT 在 arm64 直启下不可见
-# （需 EFI 引导）；x86_64 途径另行支持；firecracker 启用时 WARN 忽略。
+# （需 EFI 引导）；x86_64 途径另行支持。
 # enabled = true
 # size = "256M"
 # require = ["libnvdimm", "nd_btt", "of_pmem", "nd_pmem"]  # 内核 =m 时声明（含加载顺序）

@@ -1,11 +1,10 @@
 //! `virtuoso verify`：前置检查。builder 负责检查引擎，本模块负责
-//! 把类型化配置投影为检查输入并呈现结果；firecracker 后端追加 microVM
-//! 诊断（launcher::firecracker::preflight_checks）。
+//! 把类型化配置投影为检查输入并呈现结果。
 
 use common::fsutil::which;
-use launcher::{Arch, Backend};
+use launcher::Arch;
 
-use super::{firecracker_kernel, resolve_arch, resolve_backend};
+use super::resolve_arch;
 use crate::config::Config;
 
 /// 检查引擎输入投影（verify 与 doctor 共用，保证检查语义单一来源——
@@ -40,55 +39,13 @@ pub(super) fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<builder:
     ))
 }
 
-/// firecracker preflight 诊断项投影（同样共用）。
-pub(super) fn firecracker_checks(
-    cfg: &Config,
-    arch: Arch,
-) -> anyhow::Result<Vec<launcher::firecracker::PreflightCheck>> {
-    let kernel = firecracker_kernel(cfg, arch)?;
-    let kernel_config = cfg.kernel_path().ok().map(|(kp, _)| kp.join(".config"));
-    Ok(launcher::firecracker::preflight_checks(
-        arch,
-        &kernel,
-        kernel_config.as_deref(),
-        &cfg.firecracker_bin(),
-    ))
-}
-
-pub fn run_verify(
-    arch_override: Option<&str>,
-    backend_override: Option<&str>,
-) -> anyhow::Result<i32> {
+pub fn run_verify(arch_override: Option<&str>) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     super::diagnostics::print_diagnostics(&cfg, arch_override);
-    let backend = resolve_backend(&cfg, backend_override)?;
-    println!("  backend: {}", backend.name());
 
     let arch = resolve_arch(&cfg, arch_override)?;
     let report = engine_report(&cfg, arch)?;
     print!("{}", report.render());
-
-    // firecracker 后端追加 microVM preflight（只诊断不改判 qemu 侧结论）
-    if backend == Backend::Firecracker {
-        println!("  firecracker preflight:");
-        let mut fc_fail = 0;
-        for chk in firecracker_checks(&cfg, arch)? {
-            if !chk.ok {
-                fc_fail += 1;
-            }
-            println!(
-                "    [{}] {} — {}",
-                if chk.ok { "OK" } else { "FAIL" },
-                chk.name,
-                chk.note
-            );
-        }
-        if fc_fail > 0 {
-            println!();
-            println!("  firecracker preflight 未通过（{fc_fail} 项）——qemu 后端不受影响");
-            return Ok(1);
-        }
-    }
 
     if report.critical_fail > 0 {
         println!();

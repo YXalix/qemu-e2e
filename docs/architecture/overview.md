@@ -53,7 +53,7 @@ TEST_COMPLETE"。
 |              v                                                                   |
 |  +------------------------+      +------------------------+    +---------------+  |
 |  |        launcher        | ---> |  qemu-system-<arch>    | -->| tools.img     |  |
-|  | 启动 DSL · QEMU/Firecracker |  |  virt / q35 · KVM·GDB  |    | vfio-pci      |  |
+|  |      启动 DSL · QEMU       |  |  virt / q35 · KVM·GDB  |    | vfio-pci      |  |
 |  +------------------------+      +------------------------+    +---------------+  |
 |              |                                                                   |
 |              v                                                                   |
@@ -95,7 +95,7 @@ virtuoso/
 ├── crates/
 │   ├── common/                 # 基础层（零依赖）：Arch 矩阵 / which / ELF / 内存单位 / 时间 / 人类可读大小
 │   ├── builder/                # 构建器：镜像发现 / C+Rust 用例 / 模块清单 / busybox 供给 / cpio+ext4 组装 / verify 引擎
-│   ├── launcher/               # 启动 DSL（qemu.rs）+ NUMA（numa.rs）+ Firecracker 后端（firecracker.rs）
+│   ├── launcher/               # 启动 DSL（qemu.rs）+ NUMA（numa.rs）
 │   ├── judge/                  # 标记协议解析与判定（lib.rs）+ verdict schema（report.rs）+ 退出码语义（exit.rs）
 │   ├── guardian/               # 进程组 RAII（lib.rs）+ 注册表 / 看门狗 / Ctrl-C（registry.rs）
 │   └── tracker/                # 跨 run 语义：失败指纹归一化 / 聚类 / flaky / 补丁↔测试映射

@@ -1,4 +1,4 @@
-//! 内存量字符串解析（NUMA 拓扑与 firecracker 共用同一张合法单位表）。
+//! 内存量字符串解析（NUMA 拓扑与 pmem 组件共用同一张合法单位表）。
 
 /// 内存单位后缀；`Bare` = 无单位裸数字。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

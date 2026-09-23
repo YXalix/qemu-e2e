@@ -1,5 +1,5 @@
 //! VM 会话命令：shell / debug / test / matrix。
-//! 启动 DSL 与双后端在 launcher；收割与看门狗在 guardian；判定在 judge。
+//! 启动 DSL 在 launcher；收割与看门狗在 guardian；判定在 judge。
 //! 本模块做接线：构建（builder）→ 启动（launcher）→ 超时收割（guardian）→
 //! 判定与工件（judge + runs）。
 
@@ -7,98 +7,61 @@ use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
 use std::time::Instant;
 
 use anyhow::Context;
-use launcher::{Accel, Arch, Backend, QemuInvocation};
+use launcher::{Accel, Arch, QemuInvocation};
 
-use super::{
-    agent_socket_opt, firecracker_kernel, firecracker_preflight, kernel_image_path,
-    pmem_opt, resolve_arch, resolve_backend, resolve_topology, tools_disk_opt,
-    warn_agent_unsupported, warn_pmem_unsupported,
-};
+use super::{agent_socket_opt, kernel_image_path, pmem_opt, resolve_arch, resolve_topology, tools_disk_opt};
 use crate::config::Config;
 use crate::runs;
 
-pub fn run_shell(kvm: bool, backend: Option<&str>) -> anyhow::Result<i32> {
-    run_vm_session(kvm, false, backend)
+pub fn run_shell(kvm: bool) -> anyhow::Result<i32> {
+    run_vm_session(kvm, false)
 }
 
 pub fn run_debug() -> anyhow::Result<i32> {
     println!("Starting QEMU with GDB stub on port 1234...");
-    run_vm_session(false, true, None)
+    run_vm_session(false, true)
 }
 
 /// 交互式会话（shell / debug）：stdio 继承，不产运行工件。
-/// firecracker 后端（仅交互 shell，gdb_stub 不适用）走 microVM 引导。
-fn run_vm_session(kvm: bool, gdb_stub: bool, backend: Option<&str>) -> anyhow::Result<i32> {
+fn run_vm_session(kvm: bool, gdb_stub: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let arch = resolve_arch(&cfg, None)?;
     let topo = resolve_topology(&cfg)?;
-    let backend = resolve_backend(&cfg, backend)?;
-    if gdb_stub && backend == Backend::Firecracker {
-        anyhow::bail!("gdb stub 仅 qemu 后端支持");
-    }
-    if backend == Backend::Firecracker {
-        warn_agent_unsupported(&cfg);
-        warn_pmem_unsupported(&cfg);
+    let kernel = kernel_image_path(&cfg, arch)?;
+    if kvm {
+        println!("Starting QEMU with KVM acceleration...");
+    } else if !gdb_stub {
+        println!("Starting QEMU...");
     }
 
-    let status = if backend == Backend::Firecracker {
-        let kernel = firecracker_kernel(&cfg, arch)?;
-        firecracker_preflight(&cfg, arch, &kernel)?;
-        println!("Starting firecracker microVM...");
-        let inv = launcher::firecracker::FirecrackerInvocation::new(
-            arch,
-            &kernel,
-            cfg.artifacts_dir.join("rootfs.img"),
-            &topo,
-            cfg.auto_test(),
-            cfg.target_dir.join("firecracker-shell.json"),
-            cfg.target_dir.join("firecracker-shell.sock"),
-        )
-        .map_err(anyhow::Error::msg)?
-        .virtio_disks(tools_disk_opt(&cfg));
-        println!("[LAUNCH] {}", inv.command_line());
-        let (mut child, mut sup) = inv.spawn_supervised(false)?;
-        let st = child.wait().context("等待 firecracker 退出失败")?;
-        sup.finish();
-        st
-    } else {
-        let kernel = kernel_image_path(&cfg, arch)?;
-        if kvm {
-            println!("Starting QEMU with KVM acceleration...");
-        } else if !gdb_stub {
-            println!("Starting QEMU...");
+    let inv = QemuInvocation::new(
+        arch,
+        &kernel,
+        cfg.artifacts_dir.join("initrd.img"),
+        cfg.artifacts_dir.join("rootfs.img"),
+    )
+    .accel(if kvm { Accel::Kvm } else { Accel::Tcg })
+    .pmem(pmem_opt(&cfg, arch, &topo)?)
+    .topo(topo)
+    .qemu_override(cfg.qemu_override().as_deref())
+    .virtio_disks(tools_disk_opt(&cfg))
+    .extra_opts(&cfg.qemu_extra());
+    let inv = match agent_socket_opt(&cfg, &cfg.target_dir, "agent-shell") {
+        Some(sock) => {
+            let _ = std::fs::remove_file(&sock); // QEMU 不清理已存在的 socket 路径
+            inv.agent_serial(sock)
         }
-
-        let inv = QemuInvocation::new(
-            arch,
-            &kernel,
-            cfg.artifacts_dir.join("initrd.img"),
-            cfg.artifacts_dir.join("rootfs.img"),
-        )
-        .accel(if kvm { Accel::Kvm } else { Accel::Tcg })
-        .pmem(pmem_opt(&cfg, arch, &topo)?)
-        .topo(topo)
-        .qemu_override(cfg.qemu_override().as_deref())
-        .virtio_disks(tools_disk_opt(&cfg))
-        .extra_opts(&cfg.qemu_extra());
-        let inv = match agent_socket_opt(&cfg, &cfg.target_dir, "agent-shell") {
-            Some(sock) => {
-                let _ = std::fs::remove_file(&sock); // QEMU 不清理已存在的 socket 路径
-                inv.agent_serial(sock)
-            }
-            None => inv,
-        };
-
-        println!(
-            "[LAUNCH] {}",
-            inv.command_line().map_err(anyhow::Error::msg)?
-        );
-        let (mut child, mut sup) = inv.spawn_supervised(false)?;
-        let st = child.wait().context("等待 QEMU 退出失败")?;
-        sup.finish();
-        st
+        None => inv,
     };
-    Ok(super::code_of(status))
+
+    println!(
+        "[LAUNCH] {}",
+        inv.command_line().map_err(anyhow::Error::msg)?
+    );
+    let (mut child, mut sup) = inv.spawn_supervised(false)?;
+    let st = child.wait().context("等待 QEMU 退出失败")?;
+    sup.finish();
+    Ok(super::code_of(st))
 }
 
 /// CI 模式：构建 → 启动（launcher）→ 超时看门狗（KILL 收割，124）→
@@ -108,18 +71,16 @@ pub fn run_test(
     cli_timeout: Option<u64>,
     cli_arch: Option<&str>,
     replay_until_fail: Option<u32>,
-    cli_backend: Option<&str>,
 ) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let timeout_secs = resolve_timeout(&cfg, cli_timeout)?;
-    let backend = resolve_backend(&cfg, cli_backend)?;
     let rounds = replay_until_fail.unwrap_or(1).max(1);
     let mut last_code = 1;
     for round in 1..=rounds {
         if rounds > 1 {
             println!("[REPLAY] round {round}/{rounds}");
         }
-        last_code = test_once(&cfg, cli_arch, timeout_secs, backend)?;
+        last_code = test_once(&cfg, cli_arch, timeout_secs)?;
         if last_code != 0 {
             if rounds > 1 {
                 eprintln!("[REPLAY] aborted at round {round}/{rounds} (verdict not passed)");
@@ -144,12 +105,7 @@ fn resolve_timeout(cfg: &Config, cli_timeout: Option<u64>) -> anyhow::Result<u64
 }
 
 /// 单次完整测试（test 与 matrix 共用）。
-fn test_once(
-    cfg: &Config,
-    cli_arch: Option<&str>,
-    timeout_secs: u64,
-    backend: Backend,
-) -> anyhow::Result<i32> {
+fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64) -> anyhow::Result<i32> {
     let arch = resolve_arch(cfg, cli_arch)?;
     let topo = resolve_topology(cfg)?;
     let run = runs::create_run_dir(&cfg.project_root, arch.name())?;
@@ -174,58 +130,30 @@ fn test_once(
         return Ok(1);
     }
 
-    // ---- 启动（launcher：qemu / firecracker 双后端，收割与判定同约定）----
+    // ---- 启动（launcher；收割与判定在 guardian/judge）----
     let started = Instant::now();
-    let (mut child, mut sup, kernel, accel_label) = match backend {
-        Backend::Firecracker => {
-            warn_agent_unsupported(cfg);
-            warn_pmem_unsupported(cfg);
-            let kernel = firecracker_kernel(cfg, arch)?;
-            firecracker_preflight(cfg, arch, &kernel)?;
-            let inv = launcher::firecracker::FirecrackerInvocation::new(
-                arch,
-                &kernel,
-                cfg.artifacts_dir.join("rootfs.img"),
-                &topo,
-                cfg.auto_test(),
-                run.path.join("firecracker-config.json"),
-                run.path.join("firecracker.sock"),
-            )
-            .map_err(anyhow::Error::msg)?
-            .virtio_disks(tools_disk_opt(cfg));
-            println!("[LAUNCH] {}", inv.command_line());
-            println!("Running firecracker test with {timeout_secs}s timeout...");
-            let (child, sup) = inv.spawn_supervised(true)?;
-            (child, sup, kernel, "KVM")
-        }
-        Backend::Qemu => {
-            let kernel = kernel_image_path(cfg, arch)?;
-            let inv = QemuInvocation::new(
-                arch,
-                &kernel,
-                cfg.artifacts_dir.join("initrd.img"),
-                cfg.artifacts_dir.join("rootfs.img"),
-            )
-            .accel(Accel::Tcg)
-            .topo(topo.clone())
-            .qemu_override(cfg.qemu_override().as_deref())
-            .virtio_disks(tools_disk_opt(cfg))
-            .pmem(pmem_opt(cfg, arch, &topo)?)
-            .auto_test(cfg.auto_test())
-            .extra_opts(&cfg.qemu_extra());
-        let inv = match agent_socket_opt(cfg, &run.path, "agent") {
-            Some(sock) => inv.agent_serial(sock),
-            None => inv,
-        };
-            println!(
-                "[LAUNCH] {}",
-                inv.command_line().map_err(anyhow::Error::msg)?
-            );
-            println!("Running QEMU test with {timeout_secs}s timeout...");
-            let (child, sup) = inv.spawn_supervised(true)?;
-            (child, sup, kernel, "TCG")
-        }
+    let kernel = kernel_image_path(cfg, arch)?;
+    let inv = QemuInvocation::new(
+        arch,
+        &kernel,
+        cfg.artifacts_dir.join("initrd.img"),
+        cfg.artifacts_dir.join("rootfs.img"),
+    )
+    .accel(Accel::Tcg)
+    .topo(topo.clone())
+    .qemu_override(cfg.qemu_override().as_deref())
+    .virtio_disks(tools_disk_opt(cfg))
+    .pmem(pmem_opt(cfg, arch, &topo)?)
+    .auto_test(cfg.auto_test())
+    .extra_opts(&cfg.qemu_extra());
+    let inv = match agent_socket_opt(cfg, &run.path, "agent") {
+        Some(sock) => inv.agent_serial(sock),
+        None => inv,
     };
+    println!("[LAUNCH] {}", inv.command_line().map_err(anyhow::Error::msg)?);
+    println!("Running QEMU test with {timeout_secs}s timeout...");
+    let (mut child, mut sup) = inv.spawn_supervised(true)?;
+
     // 墙钟看门狗：到点 KILL 进程组（等价 timeout --signal=KILL 的 124 语义）
     let timed_out = Arc::new(AtomicBool::new(false));
     let watchdog =
@@ -267,8 +195,7 @@ fn test_once(
             "smp": topo.smp.to_string(),
             "numa_nodes": topo.nodes.to_string(),
             "memory_per_node": topo.memory_per_node,
-            "accel": accel_label,
-            "backend": backend.name(),
+            "accel": "TCG",
             "auto_test": cfg.auto_test().to_string(),
         }),
         build_failed: false,
@@ -321,7 +248,7 @@ pub fn run_matrix(cli_arch: Option<&str>) -> anyhow::Result<i32> {
     for arch in arches {
         println!();
         println!("========== matrix: {} ==========", arch.name());
-        let code = match test_once(&cfg, Some(arch.name()), timeout_secs, Backend::Qemu) {
+        let code = match test_once(&cfg, Some(arch.name()), timeout_secs) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("ERROR: {} — {e:#}", arch.name());

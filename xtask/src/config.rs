@@ -45,7 +45,7 @@ pub struct Config {
     pub project_root: PathBuf,
     /// VM 内源资产（init、modules-boot.conf、testcases、tools）——git 跟踪。
     pub infra_dir: PathBuf,
-    /// 工作区 target/（运行 scratch：firecracker shell 配置等）。
+    /// 工作区 target/（运行 scratch：agent shell socket 等）。
     pub target_dir: PathBuf,
     /// 构建产物（initrd.img / rootfs.img / tools.img）——数据面，git 忽略。
     pub artifacts_dir: PathBuf,
@@ -139,7 +139,7 @@ impl Config {
         }
     }
 
-    /// kernel_image 覆盖（firecracker aarch64 等 ELF 场景用）。
+    /// kernel_image 覆盖（缺省 = 内核树内 arch 对应镜像）。
     pub fn kernel_image(&self) -> Option<String> {
         scalar(self.tv(|t| &t.kernel_image), "KERNEL_IMAGE")
             .filter(|s| !s.trim().is_empty())
@@ -163,19 +163,6 @@ impl Config {
     /// QEMU 二进制覆盖。
     pub fn qemu_override(&self) -> Option<String> {
         scalar(self.tv(|t| &t.qemu), "QEMU").filter(|s| !s.is_empty())
-    }
-
-    /// firecracker 二进制（缺省 "firecracker"）。
-    pub fn firecracker_bin(&self) -> String {
-        scalar(self.tv(|t| &t.firecracker_bin), "FIRECRACKER_BIN")
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "firecracker".into())
-    }
-
-    /// backend 原始字符串（qemu | firecracker；None = 缺省 qemu）。
-    pub fn backend_str(&self) -> Option<String> {
-        scalar(self.tv(|t| &t.backend), "BACKEND")
-            .filter(|s| !s.trim().is_empty())
     }
 
     /// QEMU 透传参数：`QEMU_OPTS` 环境变量（空白切分）优先，否则 toml
@@ -414,9 +401,7 @@ pub struct VirtuosoToml {
     smp: Option<StrVal>,
     auto_test: Option<bool>,
     qemu: Option<StrVal>,
-    backend: Option<StrVal>,
     qemu_opts: Option<Vec<String>>,
-    firecracker_bin: Option<StrVal>,
     components: Option<ComponentsSection>,
     busybox: Option<BusyboxSection>,
 }
@@ -525,7 +510,6 @@ arch = "arm64"
 timeout_secs = 60
 smp = 4
 auto_test = false
-backend = "firecracker"
 qemu_opts = ["-device vfio-pci,host=01:00.0"]
 "#,
         )
@@ -534,7 +518,6 @@ qemu_opts = ["-device vfio-pci,host=01:00.0"]
         assert_eq!(cfg.timeout_secs.as_ref().unwrap().0, "60");
         assert_eq!(cfg.smp.as_ref().unwrap().0, "4");
         assert_eq!(cfg.auto_test, Some(false));
-        assert_eq!(cfg.backend.as_ref().unwrap().0, "firecracker");
         assert_eq!(cfg.qemu_opts.as_ref().unwrap().len(), 1);
     }
 

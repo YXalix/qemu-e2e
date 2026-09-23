@@ -37,5 +37,4 @@ probe 运行也写 run 目录（`serial.log` + `qemu-stderr.log` +
 
 ## 限制
 
-- Firecracker 后端不支持 virtio-serial：组件启用时 WARN 忽略，probe 不可用。
 - 通道依赖 tools.img 供给（agent 二进制在工具盘里）。

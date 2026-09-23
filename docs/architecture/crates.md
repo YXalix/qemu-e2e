@@ -57,11 +57,6 @@ dumpdtb 生成设备树 + fdtput 注入 `pmem-region` 节点（of_pmem 绑定，
 （memory-backend-file，guest 写入持久落盘）。三件套落 `target/build/pmem/`。
 详见 [pmem 组件页](../components/pmem.md)。
 
-**Firecracker 后端**（`launcher::firecracker`）：config JSON（v1 API 冻结字段）+
-API 逐 PUT 序列；多 drive 复用 `DataDisk`；`preflight` 硬校验（x86_64/aarch64、
-KVM 必需、aarch64 内核须 ELF、无 initramfs 引导要求 virtio/virtio-blk/ext4/串口
-`=y`），每项给可操作诊断。`spawn_supervised` 一体登记 guardian 监管。
-
 ## judge — 判定引擎
 
 **串口标记协议 v1（冻结）**：

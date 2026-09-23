@@ -24,4 +24,3 @@ stage = "boot"                    # root 挂载前就要 → boot（缺省 runti
 ## 行为
 
 - `devices` 逐条生成 `-device vfio-pci,host=<bdf>`，追加在 argv 冻结基线之后；
-- Firecracker 后端不消费 `devices`（无直通参数面），等于静默无直通。

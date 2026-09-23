@@ -33,18 +33,12 @@ enum Command {
         /// 覆盖目标架构（透传为 ARCH 环境变量）
         #[arg(long)]
         arch: Option<String>,
-        /// 启动后端（qemu | firecracker）；firecracker 追加 microVM preflight
-        #[arg(long)]
-        backend: Option<String>,
     },
     /// 一屏环境体检：verify 的 flutter-doctor 风格简化呈现（✓/✗/! 组件行）
     Doctor {
         /// 覆盖目标架构（透传为 ARCH 环境变量）
         #[arg(long)]
         arch: Option<String>,
-        /// 启动后端（qemu | firecracker）；firecracker 追加 microVM preflight
-        #[arg(long)]
-        backend: Option<String>,
         /// 机器可读 JSON 输出
         #[arg(long)]
         json: bool,
@@ -56,9 +50,6 @@ enum Command {
         /// KVM 加速（仅宿主与目标同构时可用）
         #[arg(long)]
         kvm: bool,
-        /// 启动后端（qemu | firecracker）
-        #[arg(long)]
-        backend: Option<String>,
     },
     /// 调试启动：挂起等待 GDB 连接 :1234（make qemu-debug 对等）
     Debug,
@@ -75,9 +66,6 @@ enum Command {
         /// 返场次数上限（缺省 1 = 单次执行）
         #[arg(long = "replay-until-fail")]
         replay_until_fail: Option<u32>,
-        /// 启动后端（qemu | firecracker）
-        #[arg(long)]
-        backend: Option<String>,
     },
     /// 确保 ARCH 对应的静态 BusyBox：release 下载优先，源码兜底（make busybox 对等）
     #[command(name = "busybox")]

@@ -6,11 +6,9 @@
 //! 一致：critical 未过 → 1。
 
 use builder::verify::{Level, Report};
-use launcher::firecracker::PreflightCheck;
-use launcher::Backend;
 
-use super::verify::{engine_report, firecracker_checks};
-use super::{resolve_arch, resolve_backend};
+use super::verify::engine_report;
+use super::resolve_arch;
 use crate::config::Config;
 
 // ---------------------------------------------------------------- 引擎消息 → 组件分组
@@ -24,7 +22,6 @@ enum Group {
     Modules,
     Artifacts,
     Other,
-    Firecracker,
 }
 
 impl Group {
@@ -37,7 +34,6 @@ impl Group {
             Group::Modules => "Modules",
             Group::Artifacts => "Artifacts",
             Group::Other => "Other",
-            Group::Firecracker => "Firecracker",
         }
     }
 }
@@ -165,7 +161,7 @@ fn slot(out: &mut [GroupOut], g: Group) -> &mut GroupOut {
         .expect("GROUP_ORDER 覆盖全部分组")
 }
 
-fn group_checks(report: &Report, firecracker: &[PreflightCheck]) -> Vec<GroupOut> {
+fn group_checks(report: &Report) -> Vec<GroupOut> {
     let mut out: Vec<GroupOut> = GROUP_ORDER
         .iter()
         .map(|g| GroupOut {
@@ -189,24 +185,6 @@ fn group_checks(report: &Report, firecracker: &[PreflightCheck]) -> Vec<GroupOut
                 s.lines.push((chk.level, classify(&chk.msg).1.to_string()));
             }
         }
-    }
-    if !firecracker.is_empty() {
-        out.push(GroupOut {
-            group: Group::Firecracker,
-            level: firecracker.iter().fold(Level::Info, |acc, c| {
-                worst(acc, if c.ok { Level::Pass } else { Level::Fail })
-            }),
-            lines: firecracker
-                .iter()
-                .map(|c| {
-                    if c.ok {
-                        (Level::Pass, c.name.to_string())
-                    } else {
-                        (Level::Fail, format!("{} — {}", c.name, c.note))
-                    }
-                })
-                .collect(),
-        });
     }
     out.retain(|s| !s.lines.is_empty());
     out
@@ -261,27 +239,13 @@ fn render(groups: &[GroupOut], tty: bool) -> String {
 
 // ---------------------------------------------------------------- 入口
 
-pub fn run_doctor(
-    arch_override: Option<&str>,
-    backend_override: Option<&str>,
-    json: bool,
-) -> anyhow::Result<i32> {
+pub fn run_doctor(arch_override: Option<&str>, json: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
-    let backend = resolve_backend(&cfg, backend_override)?;
     let arch = resolve_arch(&cfg, arch_override)?;
     let report = engine_report(&cfg, arch)?;
+    let groups = group_checks(&report);
 
-    let mut fc_fail = 0;
-    let firecracker = if backend == Backend::Firecracker {
-        let checks = firecracker_checks(&cfg, arch)?;
-        fc_fail = checks.iter().filter(|c| !c.ok).count();
-        checks
-    } else {
-        Vec::new()
-    };
-    let groups = group_checks(&report, &firecracker);
-
-    let fail_total = report.critical_fail + fc_fail as u32;
+    let fail_total = report.critical_fail;
     if json {
         let level = |l: Level| match l {
             Level::Fail => "fail",
@@ -290,7 +254,6 @@ pub fn run_doctor(
         };
         let out = serde_json::json!({
             "arch": arch.name(),
-            "backend": backend.name(),
             "ok": fail_total == 0,
             "critical_fail": fail_total,
             "warnings": report.warnings,
@@ -306,11 +269,7 @@ pub fn run_doctor(
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         let tty = builder::verify::is_stdout_tty();
-        println!(
-            "Virtuoso doctor · arch {} · backend {}",
-            arch.name(),
-            backend.name()
-        );
+        println!("Virtuoso doctor · arch {}", arch.name());
         print!("{}", render(&groups, tty));
         if fail_total > 0 {
             println!(
@@ -399,15 +358,12 @@ mod tests {
 
     #[test]
     fn group_checks_fails_lead_and_warn_keeps_full_text() {
-        let groups = group_checks(
-            &report(vec![
+        let groups = group_checks(&report(vec![
                 check(Level::Pass, "Configuration: virtuoso.toml found"),
                 check(Level::Fail, "QEMU binary: qemu-system-arm not found (install qemu-system-arm)"),
                 check(Level::Warn, "Kernel modules: 2/3 found, missing: nd_btt"),
                 check(Level::Pass, "Kernel image: Image (42M)"),
-            ]),
-            &[],
-        );
+            ]));
         let qemu = groups.iter().find(|g| g.group == Group::Qemu).unwrap();
         assert_eq!(qemu.level, Level::Fail);
         assert_eq!(
@@ -421,8 +377,7 @@ mod tests {
 
     #[test]
     fn group_checks_healthy_report_is_one_line_per_group() {
-        let groups = group_checks(
-            &report(vec![
+        let groups = group_checks(&report(vec![
                 check(Level::Pass, "Configuration: virtuoso.toml found"),
                 check(Level::Pass, "Host tools: all found (wget tar gcc)"),
                 check(Level::Pass, "KERNEL_PATH: /k"),
@@ -434,38 +389,12 @@ mod tests {
                 check(Level::Pass, "BusyBox: cached (arm64)"),
                 check(Level::Info, "Tools image: exists (attached as /dev/vdb)"),
                 check(Level::Info, "Initrd: /a/initrd.img (12M)"),
-            ]),
-            &[],
-        );
+            ]));
         let rendered = render(&groups, false);
         let lines: Vec<&str> = rendered.lines().collect();
         assert_eq!(lines.len(), 6, "六个组件组各一行:\n{rendered}");
         assert!(lines[0].contains("✓") && lines[0].contains("Config"));
         assert!(lines[2].contains("Kernel") && lines[2].contains("v6.6.0 · Image (42M)"));
         assert!(lines[5].contains("Artifacts") && lines[5].contains("busybox · tools.img · initrd.img (12M)"));
-    }
-
-    #[test]
-    fn firecracker_checks_fold_into_a_group() {
-        let groups = group_checks(
-            &report(vec![check(Level::Pass, "Configuration: virtuoso.toml found")]),
-            &[
-                PreflightCheck {
-                    name: "arch supported",
-                    ok: true,
-                    note: "aarch64".into(),
-                },
-                PreflightCheck {
-                    name: "kernel ELF",
-                    ok: false,
-                    note: "vmlinux not found".into(),
-                },
-            ],
-        );
-        let fc = groups.last().unwrap();
-        assert_eq!(fc.group.name(), "Firecracker");
-        assert_eq!(fc.level, Level::Fail);
-        assert_eq!(fc.lines.len(), 2);
-        assert_eq!(fc.lines[1], (Level::Fail, "kernel ELF — vmlinux not found".into()));
     }
 }

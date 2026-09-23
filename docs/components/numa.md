@@ -23,6 +23,3 @@ memory_per_node = "1G"
 
 launcher 为每个节点生成一个 socket（CPU 与 memory-backend 一一对应），
 `-smp` 取全局值。交叉架构 / 无 KVM 时照常工作（TCG 也支持 NUMA 拓扑）。
-
-Firecracker 后端下拓扑被**扁平化**：折算为 `vcpu_count`（= smp）+
-`mem_size_mib`（= 总内存），无多节点语义。

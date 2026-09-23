@@ -50,7 +50,6 @@ Key global keys:
 | `arch` | Target arch | `arm64` (default), `x86_64`, `riscv64` — picks QEMU binary, kernel image path, console device |
 | `timeout_secs` | `test` wallclock cap (s) | `0` is rejected; pick 30–120 for CI, longer if KVM is off and tests are heavy |
 | `smp` | Total vCPUs | Must be divisible by the NUMA node count when > 1 |
-| `backend` | `qemu` or `firecracker` | firecracker = microVM (x86_64/aarch64 + KVM) |
 | `qemu_opts` | Extra QEMU args (array) | Escape hatch; passthrough components below are preferred |
 
 VM capabilities are **components** under `[components.*]`, each with `enabled`,

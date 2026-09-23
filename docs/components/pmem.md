@@ -33,5 +33,4 @@ guest 内：`/dev/pmem0` 出现后即可 mkfs / dax 挂载，重跑 VM 数据仍
 ## 限制
 
 - 仅 arm64 / riscv64（DT 途径）；x86_64 无此途径。
-- Firecracker 后端不支持（启用时 WARN 忽略）。
 - `size` 必须小于总内存，否则解析期拒绝。

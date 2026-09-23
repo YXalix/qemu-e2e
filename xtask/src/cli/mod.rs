@@ -1,6 +1,6 @@
 //! CLI 编排：子命令分发与各命令组的接线。
 //!
-//! - verify  → `cli::verify`（前置检查 + firecracker 诊断；引擎投影供 doctor 共用）
+//! - verify  → `cli::verify`（前置检查；引擎投影供 doctor 共用）
 //! - doctor  → `cli::doctor`（verify 的 flutter-doctor 风格一屏简化呈现）
 //! - build   → `cli::build`（build / busybox / clean / skill）
 //! - vm      → `cli::vm`（shell / debug / test / matrix：启动、看门狗、判定接线）
@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::Context;
-use launcher::{Arch, Backend, NumaTopology};
+use launcher::{Arch, NumaTopology};
 
 use crate::config::Config;
 use crate::runs;
@@ -46,28 +46,16 @@ pub(crate) fn spawn_status(mut cmd: Command) -> std::io::Result<i32> {
 
 pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
     match cmd {
-        CliCommand::Verify { arch, backend } => {
-            verify::run_verify(arch.as_deref(), backend.as_deref())
-        }
-        CliCommand::Doctor {
-            arch,
-            backend,
-            json,
-        } => doctor::run_doctor(arch.as_deref(), backend.as_deref(), json),
+        CliCommand::Verify { arch } => verify::run_verify(arch.as_deref()),
+        CliCommand::Doctor { arch, json } => doctor::run_doctor(arch.as_deref(), json),
         CliCommand::Build => build::run_build(),
-        CliCommand::Shell { kvm, backend } => vm::run_shell(kvm, backend.as_deref()),
+        CliCommand::Shell { kvm } => vm::run_shell(kvm),
         CliCommand::Debug => vm::run_debug(),
         CliCommand::Test {
             timeout,
             arch,
             replay_until_fail,
-            backend,
-        } => vm::run_test(
-            timeout,
-            arch.as_deref(),
-            replay_until_fail,
-            backend.as_deref(),
-        ),
+        } => vm::run_test(timeout, arch.as_deref(), replay_until_fail),
         CliCommand::BusyBox => build::run_busybox(),
         CliCommand::Clean => build::run_clean(),
         CliCommand::Skill { action } => build::run_skill(action),
@@ -124,41 +112,7 @@ pub(crate) fn resolve_topology(cfg: &Config) -> anyhow::Result<NumaTopology> {
     })
 }
 
-/// 解析启动后端：CLI --backend > backend 配置 > 缺省 qemu。未知值一律报错。
-pub(crate) fn resolve_backend(cfg: &Config, cli_backend: Option<&str>) -> anyhow::Result<Backend> {
-    let raw = cli_backend.map(str::to_string).or_else(|| cfg.backend_str());
-    match raw.as_deref() {
-        None => Ok(Backend::Qemu),
-        Some(s) => Backend::parse(s)
-            .ok_or_else(|| anyhow::anyhow!("未知后端 `{s}`（允许: qemu | firecracker）")),
-    }
-}
-
-/// firecracker preflight（硬校验下沉 launcher::firecracker::preflight；
-/// 本函数只把类型化配置投影为参数）。
-pub(crate) fn firecracker_preflight(cfg: &Config, arch: Arch, kernel: &Path) -> anyhow::Result<()> {
-    let (kernel_path, _) = cfg.kernel_path()?;
-    launcher::firecracker::preflight(
-        arch,
-        kernel,
-        &kernel_path.join(".config"),
-        &cfg.firecracker_bin(),
-    )
-}
-
-/// firecracker 内核路径：x86_64 复用 bzImage；aarch64 需 ELF —— 优先
-/// kernel_image 覆盖，否则回退内核树顶层 vmlinux。
-pub(crate) fn firecracker_kernel(cfg: &Config, arch: Arch) -> anyhow::Result<std::path::PathBuf> {
-    if let Some(p) = cfg.kernel_image() {
-        return Ok(std::path::PathBuf::from(p));
-    }
-    let (kernel_path, _) = cfg.kernel_path()?;
-    Ok(match arch {
-        Arch::Arm64 => kernel_path.join("vmlinux"),
-        _ => kernel_path.join(arch.kernel_img()),
-    })
-}
-
+/// 启动内核镜像路径：优先 kernel_image 覆盖，否则内核树内 arch 对应镜像。
 pub(crate) fn kernel_image_path(cfg: &Config, arch: Arch) -> anyhow::Result<std::path::PathBuf> {
     let (kernel_path, _) = cfg.kernel_path()?;
     Ok(cfg
@@ -175,7 +129,7 @@ pub(crate) fn tools_disk_opt(cfg: &Config) -> Option<launcher::DataDisk> {
         return None;
     }
     let p = cfg.artifacts_dir.join("tools.img");
-    p.is_file().then(|| launcher::DataDisk::new("tools", p))
+    p.is_file().then(|| launcher::DataDisk::new(p))
 }
 
 /// agent 通道 socket（[components.agent] enabled 才 Some）。
@@ -389,22 +343,4 @@ fn patch_pmem_dtb(
     prop_args.extend(dt_cells(pmem_bytes, size_cells));
     fdtput(&dtb, &prop_args)?;
     Ok(dtb)
-}
-
-/// firecracker 后端不支持 virtio-serial 通道 —— agent 组件启用时提示被忽略。
-pub(crate) fn warn_agent_unsupported(cfg: &Config) {
-    if cfg.agent_enabled() {
-        eprintln!(
-            "WARN: [components.agent] enabled 但 firecracker 后端不支持 virtio-serial 通道 —— 组件被忽略"
-        );
-    }
-}
-
-/// firecracker 后端不支持 nvdimm —— pmem 组件启用时提示被忽略。
-pub(crate) fn warn_pmem_unsupported(cfg: &Config) {
-    if cfg.pmem_size().is_some() {
-        eprintln!(
-            "WARN: [components.pmem] enabled 但 firecracker 后端不支持 nvdimm —— 组件被忽略"
-        );
-    }
 }

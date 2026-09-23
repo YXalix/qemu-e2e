@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn virtio_disk_and_gdb_and_extra_opts() {
         let args = base_inv()
-            .virtio_disk(DataDisk::new("tools", "/tmp/tools.img"))
+            .virtio_disk(DataDisk::new("/tmp/tools.img"))
             .gdb_stub(true)
             .extra_opts(&["-device vfio-pci,host=00:01.0".to_string()])
             .argv()
@@ -411,8 +411,8 @@ mod tests {
     #[test]
     fn multiple_data_disks_append_in_order() {
         let args = base_inv()
-            .virtio_disk(DataDisk::new("tools", "/tmp/tools.img"))
-            .virtio_disk(DataDisk::new("data0", "/tmp/data0.img"))
+            .virtio_disk(DataDisk::new("/tmp/tools.img"))
+            .virtio_disk(DataDisk::new("/tmp/data0.img"))
             .argv()
             .unwrap();
         let joined = args.join(" ");
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn data_disks_coexist_with_agent_serial() {
         let args = base_inv()
-            .virtio_disk(DataDisk::new("tools", "/tmp/tools.img"))
+            .virtio_disk(DataDisk::new("/tmp/tools.img"))
             .agent_serial("/tmp/virtuoso-agent.sock")
             .argv()
             .unwrap();

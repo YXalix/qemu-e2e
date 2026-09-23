@@ -32,17 +32,6 @@ virtuoso probe --cmd-file cmds.txt --json    # 机器可读事件流
 `agent-events.jsonl`。通道详解见 [agent 组件](../components/agent.md)，
 AI 工作流见 [AI 集成](ai-integration.md)。
 
-## Firecracker 后端
-
-```bash
-virtuoso doctor --backend firecracker    # 一屏体检（含 microVM preflight 组）
-virtuoso verify --backend firecracker    # 全量清单 + microVM preflight
-virtuoso test --timeout 60 --backend firecracker
-```
-
-x86_64 / aarch64 + KVM；不支持 agent 通道与 pmem（WARN 忽略），numa 拓扑
-扁平化——见[后端支持矩阵](../components/overview.md#后端支持矩阵)。
-
 ## argv 人工复核
 
 ```bash
