@@ -3,7 +3,9 @@
 //! 单路径跨平台（Linux/macOS 同码），消灭 GNU cpio 的 `--null` 平台差异与
 //! bash/find/gzip 外部依赖。写入约定与原管道对齐：
 //! - 条目名带 `./` 前缀（内核 initramfs 解包器以 cwd=/ 消费，形态同 find 输出）；
-//! - 符号链接存 target 文本（filesize = target 长度，mode S_IFLNK）；
+//! - 符号链接存 target 文本（filesize = target 长度，mode S_IFLNK，权限位恒
+//!   0777——Linux symlink 恒 0777 而 macOS 应用 umask，symlink 权限本身无语义，
+//!   归一化才保证跨宿主字节一致）；
 //! - mtime/ino 无语义价值，恒写 0/递增序号 → **产物按内容确定性可复现**；
 //! - 目录条目 nlink=2、文件/链接 nlink=1（内核解包器不消费 nlink）。
 
@@ -76,7 +78,7 @@ fn write_stream<W: Write>(
         let ftype = meta.mode() & S_IFMT;
         let (mode, size) = match ftype {
             S_IFDIR => (meta.mode() & 0o7777 | S_IFDIR, 0u64),
-            S_IFLNK => (meta.mode() & 0o7777 | S_IFLNK, meta.len()),
+            S_IFLNK => (0o777 | S_IFLNK, meta.len()),
             _ => (meta.mode() & 0o7777 | S_IFREG, meta.len()),
         };
         let nlink: u64 = if ftype == S_IFDIR { 2 } else { 1 };

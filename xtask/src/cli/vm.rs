@@ -26,7 +26,7 @@ pub(crate) fn resolve_accel(kvm: bool, tcg: bool, arch: Arch) -> anyhow::Result<
     } else if tcg {
         Accel::Tcg
     } else {
-        Accel::default_for(arch, HostOs::current())
+        Accel::default_for(arch, HostOs::current(), Arch::host_default())
     })
 }
 
