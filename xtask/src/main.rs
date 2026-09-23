@@ -45,6 +45,16 @@ enum Command {
     },
     /// 构建 initrd：C 用例 + modules.conf + BusyBox（make initrd 对等）
     Build,
+    /// 拉取 preset 预编内核（mainline mini Image，全 =y 零模块）到
+    /// target/kernel/preset —— kernel_preset = "mainline" 的开箱供给
+    Fetch {
+        /// 覆盖版本（X.Y[.Z]）；缺省 = infra/kernel/pin 钉定，再缺省 = 最新已发布
+        #[arg(long)]
+        version: Option<String>,
+        /// 只拉指定架构（缺省三架构全量）
+        #[arg(long)]
+        arch: Option<String>,
+    },
     /// 交互式启动 QEMU，落入 BusyBox shell（make qemu 对等）
     Shell {
         /// KVM 加速（Linux；仅宿主与目标同构时可用）

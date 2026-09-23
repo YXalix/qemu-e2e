@@ -89,3 +89,63 @@ jobs:
         with:
           name: virtuoso-runs
           path: target/runs/
+
+  # 装置 E2E：mainline preset 内核（kernel-v* release 资产，infra/kernel/pin
+  # 钉定）TCG 引导，验证 harness 引导链路（init → busybox → testcases →
+  # judge）。被测内核行为的权威仍是自建 openEuler 的 kernel-e2e；本 job
+  # 每次 push 守装置自身。pin 指向的 release 不存在时跳过（首次发布前）。
+  e2e-mainline:
+    name: E2E (preset kernel, TCG)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl,x86_64-unknown-linux-musl
+
+      - name: Cargo Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-arm qemu-system-x86 qemu-system-misc
+
+      - name: Fetch preset kernel
+        id: fetch
+        continue-on-error: true
+        env:
+          KERNEL_PRESET: mainline
+        run: cargo xtask fetch
+
+      - name: Virtuoso Verify
+        if: steps.fetch.outcome == 'success'
+        env:
+          KERNEL_PRESET: mainline
+        run: cargo xtask verify
+
+      - name: Build test assets
+        if: steps.fetch.outcome == 'success'
+        env:
+          KERNEL_PRESET: mainline
+        run: cargo xtask build
+
+      - name: Execute E2E (TCG)
+        if: steps.fetch.outcome == 'success'
+        env:
+          KERNEL_PRESET: mainline
+        run: cargo xtask test --timeout 300
+
+      - name: Triage
+        if: always()
+        run: cargo xtask triage || true
+
+      - name: Upload Run Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: virtuoso-e2e-runs
+          path: target/runs/

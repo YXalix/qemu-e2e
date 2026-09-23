@@ -116,7 +116,7 @@ fn try_wget(url: &str, bin: &Path, asset: &str, progress: &mut Progress) -> bool
 }
 
 /// 下载到 `tmp`：wget 优先，缺失回落 curl（macOS 无 wget 但自带 curl）。
-fn fetch(url: &str, tmp: &Path) -> bool {
+pub(crate) fn fetch(url: &str, tmp: &Path) -> bool {
     let (bin, args) = if common::fsutil::which("wget") {
         ("wget", vec!["-q".to_string(), "-O".to_string()])
     } else {
@@ -182,7 +182,9 @@ fn read_applet_file(p: &Path) -> anyhow::Result<Vec<String>> {
 
 /// 推导发布仓库：显式 BUSYBOX_RELEASE_REPO → 从 start 逐级向上找含 `.git`
 /// 的项目根，扫其 git remote 取 GitHub 的那个。
-fn resolve_repo(start: &Path, explicit: &Option<String>) -> Option<String> {
+/// release 仓库名（owner/repo）：显式指定优先，否则解析项目 git origin 的
+/// GitHub URL（busybox 与 kernel preset 两套供给共用）。
+pub(crate) fn resolve_repo(start: &Path, explicit: &Option<String>) -> Option<String> {
     if let Some(repo) = explicit {
         return Some(repo.clone());
     }
@@ -215,7 +217,7 @@ fn resolve_repo(start: &Path, explicit: &Option<String>) -> Option<String> {
     None
 }
 
-fn gh_auth_ok() -> bool {
+pub(crate) fn gh_auth_ok() -> bool {
     Command::new("gh")
         .arg("auth")
         .arg("status")

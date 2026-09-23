@@ -56,6 +56,24 @@ docker/kernel.sh export         # 最小树 → target/kernel/arm64/
 内核树也可在任何 Linux 机器上构建后 rsync 过来——virtuoso 只要求
 `KERNEL_PATH` 指向「Makefile + arch/<a>/boot/<Image> + \*.ko」的树。
 
+### 免内核树：preset 预编内核（最快路径）
+
+只想先跑起来（或 CI 里验证装置本身）时，跳过整个第 2 节：
+
+```toml
+# virtuoso.toml
+kernel_preset = "mainline"
+```
+
+```bash
+virtuoso fetch                # 拉官方预编 mainline mini 内核（全 =y 零模块）
+virtuoso test --timeout 300   # 直接开跑
+```
+
+注意定位：preset 内核验证的是**装置自身**（引导链路 + 判定）；被测内核
+行为（openEuler 特有语义）仍以源码树路径为准。详见
+[preset 内核](guide/kernel-preset.md)。
+
 ## 3. 安装与体检
 
 ```bash

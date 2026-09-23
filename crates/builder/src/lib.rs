@@ -7,6 +7,7 @@ pub mod cpio;
 pub mod cross;
 pub mod image;
 pub mod modconf;
+pub mod preset;
 pub mod testcase;
 pub mod tools;
 pub mod verify;
@@ -22,6 +23,10 @@ pub struct InitHook {
     pub name: String,
     pub script: String,
 }
+
+/// preset 内核的模块清单占位：特性全 =y 内建，两个 stage 都无 .ko 可拷；
+/// init 侧读空清单即零动作（openEuler 路径的怪癖不适用）。
+const PRESET_MODULE_CONF: &str = "# preset kernel: all required features built-in (=y)\n";
 
 impl InitHook {
     pub fn shell(name: impl Into<String>, script: impl Into<String>) -> Self {
@@ -76,6 +81,9 @@ impl Progress {
 /// 另产出 `target/artifacts/tools.img`（ext4：/bin 常驻工具，VM 内挂 /tools）——
 /// 工具被跳过时不产出。源资产读 `infra_dir`，暂存目录与 busybox 缓存放
 /// `build_dir`（target/build）。
+///
+/// `preset_kernel` = kernel_preset 预编内核（全 =y 零模块）：跳过内核树
+/// 前置与 .ko 拷贝，模块清单只写说明头（init 对缺失 .ko 本就 best-effort）。
 #[allow(clippy::too_many_arguments)]
 pub fn build_boot_pair(
     infra_dir: &Path,
@@ -87,11 +95,12 @@ pub fn build_boot_pair(
     hooks: &[InitHook],
     modules: &modconf::Modules,
     progress: &mut Progress,
+    preset_kernel: bool,
 ) -> anyhow::Result<()> {
-    // 与脚本一致的先决检查
-    if !kernel_path.join("arch").is_dir() {
+    // 与脚本一致的先决检查（preset 内核没有源码树，模块拷贝整体跳过）
+    if !preset_kernel && !kernel_path.join("arch").is_dir() {
         anyhow::bail!(
-            "Cannot find kernel source directory at {}\nSet KERNEL_PATH environment variable to specify the location:\n  KERNEL_PATH=/path/to/kernel virtuoso build",
+            "Cannot find kernel source directory at {}\nSet KERNEL_PATH environment variable to specify the location:\n  KERNEL_PATH=/path/to/kernel virtuoso build\n  或改用 kernel_preset 预编内核（virtuoso.toml: kernel_preset = \"mainline\"）",
             kernel_path.display()
         );
     }
@@ -122,8 +131,11 @@ pub fn build_boot_pair(
     common::fsutil::set_executable(&initramfs_dir.join("init"))?;
     std::fs::create_dir_all(initramfs_dir.join("mnt"))?;
     std::fs::create_dir_all(initramfs_dir.join("lib/modules"))?;
-    let (boot_names, boot_conf_text) =
-        modconf::boot_set(&infra_dir.join("modules-boot.conf"), &modules.boot_extra)?;
+    let (boot_names, boot_conf_text) = if preset_kernel {
+        (Vec::new(), PRESET_MODULE_CONF.into())
+    } else {
+        modconf::boot_set(&infra_dir.join("modules-boot.conf"), &modules.boot_extra)?
+    };
     modconf::copy_module_list(
         &initramfs_dir.join("lib/modules"),
         &boot_names,
@@ -142,13 +154,19 @@ pub fn build_boot_pair(
     std::fs::copy(infra_dir.join("init"), rootfs_dir.join("init")).context("复制 init 失败")?;
     common::fsutil::set_executable(&rootfs_dir.join("init"))?;
     std::fs::create_dir_all(rootfs_dir.join("lib/modules"))?;
-    let runtime_conf = modconf::runtime_conf_text(&modules.runtime);
-    let runtime_names: Vec<String> = modules
-        .runtime
-        .iter()
-        .map(|l| modconf::module_name(l).to_string())
-        .filter(|n| !n.is_empty())
-        .collect();
+    let (runtime_names, runtime_conf): (Vec<String>, String) = if preset_kernel {
+        (Vec::new(), PRESET_MODULE_CONF.into())
+    } else {
+        (
+            modules
+                .runtime
+                .iter()
+                .map(|l| modconf::module_name(l).to_string())
+                .filter(|n| !n.is_empty())
+                .collect(),
+            modconf::runtime_conf_text(&modules.runtime),
+        )
+    };
     modconf::copy_module_list(
         &rootfs_dir.join("lib/modules"),
         &runtime_names,

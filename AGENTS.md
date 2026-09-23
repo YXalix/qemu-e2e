@@ -6,11 +6,13 @@ common（基础层）、builder（构建）、launcher（启动 DSL）、
 judge（判定 + verdict.json schema）、guardian（进程治理）、tracker（跨 run 聚类/返场）
 接管全部实际逻辑；`Makefile` 是转发壳；`infra/` 只保留源资产（init、
 init-initramfs、modules-boot.conf（冻结基础集）、testcases/、tools/、
-busybox/applets-*.txt（applet 名单冻结数据）），git 跟踪
+busybox/applets-*.txt（applet 名单冻结数据）、kernel/（preset 内核
+fragment/pin/构建脚本）），git 跟踪
 （rootfs 的 modules.conf 由组件 require 并集生成）；`docker/` 是容器化
 内核开发环境（macOS 内核供给 + clangd，见 Code Map）；构建产物与缓存一律落
 `target/`（数据面，git 忽略）：`target/artifacts/`（initrd.img / rootfs.img /
-tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools 暂存目录）。
+tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools 暂存目录）
++ `target/kernel/preset/`（fetch 下来的预编内核缓存）。
 
 ## 快速命令（复制即用）
 
@@ -21,6 +23,8 @@ tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools �
 virtuoso doctor             # 一屏体检：verify 同引擎的简化呈现（✓/✗ 组件行；--json）
 virtuoso verify             # 前置检查 + 类型化配置诊断（doctor 报 ✗ 时看全量）
 virtuoso build              # builder：重建 initrd.img / rootfs.img / tools.img
+virtuoso fetch [--version v] [--arch a]
+                            # 拉 preset 预编内核（mainline mini Image）→ target/kernel/preset
 virtuoso test --timeout 60  # 测试：launcher 启动 → judge 判定 → 工件落盘
 virtuoso test --replay-until-fail 5   # flaky 返场：首个非 passed 即停
 virtuoso matrix [--arch a]  # 多架构矩阵（缺省三架构，串行）
@@ -50,7 +54,7 @@ builder::verify 检查引擎（新增前置条件只动引擎，两侧呈现自�
 | 类型化配置 | `xtask/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `cli/diagnostics.rs` |
 | 运行工件与分诊 | `xtask/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
 | 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `platform.rs`（**`HostOs` = QEMU 平台分支唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
-| 构建器 | `crates/builder/src/` | busybox 四层供给（applet 符号链接由 `infra/busybox/applets-<ver>.txt` 名单驱动，不执行 guest ELF）/ **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / C 用例 / **no_std Rust 用例（恒 `--target <musl triple>`）** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / `cpio.rs`（**initrd 原生 newc+gzip**，无 GNU 工具依赖、确定性输出）/ `cross.rs`（**非 Linux 宿主交叉接线**：zig cc 包装 → CMAKE_C_COMPILER / CARGO_TARGET_*_LINKER）/ `image.rs`（mke2fs 探测含 brew keg 路径） / verify 检查引擎（host_tools 按平台分表） |
+| 构建器 | `crates/builder/src/` | busybox 四层供给（applet 符号链接由 `infra/busybox/applets-<ver>.txt` 名单驱动，不执行 guest ELF）/ **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / C 用例 / **no_std Rust 用例（恒 `--target <musl triple>`）** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / `cpio.rs`（**initrd 原生 newc+gzip**，无 GNU 工具依赖、确定性输出）/ `preset.rs`（**kernel_preset 预编内核供给**：pin/release 版本解析 + gh/直链下载 + SHA256 校验；供给端 = kernel-release.yml）/ `cross.rs`（**非 Linux 宿主交叉接线**：zig cc 包装 → CMAKE_C_COMPILER / CARGO_TARGET_*_LINKER）/ `image.rs`（mke2fs 探测含 brew keg 路径） / verify 检查引擎（host_tools 按平台分表；preset 激活时源码树/.ko 检查降级为 preset 语义） |
 | 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 冻结在**按宿主平台的双基线**：Linux=memfd+KVM、macOS=ram+HVF，accel×平台错配在 argv 构造期报错；`QEMU=echo` 可打印对照；`data_disks` = 多 virtio-blk 数据盘，缺省空；`agent_serial` = AI 通道，缺省关）/ `numa.rs` / `lib.rs`（`DataDisk` 块设备抽象） |
 | 判定引擎 | `crates/judge/src/` | `lib.rs`（标记协议 v1 解析 + `judge` 对账，panic 假通过防护）/ `report.rs`（verdict.json schema + `RunMeta`）/ `exit.rs`（**退出码语义唯一表**） |
 | 跨 run 语义 | `crates/tracker/src/lib.rs` | 失败指纹归一化/聚类/flaky/补丁映射/diff→路径；输入是最小摘要 `RunSummary`（`From<VerdictReport>` 投影），IO 在 runs 层 |
@@ -99,6 +103,7 @@ timeout_secs = 60        # 0 一律拒绝
 smp = 8                  # 多节点 NUMA 时须被 nodes 整除（解析期校验）
 auto_test = true
 qemu_opts = ["-device ivshmem-plain,memdev=hostmem"]   # 透传兜底
+# kernel_preset = "mainline"   # 预编 mainline mini 内核（fetch 后免内核树；与 kernel_path 互斥，preset 优先）
 
 [components.tools_disk]  # tools.img → /dev/vdb 挂 /tools；段缺省 = 启用
 enabled = true
@@ -151,7 +156,7 @@ initramfs 的 modules-boot.conf 冻结基础集之后。`virtuoso probe` 恒开 
 - `docs/quick-start.md` —— 从零到第一个 verdict: passed（装依赖 → 构建内核 → 体检 → 首跑）
 - `docs/architecture/` —— `overview.md`（总体架构/目录结构）、`crates.md`（核心 crate 设计）、`contracts.md`（冻结契约 + 标记协议 v1 冻结文本）
 - `docs/components/` —— 组件机制 `overview.md` + 逐组件页（tools-disk / agent / vfio / numa / pmem）
-- `docs/guide/` —— `configuration.md`（virtuoso.toml 全键）、`writing-tests.md`（C/no_std Rust 用例）、`debugging.md`、`artifacts.md`（运行工件与跨 run 分析）、`ai-integration.md`（skill + probe）
+- `docs/guide/` —— `configuration.md`（virtuoso.toml 全键）、`kernel-preset.md`（预编内核开箱路径与供给链）、`writing-tests.md`（C/no_std Rust 用例）、`debugging.md`、`artifacts.md`（运行工件与跨 run 分析）、`ai-integration.md`（skill + probe）
 - `docs/internals/boot-pipeline.md` —— 两段式引导逐行解读、资产供给链、"改哪个文件"手册
 - `docs/cli-reference.md` —— 命令一览；`docs/troubleshooting.md` —— Symptom → Solution 速查；`docs/contributing.md` —— 贡献约定 + CI
 

@@ -14,6 +14,7 @@ mod build;
 mod diagnostics;
 mod docs;
 mod doctor;
+mod fetch;
 mod parity;
 mod probe;
 mod verify;
@@ -48,6 +49,9 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
     match cmd {
         CliCommand::Verify { arch } => verify::run_verify(arch.as_deref()),
         CliCommand::Doctor { arch, json } => doctor::run_doctor(arch.as_deref(), json),
+        CliCommand::Fetch { version, arch } => {
+            fetch::run_fetch(version.as_deref(), arch.as_deref())
+        }
         CliCommand::Build => build::run_build(),
         CliCommand::Shell { kvm, tcg } => vm::run_shell(kvm, tcg),
         CliCommand::Debug => vm::run_debug(),
@@ -113,8 +117,29 @@ pub(crate) fn resolve_topology(cfg: &Config) -> anyhow::Result<NumaTopology> {
     })
 }
 
-/// 启动内核镜像路径：优先 kernel_image 覆盖，否则内核树内 arch 对应镜像。
+/// kernel_preset 的缓存目录（fetch 落这里，Image-<arch> 平铺 + version 记录）。
+pub(crate) fn preset_dir(cfg: &Config) -> std::path::PathBuf {
+    cfg.target_dir.join("kernel").join("preset")
+}
+
+/// kernel_preset 取值校验：None = 未启用（源码树路径）；Some(preset 名)。
+/// 未知值解析期即报错（与 toml 其余键的严格性一致）。
+pub(crate) fn preset_kind(cfg: &Config) -> anyhow::Result<Option<String>> {
+    match cfg.kernel_preset() {
+        None => Ok(None),
+        Some(v) if v == "mainline" => Ok(Some(v)),
+        Some(v) => Err(anyhow::anyhow!(
+            "未知 kernel_preset: {v}（当前支持：mainline）"
+        )),
+    }
+}
+
+/// 启动内核镜像路径：preset 激活 → fetch 缓存；否则优先 kernel_image 覆盖，
+/// 再回落内核树内 arch 对应镜像。
 pub(crate) fn kernel_image_path(cfg: &Config, arch: Arch) -> anyhow::Result<std::path::PathBuf> {
+    if preset_kind(cfg)?.is_some() {
+        return Ok(preset_dir(cfg).join(builder::preset::image_name(arch)));
+    }
     let (kernel_path, _) = cfg.kernel_path()?;
     Ok(cfg
         .kernel_image()

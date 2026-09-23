@@ -4,6 +4,7 @@
 use common::fsutil::which;
 use launcher::Arch;
 
+use super::preset_kind;
 use super::resolve_arch;
 use crate::config::Config;
 
@@ -12,14 +13,28 @@ use crate::config::Config;
 pub(super) fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<builder::verify::Report> {
     let host_arch = Arch::parse(std::env::consts::ARCH);
     let kernel_path = cfg.kernel_path().ok().map(|(kp, _)| kp);
-    let kernel_img = kernel_path.as_ref().map(|p| p.join(arch.kernel_img()));
+    let preset = preset_kind(cfg)?;
+    let preset_active = preset.is_some();
 
-    // 组件 require 并集（boot 附加 + runtime）的模块是否都能在内核树找到
-    // （WARN 级；并集计算在 config 层）
-    let plan = cfg.component_plan();
-    let module_lines: Vec<String> = plan.all().cloned().collect();
-    let modules =
-        builder::verify::module_presence(&module_lines, kernel_path.as_deref(), &cfg.infra_dir);
+    // preset 激活：内核镜像 = fetch 缓存（离线呈现钉定版本，未钉定留空）；
+    // 源码树 .ko 查找整体跳过（预编内核全 =y 内建，无怪癖前置）
+    let kernel_img = if preset_active {
+        Some(super::preset_dir(cfg).join(builder::preset::image_name(arch)))
+    } else {
+        kernel_path.as_ref().map(|p| p.join(arch.kernel_img()))
+    };
+    let modules = if preset_active {
+        Vec::new()
+    } else {
+        let plan = cfg.component_plan();
+        let module_lines: Vec<String> = plan.all().cloned().collect();
+        builder::verify::module_presence(&module_lines, kernel_path.as_deref(), &cfg.infra_dir)
+    };
+    let preset_version = if preset_active {
+        builder::preset::pin_version(&cfg.infra_dir).unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     Ok(builder::verify::run_checks(
         cfg.toml.is_some(),
@@ -39,6 +54,7 @@ pub(super) fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<builder:
         Some(&cfg.artifacts_dir.join("initrd.img")),
         cfg.vfio().is_some(),
         cfg.pmem_size().is_some(),
+        preset.as_deref().map(|_| preset_version.as_str()),
     ))
 }
 

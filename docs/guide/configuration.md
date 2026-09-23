@@ -18,6 +18,7 @@
 | `auto_test` | `AUTO_TEST` | true = 跑完 `/tests/` 自动关机；false = 落入交互 shell |
 | `kernel_path` | `KERNEL_PATH` | 内核树路径（装置在树内时可自动探测） |
 | `kernel_image` | `KERNEL_IMAGE` | 内核镜像覆盖（缺省 = 内核树内 arch 对应镜像） |
+| `kernel_preset` | `KERNEL_PRESET` | `"mainline"` = 用官方预编 mainline mini 内核（`virtuoso fetch` 拉取，免内核树）；与 `kernel_path` / `kernel_image` 互斥，preset 优先。版本钉定见 [preset 内核](kernel-preset.md) |
 | `qemu` | `QEMU` | QEMU 二进制覆盖（`QEMU=echo` 可打印 argv 对照） |
 | `qemu_opts` | — | 透传兜底参数数组（如 ivshmem） |
 

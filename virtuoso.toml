@@ -34,6 +34,12 @@ kernel_path = "/root/kernel"
 # 内核镜像覆盖（缺省 = 内核树内 arch 对应镜像）
 # kernel_image = "/path/to/Image"
 
+# preset 预编内核（"mainline" = 官方发布的 mainline mini 内核，全 =y 零模块）。
+# 免内核树开箱即用：virtuoso fetch 拉取后直接 test；源码树检查与 .ko 供给
+# 整体跳过（与 kernel_path/kernel_image 互斥，preset 优先）。版本钉定见
+# infra/kernel/pin。
+# kernel_preset = "mainline"
+
 # QEMU 二进制覆盖（等价旧 QEMU= 语义）
 # qemu = "qemu-system-aarch64"
 

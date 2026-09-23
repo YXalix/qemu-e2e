@@ -24,6 +24,7 @@
 # 使用指南
 
 - [配置参考](guide/configuration.md)
+- [preset 内核（开箱即用）](guide/kernel-preset.md)
 - [编写测试用例](guide/writing-tests.md)
 - [调试](guide/debugging.md)
 - [运行工件与跨 run 分析](guide/artifacts.md)

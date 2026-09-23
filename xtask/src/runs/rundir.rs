@@ -338,8 +338,14 @@ mod tests {
         );
         assert_eq!(outcome.qemu_lines, 60);
         assert_eq!(outcome.qemu_tail.len(), QEMU_TAIL_LINES);
-        assert_eq!(outcome.qemu_tail[0], format!("noise-{}", 60 - QEMU_TAIL_LINES + 1));
-        assert_eq!(outcome.qemu_tail.last().map(String::as_str), Some("noise-60"));
+        assert_eq!(
+            outcome.qemu_tail[0],
+            format!("noise-{}", 60 - QEMU_TAIL_LINES + 1)
+        );
+        assert_eq!(
+            outcome.qemu_tail.last().map(String::as_str),
+            Some("noise-60")
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

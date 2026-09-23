@@ -88,7 +88,9 @@ pub struct Report {
     pub warnings: u32,
 }
 
-/// 运行全部检查（verify.sh 的 11 项 + 组件平台门）。
+/// 运行全部检查（verify.sh 的 11 项 + 组件平台门）。`preset_version` =
+/// kernel_preset 预编内核（mainline mini Image）钉定/解析出的版本：源码树
+/// 与 .ko 查找类检查整体降级为 preset 语义（内建内核无怪癖前置）。
 #[allow(clippy::too_many_arguments)]
 pub fn run_checks(
     config_file_exists: bool,
@@ -105,6 +107,7 @@ pub fn run_checks(
     initrd: Option<&Path>,
     vfio_enabled: bool,
     pmem_enabled: bool,
+    preset_version: Option<&str>,
 ) -> Report {
     let mut checks = Vec::new();
 
@@ -161,39 +164,49 @@ pub fn run_checks(
         )));
     }
 
-    // 3. KERNEL_PATH
-    let kernel_path = match kernel_path.filter(|p| !p.as_os_str().is_empty()) {
-        Some(p) => {
-            checks.push(pass(format!("KERNEL_PATH: {}", p.display())));
-            Some(p.to_path_buf())
-        }
-        None => {
-            checks.push(fail(
-                "KERNEL_PATH not set (set kernel_path in virtuoso.toml or KERNEL_PATH env var)",
-            ));
-            None
-        }
-    };
+    // 3/4. 内核来源二选一：preset 预编（免内核树）或 KERNEL_PATH 源码树
+    if let Some(v) = preset_version {
+        let ver = if v.is_empty() {
+            String::new()
+        } else {
+            format!(" v{v}")
+        };
+        checks.push(info(format!(
+            "Kernel preset: mainline{ver} (预编内核已启用，源码树检查跳过；未就位时运行 `virtuoso fetch`)"
+        )));
+    } else {
+        let kernel_path = match kernel_path.filter(|p| !p.as_os_str().is_empty()) {
+            Some(p) => {
+                checks.push(pass(format!("KERNEL_PATH: {}", p.display())));
+                Some(p.to_path_buf())
+            }
+            None => {
+                checks.push(fail(
+                    "KERNEL_PATH not set (set kernel_path in virtuoso.toml or KERNEL_PATH env var; or enable kernel_preset = \"mainline\" + `virtuoso fetch`)",
+                ));
+                None
+            }
+        };
 
-    // 4. Kernel source tree (+ version)
-    let kernel_ok = kernel_path
-        .as_ref()
-        .map(|p| p.join("arch").is_dir())
-        .unwrap_or(false);
-    match (&kernel_path, kernel_ok) {
-        (Some(p), true) => {
-            let kver = kernel_version(p);
-            checks.push(pass(format!(
-                "Kernel source: {}{}",
-                p.display(),
-                kver.map(|v| format!(" (v{v})")).unwrap_or_default()
-            )));
+        let kernel_ok = kernel_path
+            .as_ref()
+            .map(|p| p.join("arch").is_dir())
+            .unwrap_or(false);
+        match (&kernel_path, kernel_ok) {
+            (Some(p), true) => {
+                let kver = kernel_version(p);
+                checks.push(pass(format!(
+                    "Kernel source: {}{}",
+                    p.display(),
+                    kver.map(|v| format!(" (v{v})")).unwrap_or_default()
+                )));
+            }
+            (Some(p), false) => checks.push(fail(format!(
+                "Kernel source: {}/arch not found (set KERNEL_PATH)",
+                p.display()
+            ))),
+            (None, _) => {}
         }
-        (Some(p), false) => checks.push(fail(format!(
-            "Kernel source: {}/arch not found (set KERNEL_PATH)",
-            p.display()
-        ))),
-        (None, _) => {}
     }
 
     // 5. Kernel image
@@ -207,8 +220,13 @@ pub fn run_checks(
             )));
         }
         None => {
+            let hint = if preset_version.is_some() {
+                "run `virtuoso fetch`"
+            } else {
+                "build the kernel first"
+            };
             checks.push(fail(format!(
-                "Kernel image: {} not found (build the kernel first)",
+                "Kernel image: {} not found ({hint})",
                 arch.kernel_img()
             )));
         }
@@ -243,7 +261,12 @@ pub fn run_checks(
     }
 
     // 7. Kernel modules（WARN，不判死；清单 = 启用组件 require 并集 + boot 基础集附加）
-    if modules.is_empty() {
+    // preset 内核全 =y 内建：.ko 查找整体无意义，单一 Info 行降噪
+    if preset_version.is_some() {
+        checks.push(info(
+            "Kernel modules: preset kernel builds required features in (no .ko lookup)",
+        ));
+    } else if modules.is_empty() {
         checks.push(info(
             "Kernel modules: none required (no enabled component declares require)",
         ));

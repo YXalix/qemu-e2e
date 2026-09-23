@@ -145,6 +145,13 @@ impl Config {
         scalar(self.tv(|t| &t.kernel_image), "KERNEL_IMAGE").filter(|s| !s.trim().is_empty())
     }
 
+    /// kernel_preset（"mainline" = 预编 mainline mini 内核）：激活后内核镜像
+    /// 走 `virtuoso fetch` 的缓存（target/kernel/preset），源码树不再是前置。
+    /// env KERNEL_PRESET 覆盖 toml（冻结的标量优先级）。
+    pub fn kernel_preset(&self) -> Option<String> {
+        scalar(self.tv(|t| &t.kernel_preset), "KERNEL_PRESET").filter(|s| !s.trim().is_empty())
+    }
+
     /// QEMU_TIMEOUT 原始字符串（"0" 由 test 命令拒绝）。
     pub fn timeout_raw(&self) -> String {
         scalar(self.tv(|t| &t.timeout_secs), "QEMU_TIMEOUT")
@@ -406,6 +413,8 @@ impl<'de> serde::Deserialize<'de> for Stage {
 pub struct VirtuosoToml {
     kernel_path: Option<StrVal>,
     kernel_image: Option<StrVal>,
+    /// kernel_preset = "mainline"：内核走预编供给（virtuoso fetch），免内核树
+    kernel_preset: Option<StrVal>,
     arch: Option<StrVal>,
     timeout_secs: Option<StrVal>,
     smp: Option<StrVal>,

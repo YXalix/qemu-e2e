@@ -55,6 +55,7 @@ const PREFIXES: &[(&str, Group)] = &[
     ("Host tools", Group::Toolchain),
     ("Cross-compile", Group::Toolchain),
     ("Kernel modules", Group::Modules),
+    ("Kernel preset", Group::Kernel),
     ("Kernel source", Group::Kernel),
     ("Kernel image", Group::Kernel),
     ("KERNEL_PATH", Group::Kernel),
@@ -104,6 +105,16 @@ fn short_detail(msg: &str) -> String {
         if let Some((_, tail)) = rest.split_once(" (v") {
             return format!("v{}", tail.trim_end_matches(')'));
         }
+    }
+    // "Kernel preset: mainline v6.12.8 (…)" → "mainline v6.12.8"
+    if msg.starts_with("Kernel preset") {
+        return rest
+            .split_once(" (")
+            .map(|(head, _)| head.to_string())
+            .unwrap_or_else(|| rest.to_string());
+    }
+    if msg.starts_with("Kernel modules") && rest.starts_with("preset") {
+        return "modules built-in".into();
     }
     if msg.starts_with("Host tools") {
         return "host tools".into();

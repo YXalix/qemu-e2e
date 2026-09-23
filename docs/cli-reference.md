@@ -11,6 +11,7 @@
 | `verify [--arch a]` | builder | 前置检查 + 类型化配置诊断 |
 | `doctor [--arch a] [--json]` | builder | 同一检查引擎的 flutter-doctor 风格一屏体检（✓/✗/! 组件行）；报 ✗ 时用 verify 看全量 |
 | `build` | builder | 重建 initrd.img / rootfs.img / tools.img |
+| `fetch [--version v] [--arch a]` | builder | 拉取 preset 预编内核（mainline mini Image）到 target/kernel/preset；kernel_preset = "mainline" 的开箱供给 |
 | `busybox` | builder | 确保当前架构静态 BusyBox（Release 下载优先，源码兜底） |
 | `clean` | builder | 清理生成镜像与暂存目录 |
 | `shell [--kvm] [--tcg]` | launcher | 交互式 VM（BusyBox shell）；`--kvm` 仅 Linux，`--tcg` 强制纯模拟（macOS 缺省 HVF 时用） |
