@@ -18,6 +18,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+          # tools 装载（musl 静态）的 target 可用性由 builder 单测把守
+          targets: aarch64-unknown-linux-musl,x86_64-unknown-linux-musl
 
       - name: Cargo Cache
         uses: Swatinem/rust-cache@v2
