@@ -325,7 +325,7 @@ pub fn suggest_tests(changed_files: &[String], rules: &[Rule]) -> Vec<Suggestion
             }
         }
     }
-    matched.sort_by(|a, b| b.path_prefix.len().cmp(&a.path_prefix.len()));
+    matched.sort_by_key(|r| std::cmp::Reverse(r.path_prefix.len()));
     matched
         .into_iter()
         .map(|rule| Suggestion {
