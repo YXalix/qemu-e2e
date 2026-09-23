@@ -12,8 +12,8 @@
 
 mod build;
 mod diagnostics;
-mod doctor;
 mod docs;
+mod doctor;
 mod parity;
 mod probe;
 mod verify;
@@ -49,13 +49,14 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
         CliCommand::Verify { arch } => verify::run_verify(arch.as_deref()),
         CliCommand::Doctor { arch, json } => doctor::run_doctor(arch.as_deref(), json),
         CliCommand::Build => build::run_build(),
-        CliCommand::Shell { kvm } => vm::run_shell(kvm),
+        CliCommand::Shell { kvm, tcg } => vm::run_shell(kvm, tcg),
         CliCommand::Debug => vm::run_debug(),
         CliCommand::Test {
             timeout,
             arch,
             replay_until_fail,
-        } => vm::run_test(timeout, arch.as_deref(), replay_until_fail),
+            tcg,
+        } => vm::run_test(timeout, arch.as_deref(), replay_until_fail, tcg),
         CliCommand::BusyBox => build::run_busybox(),
         CliCommand::Clean => build::run_clean(),
         CliCommand::Skill { action } => build::run_skill(action),
@@ -135,7 +136,8 @@ pub(crate) fn tools_disk_opt(cfg: &Config) -> Option<launcher::DataDisk> {
 /// agent 通道 socket（[components.agent] enabled 才 Some）。
 /// socket 落调用方给定的目录（shell 用 target/，test 用 run 目录）。
 pub(crate) fn agent_socket_opt(cfg: &Config, dir: &Path, name: &str) -> Option<std::path::PathBuf> {
-    cfg.agent_enabled().then(|| dir.join(format!("{name}.sock")))
+    cfg.agent_enabled()
+        .then(|| dir.join(format!("{name}.sock")))
 }
 
 /// pmem 持久内存（[components.pmem] enabled 才 Some）：DT 途径
@@ -172,13 +174,15 @@ pub(crate) fn pmem_opt(
     let mem_limit = render_memory(limit_bytes);
 
     let dir = cfg.build_dir.join("pmem");
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("创建 {} 失败", dir.display()))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("创建 {} 失败", dir.display()))?;
     let ram_backend = dir.join("ram.img");
     ensure_sparse(&ram_backend, total_bytes)?;
     let dtb = patch_pmem_dtb(cfg, arch, topo, &total_mem, &dir, pmem_bytes)?;
     Ok(Some(launcher::PmemSpec::new(
-        size, mem_limit, ram_backend, dtb,
+        size,
+        mem_limit,
+        ram_backend,
+        dtb,
     )))
 }
 
@@ -274,8 +278,16 @@ fn patch_pmem_dtb(
         .qemu_override()
         .unwrap_or_else(|| arch.qemu_bin().to_string());
     let mut cmd = Command::new(&qemu);
-    cmd.arg("-machine").arg(format!("{machine},dumpdtb={}", dtb.display()));
-    cmd.args(["-smp", &topo.smp.to_string(), "-m", total_mem, "-display", "none"]);
+    cmd.arg("-machine")
+        .arg(format!("{machine},dumpdtb={}", dtb.display()));
+    cmd.args([
+        "-smp",
+        &topo.smp.to_string(),
+        "-m",
+        total_mem,
+        "-display",
+        "none",
+    ]);
     if arch == Arch::Riscv64 {
         cmd.arg("-bios").arg("none");
     }
@@ -290,10 +302,7 @@ fn patch_pmem_dtb(
 
     // 根节点 cell 宽度（QEMU virt 为 #address-cells=2 / #size-cells=2）
     let read_cells = |prop: &str| -> anyhow::Result<u64> {
-        Ok(fdtget_words(&dtb, "/", prop)?
-            .first()
-            .copied()
-            .unwrap_or(2))
+        Ok(fdtget_words(&dtb, "/", prop)?.first().copied().unwrap_or(2))
     };
     let addr_cells = read_cells("#address-cells")?;
     let size_cells = read_cells("#size-cells")?;

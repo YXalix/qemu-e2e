@@ -5,16 +5,40 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
-use common::Arch;
+use common::{Arch, HostOs};
 
 use crate::numa::NumaTopology;
 pub use crate::{DataDisk, PmemSpec};
 
-/// 加速器：KVM 仅宿主与目标同构时可用（调用方校验），交叉架构回退 TCG。
+/// 加速器：KVM（Linux）/ HVF（macOS）仅宿主与目标同构时可用（调用方校验），
+/// 交叉架构回退 TCG。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Accel {
     Tcg,
     Kvm,
+    Hvf,
+}
+
+impl Accel {
+    /// verdict.json 运行指纹里的呈现名。
+    pub fn label(self) -> &'static str {
+        match self {
+            Accel::Tcg => "TCG",
+            Accel::Kvm => "KVM",
+            Accel::Hvf => "HVF",
+        }
+    }
+
+    /// 平台缺省加速器：macOS 上宿主与目标同构 → HVF（Apple Silicon 近原生），
+    /// 其余（含 Linux 全部场景）→ TCG。Linux 的 KVM 仍由 `shell --kvm` 显式
+    /// 开启；macOS 想强制纯模拟用 `--tcg`。
+    pub fn default_for(arch: Arch, host: HostOs) -> Accel {
+        if host == HostOs::Darwin && Arch::host_default() == Some(arch) {
+            Accel::Hvf
+        } else {
+            Accel::Tcg
+        }
+    }
 }
 
 /// QEMU 启动参数。
@@ -29,6 +53,9 @@ pub struct QemuInvocation {
     /// 如 tools.img（挂到 /tools 供 PATH 引用）。
     pub data_disks: Vec<DataDisk>,
     pub accel: Accel,
+    /// 宿主平台：决定内存后端形态（Linux=memfd、macOS=ram）与 accel 合法性。
+    /// 缺省取编译目标；argv_* 单测显式钉死以冻结双基线。
+    pub host: HostOs,
     pub topo: NumaTopology,
     /// kernel cmdline 的 auto_test 开关
     pub auto_test: bool,
@@ -62,6 +89,7 @@ impl QemuInvocation {
             rootfs: rootfs.into(),
             data_disks: Vec::new(),
             accel: Accel::Tcg,
+            host: HostOs::current(),
             topo: NumaTopology {
                 smp: 1,
                 nodes: 1,
@@ -77,6 +105,12 @@ impl QemuInvocation {
 
     pub fn accel(mut self, accel: Accel) -> Self {
         self.accel = accel;
+        self
+    }
+
+    /// 钉死宿主平台（argv 冻结单测用；运行路径缺省取编译目标）。
+    pub fn host_os(mut self, host: HostOs) -> Self {
+        self.host = host;
         self
     }
 
@@ -156,7 +190,27 @@ impl QemuInvocation {
     /// machine, memory-backend, numa, kvm, cpu, smp, m, kernel, initrd,
     /// append, rootfs drive, data disks, extra, console, options, debug。
     pub fn argv(&self) -> Result<Vec<String>, String> {
+        // accel × 宿主平台合法性（错误前置到 argv 构造期，而非留给 QEMU 报）
+        match (self.accel, self.host) {
+            (Accel::Kvm, HostOs::Darwin) => {
+                return Err("KVM 需要 Linux 宿主（macOS 硬件加速是 HVF）".into());
+            }
+            (Accel::Hvf, HostOs::Linux) => {
+                return Err("HVF 需要 macOS 宿主（Linux 硬件加速是 KVM）".into());
+            }
+            _ => {}
+        }
         let total_mem = self.topo.total_memory()?;
+        // Linux 基线冻结用 memfd 后端；macOS QEMU 无 memfd_create，换 ram
+        //（形态等价：同为普通匿名内存，share 语义 ram 恒 off 不需显式声明）
+        let mem_backend = |id: &str, size: &str| -> String {
+            match self.host {
+                HostOs::Linux => {
+                    format!("memory-backend-memfd,id={id},size={size},share=off")
+                }
+                HostOs::Darwin => format!("memory-backend-ram,id={id},size={size}"),
+            }
+        };
         let mut args: Vec<String> = Vec::new();
 
         args.push("-machine".into());
@@ -173,10 +227,7 @@ impl QemuInvocation {
             let per_node = self.topo.smp / self.topo.nodes;
             for i in 0..self.topo.nodes {
                 args.push("-object".into());
-                args.push(format!(
-                    "memory-backend-memfd,id=mem{i},size={},share=off",
-                    self.topo.memory_per_node
-                ));
+                args.push(mem_backend(&format!("mem{i}"), &self.topo.memory_per_node));
                 let start = i * per_node;
                 let end = start + per_node - 1;
                 args.push("-numa".into());
@@ -184,7 +235,7 @@ impl QemuInvocation {
             }
         } else if let Some(pmem) = &self.pmem {
             // 主内存换文件后端（share=on）：DT 挖出的 pmem 区即宿主文件
-            // backed，guest 写入持久落盘
+            // backed，guest 写入持久落盘（两平台同形）
             args.push("-object".into());
             args.push(format!(
                 "memory-backend-file,id=mem,mem-path={},size={total_mem},share=on",
@@ -192,17 +243,20 @@ impl QemuInvocation {
             ));
         } else {
             args.push("-object".into());
-            args.push(format!(
-                "memory-backend-memfd,id=mem,size={total_mem},share=off"
-            ));
+            args.push(mem_backend("mem", &total_mem));
         }
 
-        if self.accel == Accel::Kvm {
-            args.push("-enable-kvm".into());
+        match self.accel {
+            Accel::Kvm => args.push("-enable-kvm".into()),
+            Accel::Hvf => {
+                args.push("-accel".into());
+                args.push("hvf".into());
+            }
+            Accel::Tcg => {}
         }
         args.push("-cpu".into());
         args.push(match self.accel {
-            Accel::Kvm => "host".into(),
+            Accel::Kvm | Accel::Hvf => "host".into(),
             Accel::Tcg => self.arch.cpu_tcg().into(),
         });
 
@@ -241,10 +295,7 @@ impl QemuInvocation {
 
         for disk in &self.data_disks {
             args.push("-drive".into());
-            args.push(format!(
-                "file={},format=raw,if=virtio",
-                disk.path.display()
-            ));
+            args.push(format!("file={},format=raw,if=virtio", disk.path.display()));
         }
 
         if let Some(sock) = &self.agent_serial {
@@ -292,11 +343,7 @@ impl QemuInvocation {
             ("Rootfs image", &self.rootfs),
         ]
         .into_iter()
-        .chain(
-            self.data_disks
-                .iter()
-                .map(|d| ("Data disk image", &d.path)),
-        )
+        .chain(self.data_disks.iter().map(|d| ("Data disk image", &d.path)))
         {
             if !path.is_file() {
                 anyhow::bail!(
@@ -334,6 +381,7 @@ impl QemuInvocation {
 mod tests {
     use super::*;
     use crate::numa::NumaTopology;
+    use common::HostOs;
 
     fn base_inv() -> QemuInvocation {
         QemuInvocation::new(
@@ -343,6 +391,8 @@ mod tests {
             "/tmp/rootfs.img",
         )
         .topo(NumaTopology::parse("8", "2", "1G").unwrap())
+        // 冻结基线按宿主平台各持一份：单测显式钉死，不随编译目标漂移
+        .host_os(HostOs::Linux)
     }
 
     #[test]
@@ -369,7 +419,8 @@ mod tests {
     #[test]
     fn argv_single_node_uses_memory_backend_on_machine() {
         let inv = QemuInvocation::new(Arch::X86_64, "k", "i", "r")
-            .topo(NumaTopology::parse("4", "1", "2G").unwrap());
+            .topo(NumaTopology::parse("4", "1", "2G").unwrap())
+            .host_os(HostOs::Linux);
         let args = inv.argv().unwrap();
         let joined = args.join(" ");
         assert!(joined.contains("-machine virt,memory-backend=mem"));
@@ -386,6 +437,77 @@ mod tests {
         let joined = args.join(" ");
         assert!(joined.contains("-enable-kvm -cpu host"));
         assert!(!joined.contains("cortex-a72"));
+    }
+
+    #[test]
+    fn argv_darwin_frozen_baseline_uses_ram_backend() {
+        // darwin 基线：无 memfd（macOS QEMU 未编译该后端），单节点与
+        // NUMA 每节点均换 memory-backend-ram（ram 恒非共享，无 share= 字段）
+        let args = base_inv()
+            .host_os(HostOs::Darwin)
+            .topo(NumaTopology::parse("8", "1", "2G").unwrap())
+            .auto_test(true)
+            .argv()
+            .unwrap();
+        let joined = args.join(" ");
+        assert!(joined.contains("-machine virt,memory-backend=mem"));
+        assert!(joined.contains("-object memory-backend-ram,id=mem,size=2G"));
+        assert!(!joined.contains("memfd"));
+        assert!(!joined.contains("share=off"));
+        assert!(joined.contains("-cpu cortex-a72"));
+    }
+
+    #[test]
+    fn argv_darwin_numa_uses_ram_backend_per_node() {
+        let args = base_inv().host_os(HostOs::Darwin).argv().unwrap();
+        let joined = args.join(" ");
+        assert!(joined.contains("-object memory-backend-ram,id=mem0,size=1G"));
+        assert!(joined.contains("-object memory-backend-ram,id=mem1,size=1G"));
+        assert!(!joined.contains("memfd"));
+    }
+
+    #[test]
+    fn hvf_uses_accel_flag_and_host_cpu() {
+        let args = base_inv()
+            .host_os(HostOs::Darwin)
+            .accel(Accel::Hvf)
+            .argv()
+            .unwrap();
+        let joined = args.join(" ");
+        assert!(joined.contains("-accel hvf -cpu host"));
+        assert!(!joined.contains("cortex-a72"));
+        assert!(!joined.contains("-enable-kvm"));
+    }
+
+    #[test]
+    fn kvm_rejected_on_darwin_and_hvf_rejected_on_linux() {
+        let kvm_on_mac = base_inv()
+            .host_os(HostOs::Darwin)
+            .accel(Accel::Kvm)
+            .argv()
+            .unwrap_err();
+        assert!(kvm_on_mac.contains("HVF"));
+        let hvf_on_linux = base_inv().accel(Accel::Hvf).argv().unwrap_err();
+        assert!(hvf_on_linux.contains("KVM"));
+    }
+
+    #[test]
+    fn default_accel_only_hvf_on_darwin_same_arch() {
+        assert_eq!(
+            Accel::default_for(Arch::Arm64, HostOs::Darwin),
+            Accel::Hvf,
+            "Apple Silicon 宿主跑 arm64 guest 缺省 HVF"
+        );
+        assert_eq!(
+            Accel::default_for(Arch::X86_64, HostOs::Darwin),
+            Accel::Tcg,
+            "macOS 上交叉 guest 回落 TCG"
+        );
+        assert_eq!(
+            Accel::default_for(Arch::Arm64, HostOs::Linux),
+            Accel::Tcg,
+            "Linux 全场景缺省 TCG（KVM 仍由 --kvm 显式开启）"
+        );
     }
 
     #[test]
@@ -450,7 +572,13 @@ mod tests {
         // 单节点：主内存换文件后端（share=on）+ -dtb + cmdline mem=
         let inv = QemuInvocation::new(Arch::X86_64, "k", "i", "r")
             .topo(NumaTopology::parse("4", "1", "2G").unwrap())
-            .pmem(Some(PmemSpec::new("256M", "1792M", "/tmp/ram.img", "/tmp/virt.dtb")));
+            .host_os(HostOs::Linux)
+            .pmem(Some(PmemSpec::new(
+                "256M",
+                "1792M",
+                "/tmp/ram.img",
+                "/tmp/virt.dtb",
+            )));
         let args = inv.argv().unwrap();
         let joined = args.join(" ");
         assert!(joined.contains("-machine virt,memory-backend=mem"));
@@ -468,7 +596,12 @@ mod tests {
     #[test]
     fn pmem_rejected_with_multi_node_numa() {
         let err = base_inv()
-            .pmem(Some(PmemSpec::new("256M", "1792M", "/tmp/ram.img", "/tmp/virt.dtb")))
+            .pmem(Some(PmemSpec::new(
+                "256M",
+                "1792M",
+                "/tmp/ram.img",
+                "/tmp/virt.dtb",
+            )))
             .argv()
             .unwrap_err();
         assert!(err.contains("NUMA"));

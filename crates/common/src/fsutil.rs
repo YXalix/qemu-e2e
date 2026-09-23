@@ -1,15 +1,22 @@
 //! 文件系统与进程环境工具：PATH 查找、可执行位、ELF 魔数。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// 定位可执行文件的完整路径（不在 PATH 返回 None）。
+pub fn which_path(bin: &str) -> Option<PathBuf> {
+    if bin.contains('/') {
+        return Path::new(bin).is_file().then(|| PathBuf::from(bin));
+    }
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(bin))
+            .find(|p| p.is_file())
+    })
+}
 
 /// 定位可执行文件是否在 PATH（verify 用）。
 pub fn which(bin: &str) -> bool {
-    if bin.contains('/') {
-        return Path::new(bin).is_file();
-    }
-    std::env::var_os("PATH")
-        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(bin).is_file()))
-        .unwrap_or(false)
+    which_path(bin).is_some()
 }
 
 /// 置 0o755（下载产物 / VM 内 init / 测试二进制统一使用）。

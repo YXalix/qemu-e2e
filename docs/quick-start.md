@@ -10,6 +10,22 @@
 - openEuler / Fedora：`sudo dnf install -y gcc make cmake wget cpio gzip qemu-system-aarch64 qemu-img`
 - Debian / Ubuntu：`sudo apt install -y gcc make cmake wget cpio gzip qemu-system-arm qemu-utils`
 
+> initrd 打包已 Rust 原生化（builder::cpio），`cpio` / `gzip` / `wget` 不再
+> 是硬依赖（下载层有 curl 回退）——装了更省事，没装 doctor 也不报 ✗。
+
+### macOS（Apple Silicon，M1–M5）前置
+
+```bash
+brew install qemu e2fsprogs dtc cmake zig
+```
+
+- `qemu`：`qemu-system-aarch64` 带 HVF 加速（Apple Silicon 上近原生）；
+- `e2fsprogs`：`mke2fs`（keg-only，virtuoso 自动探测 keg 路径，无需加 PATH）；
+- `dtc`：pmem 组件的 dumpdtb/fdtput 工具（不用 pmem 可不装）；
+- `zig`：C 测试用例交叉编译（macOS 的 clang 产不出 Linux 静态 ELF）；
+- Rust 侧另需 `rustup target add aarch64-unknown-linux-musl`。
+- vfio 直通不支持 macOS（架构性依赖 Linux IOMMU），doctor 会直接拒绝。
+
 ## 2. 构建被测内核
 
 ```bash
@@ -20,6 +36,25 @@ make modules -j"$(nproc)"        # 只要有任何模块是 =m
 ```
 
 装置默认放在内核树内（自动探测）；放别处时在 `virtuoso.toml` 设 `kernel_path`。
+
+### macOS 上的内核供给（docker/ 内核开发环境）
+
+macOS 本机编不了 Linux 内核，用容器钉死工具链（Firecracker build-docker
+式；源码放 named volume，规避 APFS 大小写不敏感坑）：
+
+```bash
+docker/kernel.sh clone https://gitcode.com/openeuler/kernel.git --ref OLK-6.6-dev
+docker/kernel.sh defconfig openeuler_defconfig
+docker/kernel.sh build          # Image + modules + clangd 索引数据
+docker/kernel.sh export         # 最小树 → target/kernel/arm64/
+```
+
+然后在 `virtuoso.toml` 设 `kernel_path = "target/kernel/arm64"`。VS Code
+经 devcontainer 打开内核源码 volume 即得 clangd 全量跳转/补全（构建一次
+后自动有 compile_commands.json），详见 [docker/README.md](../docker/README.md)。
+
+内核树也可在任何 Linux 机器上构建后 rsync 过来——virtuoso 只要求
+`KERNEL_PATH` 指向「Makefile + arch/<a>/boot/<Image> + \*.ko」的树。
 
 ## 3. 安装与体检
 
@@ -37,6 +72,10 @@ virtuoso doctor               # 一屏体检：✓/✗/! 组件行，最快确�
 virtuoso test --timeout 60    # 构建 → 启动 → 判定 → 工件落盘
 virtuoso triage               # 分诊最近一次运行
 ```
+
+加速器语义按宿主平台：**Linux 恒 TCG**（`shell --kvm` 交互式开 KVM）；
+**macOS 上宿主与目标同构（arm64）时缺省 HVF**，`--tcg` 强制纯模拟，
+交叉 guest（x86_64 / riscv64）自动回落 TCG（慢，超时预算酌情放大）。
 
 **判定以 triage 的 verdict 为准**：`verdict: passed` 才算通过。退出码只是
 接口契约（0=通过、124=超时、其余=失败）——`-no-reboot` 下内核 panic 会让

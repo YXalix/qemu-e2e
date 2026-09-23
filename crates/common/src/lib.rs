@@ -7,7 +7,9 @@
 pub mod arch;
 pub mod fmt;
 pub mod fsutil;
+pub mod platform;
 pub mod time;
 pub mod units;
 
 pub use arch::{Arch, ALL_ARCHES};
+pub use platform::HostOs;

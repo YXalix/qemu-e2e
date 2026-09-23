@@ -1,0 +1,32 @@
+# virtuoso 内核构建器 —— Firecracker build-docker 式的钉死工具链。
+#
+# 设计约束（docker/README.md 有完整用法）：
+# - 只承担「macOS 上做不到的事」：编 Linux 内核 + clangd 索引环境；
+#   测试资产构建与 QEMU 运行留在宿主原生（macOS 走 HVF，容器内没有）。
+# - 容器在 Apple Silicon 上原生 linux/arm64 运行（Docker Desktop /
+#   OrbStack / colima 皆可，无需嵌套虚拟化），arm64 内核 = 容器内原生前端；
+#   x86_64 / riscv64 = 容器内交叉（CROSS_COMPILE 见 kernel.sh）。
+# - 内核源码放 named volume（ext4 大小写敏感，规避 APFS 大小写不敏感坑）。
+# - CI（kernel-builder.yml）发布到 ghcr.io/yxalix/virtuoso-kernel；
+#   kernel.sh 拉不动镜像时会回落到本文件本地构建。
+
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+        build-essential bc bison flex libelf-dev libssl-dev dwarves \
+        python3 cpio xz-utils file patch rsync \
+        # 三架构全覆盖：native（build-essential）+ 双交叉
+        gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu gcc-riscv64-linux-gnu \
+        # 代码浏览：clangd（compile_commands.json 由内核自带脚本生成）
+        clangd \
+        git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /ksrc
+
+# clangd 允许向编译器查询系统 include（内核交叉 gcc 的查询路径提取）
+ENV CLANGD_FLAGS="--query-driver=/usr/bin/*"
+
+CMD ["/bin/bash"]

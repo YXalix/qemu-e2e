@@ -25,6 +25,7 @@ pub(super) fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<builder:
         cfg.toml.is_some(),
         kernel_path.as_deref(),
         arch,
+        common::HostOs::current(),
         host_arch.is_some_and(|h| h != arch),
         kernel_img.as_deref(),
         which(arch.qemu_bin()).then_some(arch.qemu_bin()),
@@ -36,6 +37,8 @@ pub(super) fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<builder:
             .is_file(),
         cfg.artifacts_dir.join("tools.img").is_file(),
         Some(&cfg.artifacts_dir.join("initrd.img")),
+        cfg.vfio().is_some(),
+        cfg.pmem_size().is_some(),
     ))
 }
 

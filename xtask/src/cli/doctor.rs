@@ -7,8 +7,8 @@
 
 use builder::verify::{Level, Report};
 
-use super::verify::engine_report;
 use super::resolve_arch;
+use super::verify::engine_report;
 use crate::config::Config;
 
 // ---------------------------------------------------------------- 引擎消息 → 组件分组
@@ -63,6 +63,7 @@ const PREFIXES: &[(&str, Group)] = &[
     ("BusyBox", Group::Artifacts),
     ("Tools image", Group::Artifacts),
     ("Initrd", Group::Artifacts),
+    ("Components", Group::Modules),
 ];
 
 /// 消息 → (分组, 剥掉前缀后的正文)；未识别前缀归 Other 原样保留
@@ -228,7 +229,12 @@ fn render(groups: &[GroupOut], tty: bool) -> String {
             rows.push(good);
         }
         let name = format!("{:<11}", g.group.name());
-        out.push_str(&format!("  {} {}  {}\n", c(code, icon), c("1", name.as_str()), rows[0]));
+        out.push_str(&format!(
+            "  {} {}  {}\n",
+            c(code, icon),
+            c("1", name.as_str()),
+            rows[0]
+        ));
         for row in &rows[1..] {
             // 与首行正文列对齐：2 缩进 + 图标 1 + 空格 + 组名 11 + 2 空格
             out.push_str(&format!("{:<17}{}\n", "", row));
@@ -314,18 +320,46 @@ mod tests {
     #[test]
     fn classify_maps_every_engine_prefix() {
         for (msg, want, rest) in [
-            ("Configuration: virtuoso.toml found", Group::Config, "virtuoso.toml found"),
-            ("Host tools: all found (wget …)", Group::Toolchain, "all found (wget …)"),
-            ("Cross-compile: ARCH=arm64 differs", Group::Toolchain, "ARCH=arm64 differs"),
+            (
+                "Configuration: virtuoso.toml found",
+                Group::Config,
+                "virtuoso.toml found",
+            ),
+            (
+                "Host tools: all found (wget …)",
+                Group::Toolchain,
+                "all found (wget …)",
+            ),
+            (
+                "Cross-compile: ARCH=arm64 differs",
+                Group::Toolchain,
+                "ARCH=arm64 differs",
+            ),
             ("KERNEL_PATH: /k", Group::Kernel, "/k"),
             ("Kernel source: /k (v6.6)", Group::Kernel, "/k (v6.6)"),
             ("Kernel image: Image (42M)", Group::Kernel, "Image (42M)"),
-            ("QEMU binary: qemu-system-aarch64", Group::Qemu, "qemu-system-aarch64"),
+            (
+                "QEMU binary: qemu-system-aarch64",
+                Group::Qemu,
+                "qemu-system-aarch64",
+            ),
             ("qemu-img: available", Group::Qemu, "available"),
-            ("Kernel modules: 1/2 found, missing: x", Group::Modules, "1/2 found, missing: x"),
-            ("BusyBox: cached (arm64)", Group::Artifacts, "cached (arm64)"),
+            (
+                "Kernel modules: 1/2 found, missing: x",
+                Group::Modules,
+                "1/2 found, missing: x",
+            ),
+            (
+                "BusyBox: cached (arm64)",
+                Group::Artifacts,
+                "cached (arm64)",
+            ),
             ("Tools image: exists", Group::Artifacts, "exists"),
-            ("Initrd: /a/initrd.img (12M)", Group::Artifacts, "/a/initrd.img (12M)"),
+            (
+                "Initrd: /a/initrd.img (12M)",
+                Group::Artifacts,
+                "/a/initrd.img (12M)",
+            ),
             ("Future check: ???", Group::Other, "Future check: ???"),
         ] {
             assert_eq!(classify(msg), (want, rest), "msg={msg}");
@@ -341,34 +375,64 @@ mod tests {
 
     #[test]
     fn short_detail_compacts_known_passes() {
-        assert_eq!(short_detail("Configuration: virtuoso.toml found"), "virtuoso.toml found");
-        assert_eq!(short_detail("Host tools: all found (wget tar gcc)"), "host tools");
+        assert_eq!(
+            short_detail("Configuration: virtuoso.toml found"),
+            "virtuoso.toml found"
+        );
+        assert_eq!(
+            short_detail("Host tools: all found (wget tar gcc)"),
+            "host tools"
+        );
         assert_eq!(short_detail("Kernel source: /k (v6.6.0)"), "v6.6.0");
         assert_eq!(short_detail("Kernel image: Image (42M)"), "Image (42M)");
         assert_eq!(short_detail("qemu-img: available"), "");
         assert_eq!(short_detail("KERNEL_PATH: /k"), "");
-        assert_eq!(short_detail("Kernel modules: none required"), "none required");
+        assert_eq!(
+            short_detail("Kernel modules: none required"),
+            "none required"
+        );
         assert_eq!(short_detail("BusyBox: cached (arm64)"), "busybox");
-        assert_eq!(short_detail("BusyBox: not cached for arm64 (…)"), "busybox (not cached)");
-        assert_eq!(short_detail("Tools image: exists (attached as /dev/vdb)"), "tools.img");
-        assert_eq!(short_detail("Tools image: not built yet (run `virtuoso build`)"), "tools.img (not built)");
-        assert_eq!(short_detail("Initrd: /a/b/initrd.img (12M)"), "initrd.img (12M)");
-        assert_eq!(short_detail("Initrd: not built yet (run 'make initrd')"), "initrd (not built)");
+        assert_eq!(
+            short_detail("BusyBox: not cached for arm64 (…)"),
+            "busybox (not cached)"
+        );
+        assert_eq!(
+            short_detail("Tools image: exists (attached as /dev/vdb)"),
+            "tools.img"
+        );
+        assert_eq!(
+            short_detail("Tools image: not built yet (run `virtuoso build`)"),
+            "tools.img (not built)"
+        );
+        assert_eq!(
+            short_detail("Initrd: /a/b/initrd.img (12M)"),
+            "initrd.img (12M)"
+        );
+        assert_eq!(
+            short_detail("Initrd: not built yet (run 'make initrd')"),
+            "initrd (not built)"
+        );
     }
 
     #[test]
     fn group_checks_fails_lead_and_warn_keeps_full_text() {
         let groups = group_checks(&report(vec![
-                check(Level::Pass, "Configuration: virtuoso.toml found"),
-                check(Level::Fail, "QEMU binary: qemu-system-arm not found (install qemu-system-arm)"),
-                check(Level::Warn, "Kernel modules: 2/3 found, missing: nd_btt"),
-                check(Level::Pass, "Kernel image: Image (42M)"),
-            ]));
+            check(Level::Pass, "Configuration: virtuoso.toml found"),
+            check(
+                Level::Fail,
+                "QEMU binary: qemu-system-arm not found (install qemu-system-arm)",
+            ),
+            check(Level::Warn, "Kernel modules: 2/3 found, missing: nd_btt"),
+            check(Level::Pass, "Kernel image: Image (42M)"),
+        ]));
         let qemu = groups.iter().find(|g| g.group == Group::Qemu).unwrap();
         assert_eq!(qemu.level, Level::Fail);
         assert_eq!(
             qemu.lines,
-            vec![(Level::Fail, "qemu-system-arm not found (install qemu-system-arm)".into())]
+            vec![(
+                Level::Fail,
+                "qemu-system-arm not found (install qemu-system-arm)".into()
+            )]
         );
         let modules = groups.iter().find(|g| g.group == Group::Modules).unwrap();
         assert_eq!(modules.level, Level::Warn);
@@ -378,23 +442,26 @@ mod tests {
     #[test]
     fn group_checks_healthy_report_is_one_line_per_group() {
         let groups = group_checks(&report(vec![
-                check(Level::Pass, "Configuration: virtuoso.toml found"),
-                check(Level::Pass, "Host tools: all found (wget tar gcc)"),
-                check(Level::Pass, "KERNEL_PATH: /k"),
-                check(Level::Pass, "Kernel source: /k (v6.6.0)"),
-                check(Level::Pass, "Kernel image: Image (42M)"),
-                check(Level::Pass, "QEMU binary: qemu-system-aarch64"),
-                check(Level::Info, "qemu-img: available"),
-                check(Level::Info, "Kernel modules: none required"),
-                check(Level::Pass, "BusyBox: cached (arm64)"),
-                check(Level::Info, "Tools image: exists (attached as /dev/vdb)"),
-                check(Level::Info, "Initrd: /a/initrd.img (12M)"),
-            ]));
+            check(Level::Pass, "Configuration: virtuoso.toml found"),
+            check(Level::Pass, "Host tools: all found (wget tar gcc)"),
+            check(Level::Pass, "KERNEL_PATH: /k"),
+            check(Level::Pass, "Kernel source: /k (v6.6.0)"),
+            check(Level::Pass, "Kernel image: Image (42M)"),
+            check(Level::Pass, "QEMU binary: qemu-system-aarch64"),
+            check(Level::Info, "qemu-img: available"),
+            check(Level::Info, "Kernel modules: none required"),
+            check(Level::Pass, "BusyBox: cached (arm64)"),
+            check(Level::Info, "Tools image: exists (attached as /dev/vdb)"),
+            check(Level::Info, "Initrd: /a/initrd.img (12M)"),
+        ]));
         let rendered = render(&groups, false);
         let lines: Vec<&str> = rendered.lines().collect();
         assert_eq!(lines.len(), 6, "六个组件组各一行:\n{rendered}");
         assert!(lines[0].contains("✓") && lines[0].contains("Config"));
         assert!(lines[2].contains("Kernel") && lines[2].contains("v6.6.0 · Image (42M)"));
-        assert!(lines[5].contains("Artifacts") && lines[5].contains("busybox · tools.img · initrd.img (12M)"));
+        assert!(
+            lines[5].contains("Artifacts")
+                && lines[5].contains("busybox · tools.img · initrd.img (12M)")
+        );
     }
 }

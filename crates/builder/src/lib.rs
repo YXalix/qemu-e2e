@@ -3,6 +3,8 @@
 //! 消息文本与退出码语义对齐 shell 基线）。
 
 pub mod busybox;
+pub mod cpio;
+pub mod cross;
 pub mod image;
 pub mod modconf;
 pub mod testcase;
@@ -93,18 +95,28 @@ pub fn build_boot_pair(
             kernel_path.display()
         );
     }
-    if !common::fsutil::which("mke2fs") {
-        anyhow::bail!("mke2fs not found (install e2fsprogs)");
+    if image::find_mke2fs().is_none() {
+        anyhow::bail!("mke2fs not found (Linux: e2fsprogs 包; macOS: brew install e2fsprogs)");
     }
     std::fs::create_dir_all(build_dir)?;
     std::fs::create_dir_all(artifacts_dir)?;
 
+    // 交叉接线（Linux 宿主为空操作；macOS 解析 zig/CC，缺则显式报错）
+    let cross_setup = cross::setup(arch, build_dir)?;
+    if let Some(note) = &cross_setup.note {
+        progress.line(note);
+    }
     let busybox_bin = busybox::ensure(build_dir, arch, supply, progress)?;
+    let version = supply
+        .version
+        .clone()
+        .unwrap_or_else(|| busybox::DEFAULT_VERSION.into());
+    let applets = busybox::applet_names(infra_dir, &version, &busybox_bin)?;
 
     // ---------- initrd.img: minimal initramfs ----------
     progress.line("Building initrd.img (minimal initramfs)...");
     let initramfs_dir = build_dir.join("initramfs");
-    assemble_busybox_tree(&initramfs_dir, &busybox_bin)?;
+    assemble_busybox_tree(&initramfs_dir, &busybox_bin, &applets)?;
     std::fs::copy(infra_dir.join("init-initramfs"), initramfs_dir.join("init"))
         .context("复制 init-initramfs 失败")?;
     common::fsutil::set_executable(&initramfs_dir.join("init"))?;
@@ -126,7 +138,7 @@ pub fn build_boot_pair(
     // ---------- rootfs.img: ext4 rootfs with tests ----------
     progress.line("Building rootfs.img (ext4 rootfs)...");
     let rootfs_dir = build_dir.join("rootfs");
-    assemble_busybox_tree(&rootfs_dir, &busybox_bin)?;
+    assemble_busybox_tree(&rootfs_dir, &busybox_bin, &applets)?;
     std::fs::copy(infra_dir.join("init"), rootfs_dir.join("init")).context("复制 init 失败")?;
     common::fsutil::set_executable(&rootfs_dir.join("init"))?;
     std::fs::create_dir_all(rootfs_dir.join("lib/modules"))?;
@@ -149,12 +161,14 @@ pub fn build_boot_pair(
     testcase::install(
         &infra_dir.join("testcases"),
         &rootfs_dir.join("tests"),
+        &cross_setup,
         progress,
     )?;
     testcase::install_rust(
         &infra_dir.join("testcases/rust"),
         &rootfs_dir.join("tests"),
         arch,
+        &cross_setup,
         progress,
     )?;
     // tools workspace（常驻工具）→ tools.img 的 /bin：与用例分类正交，见
@@ -164,6 +178,7 @@ pub fn build_boot_pair(
         &infra_dir.join("tools"),
         &tools_dir.join("bin"),
         arch,
+        &cross_setup,
         progress,
     )?;
     let mut hooks = hooks.to_vec();
@@ -189,8 +204,13 @@ pub fn build_boot_pair(
 }
 
 /// busybox 用户land 组装：静态二进制 + applet 符号链接 + 骨架目录 + root 账户。
-/// 注意：applet 安装会执行 busybox 二进制，交叉组装需宿主同构（与脚本一致）。
-pub fn assemble_busybox_tree(dest: &Path, busybox_bin: &Path) -> anyhow::Result<()> {
+/// 符号链接由名单驱动（`busybox::applet_names`），不执行 guest 二进制 ——
+/// 交叉组装（含 macOS 宿主）无需宿主同构。
+pub fn assemble_busybox_tree(
+    dest: &Path,
+    busybox_bin: &Path,
+    applets: &[String],
+) -> anyhow::Result<()> {
     if dest.exists() {
         std::fs::remove_dir_all(dest)?;
     }
@@ -213,30 +233,14 @@ pub fn assemble_busybox_tree(dest: &Path, busybox_bin: &Path) -> anyhow::Result<
     std::fs::copy(busybox_bin, dest.join("bin/busybox"))?;
     common::fsutil::set_executable(&dest.join("bin/busybox"))?;
 
-    let status = std::process::Command::new("./busybox")
-        .args(["--install", "-s", "."])
-        .current_dir(dest.join("bin"))
-        .status()
-        .context("执行 busybox --install 失败（交叉组装需宿主同构）")?;
-    if !status.success() {
-        anyhow::bail!("busybox --install failed");
-    }
-
-    // 绝对符号链接改写（busybox 可能指向 /usr/bin/...）
-    for sub in ["bin", "sbin", "usr/bin", "usr/sbin"] {
-        let dir = dest.join(sub);
-        for entry in std::fs::read_dir(&dir)?.flatten() {
-            let p = entry.path();
-            if p.is_symlink() {
-                if let Ok(target) = std::fs::read_link(&p) {
-                    if target.is_absolute() {
-                        let name = target.file_name().unwrap_or_default();
-                        let _ = std::fs::remove_file(&p);
-                        std::os::unix::fs::symlink(name, &p)?;
-                    }
-                }
-            }
+    // applet → bin/<name> 相对符号链接（目标恒 "busybox"，无需事后改写）
+    for name in applets {
+        let link = dest.join("bin").join(name);
+        if link.exists() || link.is_symlink() {
+            continue;
         }
+        std::os::unix::fs::symlink("busybox", &link)
+            .with_context(|| format!("创建符号链接 {} 失败", link.display()))?;
     }
 
     std::fs::write(dest.join("etc/passwd"), "root:x:0:0:root:/root:/bin/sh\n")?;

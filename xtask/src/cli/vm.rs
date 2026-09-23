@@ -7,31 +7,54 @@ use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
 use std::time::Instant;
 
 use anyhow::Context;
-use launcher::{Accel, Arch, QemuInvocation};
+use launcher::{Accel, Arch, HostOs, QemuInvocation};
 
-use super::{agent_socket_opt, kernel_image_path, pmem_opt, resolve_arch, resolve_topology, tools_disk_opt};
+use super::{
+    agent_socket_opt, kernel_image_path, pmem_opt, resolve_arch, resolve_topology, tools_disk_opt,
+};
 use crate::config::Config;
 use crate::runs;
 
-pub fn run_shell(kvm: bool) -> anyhow::Result<i32> {
-    run_vm_session(kvm, false)
+/// CLI accel 解析：`--kvm` / `--tcg` 显式指定，缺省走平台规则
+/// （macOS 同构 HVF，其余 TCG）。`--kvm --tcg` 互斥。
+pub(crate) fn resolve_accel(kvm: bool, tcg: bool, arch: Arch) -> anyhow::Result<Accel> {
+    if kvm && tcg {
+        anyhow::bail!("--kvm 与 --tcg 互斥");
+    }
+    Ok(if kvm {
+        Accel::Kvm
+    } else if tcg {
+        Accel::Tcg
+    } else {
+        Accel::default_for(arch, HostOs::current())
+    })
+}
+
+pub fn run_shell(kvm: bool, tcg: bool) -> anyhow::Result<i32> {
+    let cfg = Config::load()?;
+    let arch = resolve_arch(&cfg, None)?;
+    run_vm_session(resolve_accel(kvm, tcg, arch)?, false)
 }
 
 pub fn run_debug() -> anyhow::Result<i32> {
     println!("Starting QEMU with GDB stub on port 1234...");
-    run_vm_session(false, true)
+    run_vm_session(Accel::Tcg, true)
 }
 
 /// 交互式会话（shell / debug）：stdio 继承，不产运行工件。
-fn run_vm_session(kvm: bool, gdb_stub: bool) -> anyhow::Result<i32> {
+fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let arch = resolve_arch(&cfg, None)?;
     let topo = resolve_topology(&cfg)?;
     let kernel = kernel_image_path(&cfg, arch)?;
-    if kvm {
-        println!("Starting QEMU with KVM acceleration...");
-    } else if !gdb_stub {
-        println!("Starting QEMU...");
+    match accel {
+        Accel::Kvm => println!("Starting QEMU with KVM acceleration..."),
+        Accel::Hvf => println!("Starting QEMU with HVF acceleration..."),
+        Accel::Tcg => {
+            if !gdb_stub {
+                println!("Starting QEMU...");
+            }
+        }
     }
 
     let inv = QemuInvocation::new(
@@ -40,7 +63,7 @@ fn run_vm_session(kvm: bool, gdb_stub: bool) -> anyhow::Result<i32> {
         cfg.artifacts_dir.join("initrd.img"),
         cfg.artifacts_dir.join("rootfs.img"),
     )
-    .accel(if kvm { Accel::Kvm } else { Accel::Tcg })
+    .accel(accel)
     .pmem(pmem_opt(&cfg, arch, &topo)?)
     .topo(topo)
     .qemu_override(cfg.qemu_override().as_deref())
@@ -67,10 +90,12 @@ fn run_vm_session(kvm: bool, gdb_stub: bool) -> anyhow::Result<i32> {
 /// CI 模式：构建 → 启动（launcher）→ 超时看门狗（KILL 收割，124）→
 /// judge 判定 → 运行工件。退出码 0=通过、124=超时、其余=失败。
 /// `replay_until_fail > 1` 时返场重试：首个非 passed verdict 即停（tracker）。
+/// accel 缺省走平台规则（macOS 同构 HVF，Linux 恒 TCG）；`--tcg` 强制纯模拟。
 pub fn run_test(
     cli_timeout: Option<u64>,
     cli_arch: Option<&str>,
     replay_until_fail: Option<u32>,
+    tcg: bool,
 ) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let timeout_secs = resolve_timeout(&cfg, cli_timeout)?;
@@ -80,7 +105,7 @@ pub fn run_test(
         if rounds > 1 {
             println!("[REPLAY] round {round}/{rounds}");
         }
-        last_code = test_once(&cfg, cli_arch, timeout_secs)?;
+        last_code = test_once(&cfg, cli_arch, timeout_secs, tcg)?;
         if last_code != 0 {
             if rounds > 1 {
                 eprintln!("[REPLAY] aborted at round {round}/{rounds} (verdict not passed)");
@@ -105,8 +130,14 @@ fn resolve_timeout(cfg: &Config, cli_timeout: Option<u64>) -> anyhow::Result<u64
 }
 
 /// 单次完整测试（test 与 matrix 共用）。
-fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64) -> anyhow::Result<i32> {
+fn test_once(
+    cfg: &Config,
+    cli_arch: Option<&str>,
+    timeout_secs: u64,
+    tcg: bool,
+) -> anyhow::Result<i32> {
     let arch = resolve_arch(cfg, cli_arch)?;
+    let accel = resolve_accel(false, tcg, arch)?;
     let topo = resolve_topology(cfg)?;
     let run = runs::create_run_dir(&cfg.project_root, arch.name())?;
     println!("[RUN] artifacts: {}", run.path.display());
@@ -139,7 +170,7 @@ fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64) -> anyhow:
         cfg.artifacts_dir.join("initrd.img"),
         cfg.artifacts_dir.join("rootfs.img"),
     )
-    .accel(Accel::Tcg)
+    .accel(accel)
     .topo(topo.clone())
     .qemu_override(cfg.qemu_override().as_deref())
     .virtio_disks(tools_disk_opt(cfg))
@@ -150,7 +181,10 @@ fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64) -> anyhow:
         Some(sock) => inv.agent_serial(sock),
         None => inv,
     };
-    println!("[LAUNCH] {}", inv.command_line().map_err(anyhow::Error::msg)?);
+    println!(
+        "[LAUNCH] {}",
+        inv.command_line().map_err(anyhow::Error::msg)?
+    );
     println!("Running QEMU test with {timeout_secs}s timeout...");
     let (mut child, mut sup) = inv.spawn_supervised(true)?;
 
@@ -195,7 +229,7 @@ fn test_once(cfg: &Config, cli_arch: Option<&str>, timeout_secs: u64) -> anyhow:
             "smp": topo.smp.to_string(),
             "numa_nodes": topo.nodes.to_string(),
             "memory_per_node": topo.memory_per_node,
-            "accel": "TCG",
+            "accel": accel.label(),
             "auto_test": cfg.auto_test().to_string(),
         }),
         build_failed: false,
@@ -248,7 +282,7 @@ pub fn run_matrix(cli_arch: Option<&str>) -> anyhow::Result<i32> {
     for arch in arches {
         println!();
         println!("========== matrix: {} ==========", arch.name());
-        let code = match test_once(&cfg, Some(arch.name()), timeout_secs) {
+        let code = match test_once(&cfg, Some(arch.name()), timeout_secs, false) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("ERROR: {} — {e:#}", arch.name());

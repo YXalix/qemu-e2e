@@ -13,9 +13,9 @@
 | `build` | builder | 重建 initrd.img / rootfs.img / tools.img |
 | `busybox` | builder | 确保当前架构静态 BusyBox（Release 下载优先，源码兜底） |
 | `clean` | builder | 清理生成镜像与暂存目录 |
-| `shell [--kvm]` | launcher | 交互式 VM（BusyBox shell） |
+| `shell [--kvm] [--tcg]` | launcher | 交互式 VM（BusyBox shell）；`--kvm` 仅 Linux，`--tcg` 强制纯模拟（macOS 缺省 HVF 时用） |
 | `debug` | launcher | 挂起启动 + GDB stub `:1234` |
-| `test [--timeout N] [--arch a] [--replay-until-fail N]` | 全链路 | 构建 → 启动 → 判定 → 工件落盘；返场模式首个非 passed 即停 |
+| `test [--timeout N] [--arch a] [--replay-until-fail N] [--tcg]` | 全链路 | 构建 → 启动 → 判定 → 工件落盘；返场模式首个非 passed 即停；macOS 同构缺省 HVF |
 | `matrix [--arch a]` | launcher | 多架构矩阵（缺省三架构，宿主内串行） |
 | `probe --cmd/--cmd-file [--json] [--timeout N]` | launcher+judge | AI 交互通道：virtio-serial agent 命令批，结构化事件流 |
 | `triage [--run id] [--json]` | runs | 最近（或指定）run 的分诊报告 |

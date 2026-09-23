@@ -14,13 +14,20 @@ pub fn run_parity(target: &str, force: bool, strict: bool) -> anyhow::Result<i32
         "initrd" => CliCommand::Build,
         "busybox" => CliCommand::BusyBox,
         "clean" => CliCommand::Clean,
-        "qemu" => CliCommand::Shell { kvm: false },
-        "qemu-kvm" => CliCommand::Shell { kvm: true },
+        "qemu" => CliCommand::Shell {
+            kvm: false,
+            tcg: false,
+        },
+        "qemu-kvm" => CliCommand::Shell {
+            kvm: true,
+            tcg: false,
+        },
         "qemu-debug" => CliCommand::Debug,
         "qemu-test" => CliCommand::Test {
             timeout: None,
             arch: None,
             replay_until_fail: None,
+            tcg: false,
         },
         "install-skill" => CliCommand::Skill {
             action: SkillAction::Install,

@@ -1,12 +1,15 @@
 //! 用例编译与安装。C 路径（build-initrd.sh install_testcases + testcases/Makefile
 //! 的 Rust 接管）与 Rust 路径（Phase 3 的 no_std testfw 框架）并存：
 //! `-static` 约束在 CMakeLists 与 rust/.cargo/config.toml 中各自冻结 —— VM 内
-//! 无动态加载器，**不可放松**；交叉编译由 CMake 工具链 / cargo 负责。
+//! 无动态加载器，**不可放松**。交叉编译：C 走 `cross::CrossSetup` 的
+//! CMAKE_C_COMPILER（非 Linux 宿主 = zig cc 包装）；Rust 恒以
+//! `--target <arch musl triple>` 构建（rustflags 挂在 triple 上，宿主 OS 无关）。
 
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
+use crate::cross::CrossSetup;
 use crate::Progress;
 
 /// 编译 testcases 并把可执行文件装入 `<rootfs>/tests/`。
@@ -15,6 +18,7 @@ use crate::Progress;
 pub fn install(
     testcases_dir: &Path,
     dest_tests: &Path,
+    cross: &CrossSetup,
     progress: &mut Progress,
 ) -> anyhow::Result<()> {
     progress.line("Building testcases...");
@@ -28,11 +32,13 @@ pub fn install(
     std::fs::create_dir_all(&build_dir)?;
     let log_path = testcases_dir.join(".build.log");
 
-    let cmake = std::process::Command::new("cmake")
-        .arg("..")
-        .current_dir(&build_dir)
-        .output()
-        .context("cmake 启动失败（安装 cmake）")?;
+    let mut cmake = std::process::Command::new("cmake");
+    cmake.arg("..").current_dir(&build_dir);
+    if let Some(cc) = &cross.cc_wrapper {
+        // 交叉：包装脚本即 C 编译器（zig cc -target <triple>）
+        cmake.arg(format!("-DCMAKE_C_COMPILER={}", cc.display()));
+    }
+    let cmake = cmake.output().context("cmake 启动失败（安装 cmake）")?;
     let make = std::process::Command::new("make")
         .current_dir(&build_dir)
         .output()
@@ -93,41 +99,42 @@ fn is_executable(p: &Path) -> bool {
 /// `<rootfs>/tests/`。产物走裸 syscall 静态链接（无 libc 依赖），标记协议
 /// 与 C 用例完全一致，init 自动发现。
 ///
-/// 降级规则（与禁止掩盖失败的冻结约束不冲突——降级是显式 WARN，不是吞错）：
+/// 恒以 `--target <arch musl triple>` 构建（宿主 OS 无关；rustflags 见
+/// rust/.cargo/config.toml 的显式 triple 段）。降级规则（与禁止掩盖失败的
+/// 冻结约束不冲突——降级是显式 WARN，不是吞错）：
 /// - 目录缺失 → 静默跳过（未采用 Rust 用例的项目不受影响）；
-/// - 交叉架构（宿主无对应 rust-std）或 cargo 缺失 → WARN 跳过；
+/// - cargo 缺失或 musl target 未随 toolchain 安装 → WARN 跳过；
 /// - 构建失败 → **bail**（与 C 路径同语义，不静默）。
 pub fn install_rust(
     rust_dir: &Path,
     dest_tests: &Path,
     arch: common::Arch,
+    cross: &CrossSetup,
     progress: &mut Progress,
 ) -> anyhow::Result<()> {
     if !rust_dir.join("Cargo.toml").is_file() {
-        return Ok(());
-    }
-    let host = common::Arch::parse(std::env::consts::ARCH);
-    if host != Some(arch) {
-        progress.line(&format!(
-            "  WARNING: rust testcases skipped (host rust-std covers {}, target {} needs cross rust-std; \
-             install via `rustup target add <triple>` to enable)",
-            host.map(|a| a.name()).unwrap_or(std::env::consts::ARCH),
-            arch.name()
-        ));
         return Ok(());
     }
     if !common::fsutil::which("cargo") {
         progress.line("  WARNING: rust testcases skipped (cargo not found)");
         return Ok(());
     }
+    let triple = arch.rust_musl_triple();
+    if !crate::tools::musl_target_installed(triple) {
+        progress.line(&format!(
+            "  WARNING: rust testcases skipped (rust target {triple} not installed; \
+             run `rustup target add {triple}` to enable)"
+        ));
+        return Ok(());
+    }
 
     progress.line("Building rust testcases...");
     let target_dir = rust_dir.join("target");
-    let out = std::process::Command::new("cargo")
-        .args(["build", "--release"])
-        .current_dir(rust_dir)
-        .output()
-        .context("cargo 启动失败")?;
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.args(["build", "--release", "--target", triple])
+        .current_dir(rust_dir);
+    cross.apply_to_cargo(&mut cmd);
+    let out = cmd.output().context("cargo 启动失败")?;
     if !out.status.success() {
         let log = format!(
             "{}{}",
@@ -138,7 +145,8 @@ pub fn install_rust(
     }
 
     let mut installed = 0usize;
-    for entry in std::fs::read_dir(target_dir.join("release"))?.flatten() {
+    let release_dir = target_dir.join(triple).join("release");
+    for entry in std::fs::read_dir(&release_dir)?.flatten() {
         if let Some(bin) = rust_test_binary(&entry.path()) {
             let name = bin.file_name().unwrap().to_string_lossy().to_string();
             std::fs::copy(&bin, dest_tests.join(&name))
@@ -150,8 +158,8 @@ pub fn install_rust(
     }
     if installed == 0 {
         anyhow::bail!(
-            "Rust testcases build succeeded but no binaries found under {}/release",
-            target_dir.display()
+            "Rust testcases build succeeded but no binaries found under {}",
+            release_dir.display()
         );
     }
     Ok(())

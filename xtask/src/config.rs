@@ -116,7 +116,9 @@ impl Config {
 
     /// 解析目标架构；无法解析时返回 None（诊断层告警）。
     pub fn arch(&self) -> Option<Arch> {
-        self.arch_str().and_then(|a| Arch::parse(&a)).or_else(Arch::host_default)
+        self.arch_str()
+            .and_then(|a| Arch::parse(&a))
+            .or_else(Arch::host_default)
     }
 
     /// arch 原始字符串（诊断层呈现来源用）。
@@ -126,8 +128,7 @@ impl Config {
 
     /// (KERNEL_PATH, 是否显式指定)。未指定时 = 项目根上一级（qemu-e2e 自动探测语义）。
     pub fn kernel_path(&self) -> anyhow::Result<(PathBuf, bool)> {
-        match scalar(self.tv(|t| &t.kernel_path), "KERNEL_PATH").filter(|s| !s.is_empty())
-        {
+        match scalar(self.tv(|t| &t.kernel_path), "KERNEL_PATH").filter(|s| !s.is_empty()) {
             Some(p) => Ok((PathBuf::from(p), true)),
             None => {
                 let parent = self
@@ -141,8 +142,7 @@ impl Config {
 
     /// kernel_image 覆盖（缺省 = 内核树内 arch 对应镜像）。
     pub fn kernel_image(&self) -> Option<String> {
-        scalar(self.tv(|t| &t.kernel_image), "KERNEL_IMAGE")
-            .filter(|s| !s.trim().is_empty())
+        scalar(self.tv(|t| &t.kernel_image), "KERNEL_IMAGE").filter(|s| !s.trim().is_empty())
     }
 
     /// QEMU_TIMEOUT 原始字符串（"0" 由 test 命令拒绝）。
@@ -195,7 +195,9 @@ impl Config {
     /// vfio 直通设备 BDF 列表（组件未启用 = 空）。
     pub fn vfio(&self) -> Option<&[String]> {
         let v = self.toml.as_ref()?.components.as_ref()?.vfio.as_ref()?;
-        v.enabled.unwrap_or(false).then(|| v.devices.as_deref().unwrap_or(&[]))
+        v.enabled
+            .unwrap_or(false)
+            .then(|| v.devices.as_deref().unwrap_or(&[]))
     }
 
     /// NUMA 拓扑参数 (smp, nodes, memory_per_node)，供 NumaTopology::parse。
@@ -328,10 +330,15 @@ impl ComponentPlan {
                 continue;
             }
             let name = line.split_whitespace().next().unwrap_or_default();
-            let slot = if boot { &mut self.boot_extra } else { &mut self.runtime };
-            if slot.iter().any(|e| {
-                e.split_whitespace().next().unwrap_or_default() == name
-            }) {
+            let slot = if boot {
+                &mut self.boot_extra
+            } else {
+                &mut self.runtime
+            };
+            if slot
+                .iter()
+                .any(|e| e.split_whitespace().next().unwrap_or_default() == name)
+            {
                 continue;
             }
             slot.push(line.to_string());
@@ -386,7 +393,10 @@ impl<'de> serde::Deserialize<'de> for Stage {
         match String::deserialize(d)?.as_str() {
             "boot" => Ok(Stage::Boot),
             "runtime" => Ok(Stage::Runtime),
-            other => Err(serde::de::Error::unknown_variant(other, &["boot", "runtime"])),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["boot", "runtime"],
+            )),
         }
     }
 }
@@ -651,7 +661,10 @@ require = ["libnvdimm", "nfit", "nd_pmem"]
 
     #[test]
     fn unknown_key_is_rejected_at_parse_time() {
-        assert!(parse("arch = \"arm64\"\nshmp = 4\n").is_err(), "拼写错误的键必须在解析期报错");
+        assert!(
+            parse("arch = \"arm64\"\nshmp = 4\n").is_err(),
+            "拼写错误的键必须在解析期报错"
+        );
     }
 
     #[test]
@@ -687,9 +700,15 @@ require = ["libnvdimm", "nfit", "nd_pmem"]
         );
         // 空串视为未设置：env 与 toml 的空值都继续回落
         std::env::set_var("VIRTUOSO_TEST_SCALAR", "");
-        assert_eq!(scalar(Some(&toml), "VIRTUOSO_TEST_SCALAR").as_deref(), Some("arm64"));
+        assert_eq!(
+            scalar(Some(&toml), "VIRTUOSO_TEST_SCALAR").as_deref(),
+            Some("arm64")
+        );
         std::env::remove_var("VIRTUOSO_TEST_SCALAR");
-        assert_eq!(scalar(Some(&StrVal("  ".into())), "VIRTUOSO_TEST_SCALAR"), None);
+        assert_eq!(
+            scalar(Some(&StrVal("  ".into())), "VIRTUOSO_TEST_SCALAR"),
+            None
+        );
         assert_eq!(scalar(None, "VIRTUOSO_TEST_SCALAR"), None);
     }
 }

@@ -12,7 +12,7 @@ pub mod qemu;
 use std::path::PathBuf;
 use std::process::Command;
 
-pub use common::{Arch, ALL_ARCHES};
+pub use common::{Arch, HostOs, ALL_ARCHES};
 pub use numa::NumaTopology;
 pub use qemu::{Accel, QemuInvocation};
 
@@ -25,9 +25,7 @@ pub struct DataDisk {
 
 impl DataDisk {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self {
-            path: path.into(),
-        }
+        Self { path: path.into() }
     }
 }
 

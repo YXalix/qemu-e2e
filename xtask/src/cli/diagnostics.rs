@@ -10,9 +10,7 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
     println!("[CONFIG] Virtuoso — typed config diagnostics");
     match &cfg.toml_path() {
         Some(t) => println!("  virtuoso.toml: {} (唯一配置面)", t.display()),
-        None => println!(
-            "  virtuoso.toml: absent (使用内置缺省；仓库根有完整注释模板)"
-        ),
+        None => println!("  virtuoso.toml: absent (使用内置缺省；仓库根有完整注释模板)"),
     }
 
     // 架构
@@ -22,7 +20,10 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
         Some(arch) => {
             let src = if arch_override.is_some() {
                 "CLI --arch"
-            } else if std::env::var("ARCH").map(|v| !v.trim().is_empty()).unwrap_or(false) {
+            } else if std::env::var("ARCH")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false)
+            {
                 "env ARCH"
             } else if cfg.arch_str().is_some() {
                 "config"
@@ -127,7 +128,11 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
     let mut comps: Vec<String> = Vec::new();
     comps.push(format!(
         "tools_disk={}",
-        if cfg.tools_disk_enabled() { "on" } else { "off" }
+        if cfg.tools_disk_enabled() {
+            "on"
+        } else {
+            "off"
+        }
     ));
     comps.push(format!(
         "agent={}",
@@ -142,7 +147,11 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
     let (_, nodes, _) = cfg.topo_params();
     comps.push(format!(
         "numa={}",
-        if nodes != "1" { format!("on (nodes={nodes})") } else { "off".to_string() }
+        if nodes != "1" {
+            format!("on (nodes={nodes})")
+        } else {
+            "off".to_string()
+        }
     ));
     match cfg.pmem_size() {
         Some(size) => comps.push(format!("pmem=on (size={size})")),

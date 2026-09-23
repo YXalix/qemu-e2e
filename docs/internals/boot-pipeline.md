@@ -61,8 +61,10 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 - rootfs 目录树：`bin/`(busybox + 全量 applet 符号链接) + `sbin usr/{bin,sbin}`
   + 空骨架目录（`proc sys dev tmp mnt etc/init.d var/run root lib`）
   + `/etc/passwd`、`/etc/group`（root）。
-- CI 中三架构 applet 集合一致（同为 defconfig），但交叉二进制无法在 runner 上
-  执行，所以 applet 列表取自 x86_64 构建的 `busybox --list` 输出。
+- CI 中三架构 applet 集合一致（同为 defconfig）。本地构建侧的 applet 符号
+  链接由名单驱动（`infra/busybox/applets-<version>.txt`，名单即 x86_64
+  `busybox --list` 输出的冻结版），**不执行 guest 二进制**——交叉组装
+  （含 macOS 宿主）无需宿主同构；自定义版本/配置走 `$BUSYBOX_APPLETS_FILE`。
 
 重新发布：Actions 页手动 `workflow_dispatch`（默认 1.36.1），或推 `busybox-v*` tag。
 发布是幂等的：同名 asset 先删后传，release 已存在则复用。
@@ -73,7 +75,7 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 
 ```
 0. 本地缓存  →  1. $BUSYBOX_DL_URL  →  2. gh release download（带认证，私有库可用）
-→  3. 直链 wget  →  4. 源码编译兜底（仅宿主架构，交叉时告警）
+→  3. 直链 wget/curl  →  4. 源码编译兜底（仅 Linux 宿主；交叉时告警）
 ```
 
 发布仓库推导：`$BUSYBOX_RELEASE_REPO` > 扫描 git remotes 找 github.com 的那个。
@@ -99,25 +101,26 @@ journal 会把创建时声明的大小全部真实占满）。release 的 rootfs
 流水线步骤（函数级）：
 
 1. busybox 供给（§2.2）→ 拿到 per-arch 静态 busybox；
-2. busybox 树组装 → busybox 二进制 + `--install` applet 链接
-   + 绝对链接重写 + 骨架目录 + passwd/group；
+2. busybox 树组装 → busybox 二进制 + **applet 名单驱动的相对符号链接**
+   （`builder::busybox::applet_names` 三级解析：`$BUSYBOX_APPLETS_FILE` →
+   `infra/busybox/applets-<ver>.txt` → 宿主同构时 `--list` 现取）
+   + 骨架目录 + passwd/group；
 3. **initramfs 树** = busybox 树 + `init-initramfs` → `/init`
    + `modules-boot.conf` 冻结基础集 + 组件 `stage = "boot"` 附加条目
-   （生成 conf 随行）→ 打包 cpio.gz；
+   （生成 conf 随行）→ **`builder::cpio` 原生打包**（newc + gzip，Rust 单路径，
+   无 GNU cpio/wget 依赖；mtime 恒 0 + 路径排序 → 产物确定性可复现）；
 4. **rootfs 树** = busybox 树 + `init`（测试 init）→ `/init`
    + 组件 require 并集生成 `modules.conf` → `/lib/modules/`
-   + 构建 testcases（C/CMake + Rust no_std 静态二进制 → `/tests/`）
+   + 构建 testcases（C/CMake + Rust no_std 静态二进制 → `/tests/`；
+   非 Linux 宿主经 `builder::cross` 接 zig cc，Rust 恒 `--target <musl triple>`）
    + 生成 `/init-hooks.sh`（tools.img 挂载 hook，见下）
-   → `mke2fs -d` 打成 ext4（尺寸 = `du -sm` + 2MB）；
+   → `mke2fs -d` 打成 ext4（尺寸 = `du -sm` + 2MB；macOS 上 mke2fs 探测
+   brew keg 路径）；
 5. **tools.img 树** = tools workspace 的 musl 静态产物 → `/bin`
    → `mke2fs -d` 打成 ext4（卷标 `tools`）。启动时作为第二个 virtio-blk
    （`/dev/vdb`）附加（`tools_disk_opt`：产物存在才附加），rootfs 的
    `/init-hooks.sh` 挂载到 `/tools` 并把 `/tools/bin` 注入 PATH——agent 与
    常驻工具随此盘走，rootfs 不装工具。
-
-**已知限制**：`--install` 需要执行 busybox 二进制，所以交叉构建 initramfs
-（宿主 ≠ 目标架构）不可用——这是上游供给链的老限制，cross 场景需用
-`qemu-user` 或等 CI 产物。
 
 ## 4. VM 内执行流程逐行说明
 

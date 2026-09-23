@@ -1,10 +1,10 @@
 //! BusyBox 供给（fetch-busybox.sh 的 Rust 接管）。
 //! 四层供给链（按序尝试，命中即返回）：
 //!   0. 本地缓存 target/build/busybox/bin/busybox-<arch>
-//!   1. BUSYBOX_DL_URL   显式完整资产 URL（wget）
+//!   1. BUSYBOX_DL_URL   显式完整资产 URL（wget/curl）
 //!   2. gh release download（自带认证，私有仓库可用）
-//!   3. 直链 wget（公开 release）
-//!   4. 源码编译兜底（busybox.net → GitHub mirror 归档）
+//!   3. 直链 wget/curl（公开 release）
+//!   4. 源码编译兜底（busybox.net → GitHub mirror 归档；仅 Linux 宿主）
 //!
 //! 所有下载做 ELF 魔数校验（\x7fELF）。
 
@@ -103,14 +103,7 @@ pub fn ensure(
 fn try_wget(url: &str, bin: &Path, asset: &str, progress: &mut Progress) -> bool {
     let tmp = bin.with_extension("tmp");
     progress.line(&format!("Fetching {asset} from {url}"));
-    let ok = Command::new("wget")
-        .args(["-q", "-O"])
-        .arg(&tmp)
-        .arg(url)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-        && common::fsutil::is_elf(&tmp);
+    let ok = fetch(url, &tmp) && common::fsutil::is_elf(&tmp);
     if ok {
         common::fsutil::set_executable(&tmp).ok();
         let _ = std::fs::rename(&tmp, bin);
@@ -120,6 +113,71 @@ fn try_wget(url: &str, bin: &Path, asset: &str, progress: &mut Progress) -> bool
         let _ = std::fs::remove_file(&tmp);
         false
     }
+}
+
+/// 下载到 `tmp`：wget 优先，缺失回落 curl（macOS 无 wget 但自带 curl）。
+fn fetch(url: &str, tmp: &Path) -> bool {
+    let (bin, args) = if common::fsutil::which("wget") {
+        ("wget", vec!["-q".to_string(), "-O".to_string()])
+    } else {
+        ("curl", vec!["-fsSL".to_string(), "-o".to_string()])
+    };
+    let mut c = Command::new(bin);
+    c.args(&args).arg(tmp).arg(url);
+    c.status().map(|s| s.success()).unwrap_or(false)
+}
+
+/// applet 名单（busybox 树的符号链接生成用）三级解析：
+/// 1. `BUSYBOX_APPLETS_FILE` 显式文件（自定义 busybox 配置时提供，
+///    内容 = `busybox --list` 输出，每行一个 applet，# 注释）；
+/// 2. `infra/busybox/applets-<version>.txt` —— 与 release 配方（defconfig +
+///    CONFIG_STATIC=y、去 CONFIG_TC）一起冻结进仓库的版本名单，三架构同配置
+///    共用一份；
+/// 3. 宿主可直接执行该二进制（Linux 同构）→ `--list` 现取（兜底）。
+///
+/// 取代旧 `busybox --install` 宿主执行路径：macOS 无法 exec guest Linux ELF，
+/// 名单驱动让符号链接生成与宿主架构/OS 解耦（冻结不变量「测试禁止掩盖失败」
+/// 不受影响——名单缺失是显式报错）。
+pub fn applet_names(infra_dir: &Path, version: &str, bin: &Path) -> anyhow::Result<Vec<String>> {
+    if let Some(f) = std::env::var_os("BUSYBOX_APPLETS_FILE") {
+        return read_applet_file(Path::new(&f));
+    }
+    let frozen = infra_dir
+        .join("busybox")
+        .join(format!("applets-{version}.txt"));
+    if frozen.is_file() {
+        return read_applet_file(&frozen);
+    }
+    if let Ok(out) = Command::new(bin).arg("--list").output() {
+        if out.status.success() {
+            let names: Vec<String> = String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .map(str::to_string)
+                .collect();
+            if !names.is_empty() {
+                return Ok(names);
+            }
+        }
+    }
+    anyhow::bail!(
+        "无法确定 BusyBox applet 名单：infra/busybox/applets-{version}.txt 缺失，\
+         且宿主无法执行该二进制（交叉组装）\n  \
+         提供 BUSYBOX_APPLETS_FILE=<file>（`busybox --list` 输出）或补交名单文件"
+    )
+}
+
+fn read_applet_file(p: &Path) -> anyhow::Result<Vec<String>> {
+    let text = std::fs::read_to_string(p).with_context(|| format!("读取 {} 失败", p.display()))?;
+    let names: Vec<String> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(str::to_string)
+        .collect();
+    anyhow::ensure!(!names.is_empty(), "{} 内容为空", p.display());
+    Ok(names)
 }
 
 /// 推导发布仓库：显式 BUSYBOX_RELEASE_REPO → 从 start 逐级向上找含 `.git`
@@ -172,6 +230,12 @@ fn build_from_source(
     version: &str,
     progress: &mut Progress,
 ) -> anyhow::Result<()> {
+    if common::HostOs::current() != common::HostOs::Linux {
+        anyhow::bail!(
+            "BusyBox 源码兜底构建仅支持 Linux 宿主（产出需为 guest 架构 Linux ELF）。\n  \
+             macOS：配置 BUSYBOX_RELEASE_REPO / BUSYBOX_DL_URL 走 release 下载层"
+        );
+    }
     let host_norm = Arch::parse(std::env::consts::ARCH)
         .map(|a| a.name())
         .unwrap_or("unknown");
@@ -253,14 +317,7 @@ fn try_archive(
     busybox_root: &Path,
     dst: &Path,
 ) -> bool {
-    if Command::new("wget")
-        .args(["-q", "-O"])
-        .arg(tmp)
-        .arg(url)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-    {
+    if fetch(url, tmp) {
         let untar = Command::new("tar")
             .arg(tar_flags)
             .arg(tmp)

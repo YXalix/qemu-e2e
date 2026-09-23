@@ -91,10 +91,7 @@ pub fn copy_module_list(
 /// 组装 initramfs 的 boot 清单：modules-boot.conf 冻结基础集 + 组件
 /// boot 附加条目（conf 文本 = 基础集原文 + 附加行，顺序即加载顺序）。
 /// 返回 (模块名清单, 生成 conf 文本)。
-pub fn boot_set(
-    base_conf: &Path,
-    extra: &[String],
-) -> anyhow::Result<(Vec<String>, String)> {
+pub fn boot_set(base_conf: &Path, extra: &[String]) -> anyhow::Result<(Vec<String>, String)> {
     let mut names = parse(base_conf);
     let mut text = std::fs::read_to_string(base_conf).unwrap_or_default();
     if !text.is_empty() && !text.ends_with('\n') {
@@ -151,8 +148,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let conf = dir.join("modules-boot.conf");
         std::fs::write(&conf, "# base\nvirtio_blk\next4\n").unwrap();
-        let (names, text) =
-            boot_set(&conf, &["crc64".into(), "virtio_blk".into(), "x  arg=1".into()]).unwrap();
+        let (names, text) = boot_set(
+            &conf,
+            &["crc64".into(), "virtio_blk".into(), "x  arg=1".into()],
+        )
+        .unwrap();
         assert_eq!(names, ["virtio_blk", "ext4", "crc64", "x"]);
         assert!(text.starts_with("# base\nvirtio_blk\next4\n"));
         assert!(text.contains("crc64\n"));

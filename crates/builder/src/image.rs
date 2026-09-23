@@ -1,26 +1,30 @@
 //! 镜像打包（build-initrd.sh 尾段 + cpio2ext4.sh 的 Rust 接管）。
-//! initramfs：newc cpio + gzip -9；rootfs：`du -sm + 2` 自动定容的 ext4。
+//! initramfs：原生 newc cpio + gzip（`builder::cpio`，无 GNU 工具依赖）；
+//! rootfs：`du -sm + 2` 自动定容的 ext4（mke2fs -d，见 `find_mke2fs`）。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-/// `(cd dir && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > out`
-/// （保留 null 分隔与脚本完全一致；文件顺序随 find，无需稳定排序）。
+/// 打包 initramfs：目录 → newc cpio → gzip（`cpio::pack_dir_gzip` 的别名入口，
+/// 保留原函数名以稳住调用方语义）。
 pub fn pack_initramfs(dir: &Path, out: &Path) -> anyhow::Result<()> {
-    let out_file =
-        std::fs::File::create(out).with_context(|| format!("创建 {} 失败", out.display()))?;
-    let status = std::process::Command::new("bash")
-        .arg("-c")
-        .arg("find . -print0 | cpio --null -o -H newc 2>/dev/null | gzip -9")
-        .current_dir(dir)
-        .stdout(out_file)
-        .status()
-        .context("cpio/gzip 启动失败（安装 cpio、gzip）")?;
-    if !status.success() {
-        anyhow::bail!("initramfs 打包失败（cpio 退出码 {status}）");
+    crate::cpio::pack_dir_gzip(dir, out)
+}
+
+/// 定位 mke2fs：PATH → Homebrew e2fsprogs keg 路径（keg-only 不进 PATH，
+/// Apple Silicon = /opt/homebrew，Intel = /usr/local）。
+pub fn find_mke2fs() -> Option<PathBuf> {
+    if let Some(p) = common::fsutil::which_path("mke2fs") {
+        return Some(p);
     }
-    Ok(())
+    [
+        "/opt/homebrew/opt/e2fsprogs/sbin",
+        "/usr/local/opt/e2fsprogs/sbin",
+    ]
+    .iter()
+    .map(|d| Path::new(d).join("mke2fs"))
+    .find(|p| p.is_file())
 }
 
 /// `mke2fs -q -F -t ext4 -L <label> -d <dir> <img> <size>M`，size = du -sm + 2。
@@ -40,14 +44,17 @@ pub fn make_ext4(dir: &Path, out: &Path, label: &str) -> anyhow::Result<()> {
         .context("du 输出解析失败")?;
     let size_mb = mb + 2;
 
+    let mke2fs = find_mke2fs().ok_or_else(|| {
+        anyhow::anyhow!("mke2fs not found (Linux: e2fsprogs 包; macOS: brew install e2fsprogs)")
+    })?;
     let _ = std::fs::remove_file(out);
-    let status = std::process::Command::new("mke2fs")
+    let status = std::process::Command::new(&mke2fs)
         .args(["-q", "-F", "-t", "ext4", "-L", label, "-d"])
         .arg(dir)
         .arg(out)
         .arg(format!("{size_mb}M"))
         .status()
-        .context("mke2fs 启动失败（安装 e2fsprogs）")?;
+        .with_context(|| format!("{} 启动失败（安装 e2fsprogs）", mke2fs.display()))?;
     if !status.success() {
         anyhow::bail!("{label} ext4 构建失败（mke2fs 退出码 {status}）");
     }

@@ -17,12 +17,14 @@ use std::path::Path;
 
 use anyhow::Context;
 
+use crate::cross::CrossSetup;
 use crate::Progress;
 
 pub fn install(
     rust_dir: &Path,
     dest_bin: &Path,
     arch: common::Arch,
+    cross: &CrossSetup,
     progress: &mut Progress,
 ) -> anyhow::Result<bool> {
     if !rust_dir.join("Cargo.toml").is_file() {
@@ -42,11 +44,11 @@ pub fn install(
     }
 
     progress.line("Building VM tools...");
-    let out = std::process::Command::new("cargo")
-        .args(["build", "--release", "--target", triple])
-        .current_dir(rust_dir)
-        .output()
-        .context("cargo 启动失败")?;
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.args(["build", "--release", "--target", triple])
+        .current_dir(rust_dir);
+    cross.apply_to_cargo(&mut cmd);
+    let out = cmd.output().context("cargo 启动失败")?;
     if !out.status.success() {
         let log = format!(
             "{}{}",
@@ -79,7 +81,7 @@ pub fn install(
 }
 
 /// musl target 是否已随 toolchain 安装（sysroot 的 rustlib 目录存在即视为可用）。
-fn musl_target_installed(triple: &str) -> bool {
+pub(crate) fn musl_target_installed(triple: &str) -> bool {
     let out = std::process::Command::new("rustc")
         .args(["--print", "target-libdir", "--target", triple])
         .output();

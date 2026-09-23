@@ -3,13 +3,24 @@
 
 use std::path::Path;
 
-use common::Arch;
+use common::{Arch, HostOs};
 
 use crate::modconf;
 
-pub const HOST_TOOLS: &[&str] = &[
-    "wget", "tar", "make", "cmake", "cpio", "gzip", "nproc", "find", "sed", "timeout",
-];
+/// 宿主工具表（按平台）。initrd 打包已原生化（builder::cpio），cpio/gzip/
+/// wget/nproc/timeout 不再是硬需求；下载层 wget 缺失时有 curl 回退。
+pub fn host_tools(host: HostOs) -> &'static [&'static str] {
+    match host {
+        HostOs::Linux => &["tar", "make", "cmake", "find", "sed"],
+        // sed 仅 busybox 源码兜底路径使用（非 Linux 宿主该路径直接拒绝）
+        HostOs::Darwin => &["tar", "make", "cmake", "find"],
+    }
+}
+
+/// 下载工具（busybox 供给层）：wget 或 curl 任一（macOS 自带 curl）。
+fn fetch_tool_ok() -> bool {
+    common::fsutil::which("wget") || common::fsutil::which("curl")
+}
 
 /// 组件计划条目（conf 行）的模块是否都能在内核树找到（检查 #7 的输入收集）。
 /// `kernel_path` 为 None（未配置内核树）时全部记为未找到。
@@ -77,12 +88,13 @@ pub struct Report {
     pub warnings: u32,
 }
 
-/// 运行全部检查（与 verify.sh 的 11 项一一对应）。
+/// 运行全部检查（verify.sh 的 11 项 + 组件平台门）。
 #[allow(clippy::too_many_arguments)]
 pub fn run_checks(
     config_file_exists: bool,
     kernel_path: Option<&Path>,
     arch: Arch,
+    host: HostOs,
     host_is_cross: bool,
     kernel_image: Option<&Path>,
     qemu_bin: Option<&str>,
@@ -91,6 +103,8 @@ pub fn run_checks(
     busybox_cached: bool,
     tools_img_exists: bool,
     initrd: Option<&Path>,
+    vfio_enabled: bool,
+    pmem_enabled: bool,
 ) -> Report {
     let mut checks = Vec::new();
 
@@ -103,27 +117,48 @@ pub fn run_checks(
         ));
     }
 
-    // 2. Host tools
-    let mut missing: Vec<String> = HOST_TOOLS
+    // 2. Host tools（按宿主平台分表 + 下载/镜像/交叉工具链）
+    let tools = host_tools(host);
+    let mut missing: Vec<String> = tools
         .iter()
         .filter(|t| !common::fsutil::which(t))
         .map(|t| (*t).to_string())
         .collect();
-    let cc = ["gcc", "cc"]
-        .iter()
-        .find(|c| common::fsutil::which(c))
-        .copied();
-    if cc.is_none() {
-        missing.push("gcc/cc".into());
+    if !fetch_tool_ok() {
+        missing.push("wget|curl".into());
+    }
+    if crate::image::find_mke2fs().is_none() {
+        missing.push("mke2fs".into());
+    }
+    // C 用例编译器：Linux = 宿主 gcc/cc；macOS = CC env 或 zig（交叉）
+    let cc_ok = if host == HostOs::Darwin {
+        std::env::var_os("CC").is_some() || common::fsutil::which("zig")
+    } else {
+        ["gcc", "cc"].iter().any(|c| common::fsutil::which(c))
+    };
+    if !cc_ok {
+        missing.push(if host == HostOs::Darwin {
+            "zig (brew install zig) or CC".into()
+        } else {
+            "gcc/cc".into()
+        });
     }
     if missing.is_empty() {
         checks.push(pass(format!(
-            "Host tools: all found ({} {})",
-            HOST_TOOLS.join(" "),
-            cc.unwrap_or_default()
+            "Host tools: all found ({}) [{}]",
+            tools.join(" "),
+            host.name()
         )));
     } else {
-        checks.push(fail(format!("Host tools: missing -{}", missing.join(" "))));
+        let hint = if missing.iter().any(|m| m.starts_with("mke2fs")) && host == HostOs::Darwin {
+            " (brew install e2fsprogs; keg-only 路径已自动探测)"
+        } else {
+            ""
+        };
+        checks.push(fail(format!(
+            "Host tools: missing -{}{hint}",
+            missing.join(" ")
+        )));
     }
 
     // 3. KERNEL_PATH
@@ -210,7 +245,7 @@ pub fn run_checks(
     // 7. Kernel modules（WARN，不判死；清单 = 启用组件 require 并集 + boot 基础集附加）
     if modules.is_empty() {
         checks.push(info(
-            "Kernel modules: none required (no enabled component declares require)"
+            "Kernel modules: none required (no enabled component declares require)",
         ));
     } else {
         let total = modules.len();
@@ -243,7 +278,7 @@ pub fn run_checks(
     // 9. Cross-compile
     if host_is_cross {
         checks.push(warn(format!(
-            "Cross-compile: ARCH={} differs from host ({}), ensure cross-toolchain is available",
+            "Cross-compile: ARCH={} differs from host ({}); C 用例走 zig/CC，Rust 走 rustup musl target",
             arch.name(),
             std::env::consts::ARCH
         )));
@@ -267,6 +302,23 @@ pub fn run_checks(
             )));
         }
         None => checks.push(info("Initrd: not built yet (run 'make initrd')")),
+    }
+
+    // 12. 组件平台门：vfio 架构性依赖 Linux（IOMMU + vfio-pci）；pmem 的
+    // memory-backend-file/dumpdtb 链路在 macOS 上未经实测（brew dtc 可得）
+    if vfio_enabled {
+        if host == HostOs::Darwin {
+            checks.push(fail(
+                "Components: vfio requires Linux host (IOMMU + vfio-pci) — 关闭 [components.vfio]",
+            ));
+        } else {
+            checks.push(pass("Components: vfio enabled (Linux + IOMMU)"));
+        }
+    }
+    if pmem_enabled && host == HostOs::Darwin {
+        checks.push(warn(
+            "Components: pmem on macOS is experimental (memory-backend-file + dumpdtb/fdtput 未在 HVF 实测)",
+        ));
     }
 
     let critical_pass = checks.iter().filter(|c| c.level == Level::Pass).count() as u32;

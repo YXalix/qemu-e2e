@@ -1,0 +1,56 @@
+name: kernel-builder
+
+# 发布容器化内核构建器镜像到 ghcr（docker/README.md 的消费端）。
+#
+# 触发：docker/ 目录变更推 main，或手动 dispatch。
+# 产物：ghcr.io/yxalix/virtuoso-kernel:latest（linux/arm64 + linux/amd64）
+# —— arm64 基座在 Apple Silicon 容器原生跑 arm64 内核构建；amd64 基座
+# 照顾 x86 Linux 宿主。kernel.sh 拉不动时回落本地构建，故镜像纯为提速。
+
+on:
+  push:
+    branches: [main]
+    paths: ['docker/**', '.github/workflows/kernel-builder.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/${{ github.repository_owner }}/virtuoso-kernel
+
+jobs:
+  publish:
+    name: build & push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: docker
+          file: docker/Dockerfile.kernel
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

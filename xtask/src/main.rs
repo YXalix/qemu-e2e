@@ -47,9 +47,12 @@ enum Command {
     Build,
     /// 交互式启动 QEMU，落入 BusyBox shell（make qemu 对等）
     Shell {
-        /// KVM 加速（仅宿主与目标同构时可用）
+        /// KVM 加速（Linux；仅宿主与目标同构时可用）
         #[arg(long)]
         kvm: bool,
+        /// 强制 TCG 纯模拟（macOS 缺省 HVF 时使用）
+        #[arg(long)]
+        tcg: bool,
     },
     /// 调试启动：挂起等待 GDB 连接 :1234（make qemu-debug 对等）
     Debug,
@@ -66,6 +69,9 @@ enum Command {
         /// 返场次数上限（缺省 1 = 单次执行）
         #[arg(long = "replay-until-fail")]
         replay_until_fail: Option<u32>,
+        /// 强制 TCG 纯模拟（macOS 缺省 HVF 时使用；Linux 本就缺省 TCG）
+        #[arg(long)]
+        tcg: bool,
     },
     /// 确保 ARCH 对应的静态 BusyBox：release 下载优先，源码兜底（make busybox 对等）
     #[command(name = "busybox")]

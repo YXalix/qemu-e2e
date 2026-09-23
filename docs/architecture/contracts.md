@@ -7,7 +7,7 @@
 |---|---|
 | 串口标记协议 | v1 冻结（附录）：改动文本等于破坏所有下游解析 |
 | 退出码 | 0=通过、124=超时（137 归一）、其余=失败；唯一表在 `judge::exit` |
-| QEMU argv | 缺省（无数据盘、无 agent）输出与冻结基线逐字一致，`argv_*` 单测把守 |
+| QEMU argv | 缺省（无数据盘、无 agent）输出与**宿主平台各自的冻结基线**逐字一致，`argv_*` 单测把守 |
 | 静态链接 | 测试必须 `-static`；禁止 `\|\| true` 掩盖失败 |
 | 配置优先级 | 标量键：进程环境变量 > `virtuoso.toml`（同名键 env 覆盖） |
 | AI 接口 | skill 只依赖标记协议 v1 与工件 schema（verdict.json / events.jsonl），不依赖 harness 内部实现 |
@@ -28,6 +28,14 @@
 
 `QemuInvocation::argv` 在缺省形态（无数据盘、无 agent 通道）下的输出与既定
 基线**逐字一致**，由 `crates/launcher/src/qemu.rs` 的 `argv_*` 单测把守。
+**基线按宿主平台各持一份**（`common::HostOs`，单测显式钉死，不随编译目标
+漂移）：两平台的差异面收敛在两处——
+
+| 段 | Linux | macOS（Darwin） |
+|---|---|---|
+| 内存后端 | `memory-backend-memfd,…,share=off` | `memory-backend-ram,…`（QEMU 无 memfd） |
+| 硬件加速 | `shell --kvm` → `-enable-kvm`；test 恒 TCG（无 accel flag） | 同构 guest 缺省/`--tcg` 之外的路径 → `-accel hvf`；`--tcg` 强制纯模拟；accel × 平台错配（KVM@mac、HVF@linux）在 argv 构造期报错 |
+
 数据盘（tools.img 等）与 agent 串口属调用方增量，追加在基线之后。人工复核：
 
 ```bash

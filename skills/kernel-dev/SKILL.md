@@ -17,7 +17,7 @@ Activate this skill whenever the user asks to:
 * Add a new test case (C under `infra/testcases/src/`, or no_std Rust under `infra/testcases/rust/`).
 * Declare kernel modules a capability needs (`[components.*].require` in `virtuoso.toml`).
 * Diagnose a kernel panic, boot hang, module load failure, or test-binary failure observed in QEMU serial output.
-* Switch target architecture (arm64 / x86_64 / riscv64) or use KVM / GDB.
+* Switch target architecture (arm64 / x86_64 / riscv64) or use hardware accel (KVM on Linux, HVF on macOS) / GDB.
 
 ## Repository Layout
 
@@ -73,7 +73,7 @@ When the user changes kernel code and wants verification, execute this loop end-
 
 2. **Build the kernel** (in the kernel tree root, not `virtuoso/`)
    ```bash
-   make -j"$(nproc)"
+   make -j"$(nproc)"    # macOS: use docker/kernel.sh (containerized, case-sensitive volume)
    make modules -j"$(nproc)"     # only if any required module is =m
    ```
    The kernel image lands at the arch-specific path `verify` already validated:
@@ -196,12 +196,12 @@ mount + PATH injection) — customize via `infra/init`, not the hook file.
 | Need | Command | Notes |
 |---|---|---|
 | Interactive shell in VM | `virtuoso shell` | Drops to BusyBox shell after init; `Ctrl-A x` to exit |
-| Native-speed run | `virtuoso shell --kvm` | KVM only when host arch == target arch |
+| Native-speed run | `virtuoso shell --kvm` / default on Apple Silicon | KVM (Linux) / HVF (macOS) only when host arch == target arch; `--tcg` forces pure emulation |
 | Source-level kernel debug | `virtuoso debug` | Halts at boot waiting for GDB on `:1234` |
 | GDB attach | `gdb-multiarch vmlinux -ex 'target remote :1234'` | Run from kernel tree root; needs `vmlinux` (built with `CONFIG_DEBUG_INFO=y`) |
 | Multi-arch sweep | `virtuoso matrix [--arch a]` | Serial three-arch matrix (default all) |
 | VM-internal probe (AI) | `virtuoso probe --cmd '…'` | virtio-serial agent channel; structured event stream |
-| PCI passthrough | `[components.vfio]` in `virtuoso.toml` | `devices = ["0000:01:00.0"]`; host needs IOMMU enabled |
+| PCI passthrough | `[components.vfio]` in `virtuoso.toml` | `devices = ["0000:01:00.0"]`; Linux host with IOMMU only |
 
 ## Triage Playbook
 

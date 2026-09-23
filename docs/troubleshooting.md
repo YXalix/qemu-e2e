@@ -83,7 +83,33 @@ serial.log（`verdict: unknown`）。
 
 **Solution**: `virtuoso busybox` 走四级供应链（本地缓存 → release → 直链 →
 源码构建）。离线环境提前把对应架构的 busybox 放进 `target/build/busybox/bin/`；
-release 资产校验 ELF magic，损坏会自动回退源码构建。
+release 资产校验 ELF magic，损坏会自动回退源码构建。源码兜底仅 Linux 宿主；
+applet 符号链接由名单驱动（`infra/busybox/applets-<version>.txt`），自定义
+busybox 版本/配置时提供 `BUSYBOX_APPLETS_FILE`。
+
+## macOS 专属
+
+**Symptom**: `Host tools: missing -mke2fs`（doctor/verify ✗）
+**Solution**: `brew install e2fsprogs`。keg-only 不进 PATH 没关系，
+virtuoso 自动探测 `/opt/homebrew/opt/e2fsprogs/sbin`。
+
+**Symptom**: `Host tools: missing -zig (brew install zig) or CC`
+**Solution**: C 测试用例在 macOS 上交叉编译（Apple clang 产不出 Linux 静态
+ELF）：`brew install zig`，或自带工具链 `CC=<cross-gcc>` +
+`CARGO_TARGET_<TRIPLE>_LINKER=<linker>`。
+
+**Symptom**: `Components: vfio requires Linux host`（verify FAIL）
+**Solution**: vfio-pci 直通架构性依赖 Linux IOMMU，macOS 无法支持——注释掉
+`[components.vfio]`。pmem 在 macOS 为 experimental（doctor WARN），链路
+（memory-backend-file + dumpdtb/fdtput）未经 HVF 实测前不要依赖。
+
+**Symptom**: macOS 上跑 x86_64 / riscv64 guest 极慢或超时
+**Solution**: 交叉 guest 只能 TCG（HVF 仅同构 arm64）。放大
+`timeout_secs`，或回到 Linux 宿主跑全矩阵（`virtuoso matrix`）。
+
+**Symptom**: `kernel.sh` 报 git clone 后构建大小写冲突 / 内核树行为诡异
+**Solution**: 内核源码必须在大小写敏感文件系统——`kernel.sh` 的 named volume
+（ext4）正确；自行 bind-mount APFS 目录会踩坑，别这么做。
 
 ## 工件占满磁盘
 

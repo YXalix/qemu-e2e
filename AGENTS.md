@@ -4,9 +4,11 @@ Virtuoso 是 QEMU 内核 E2E 测试装置。**Rust workspace 是唯一行为权�
 角色名词命名——
 common（基础层）、builder（构建）、launcher（启动 DSL）、
 judge（判定 + verdict.json schema）、guardian（进程治理）、tracker（跨 run 聚类/返场）
-接管全部实际逻辑；`Makefile` 是转发壳；`infra/` 只保留 VM 内源资产（init、
-init-initramfs、modules-boot.conf（冻结基础集）、testcases/、tools/），git 跟踪
-（rootfs 的 modules.conf 由组件 require 并集生成）；构建产物与缓存一律落
+接管全部实际逻辑；`Makefile` 是转发壳；`infra/` 只保留源资产（init、
+init-initramfs、modules-boot.conf（冻结基础集）、testcases/、tools/、
+busybox/applets-*.txt（applet 名单冻结数据）），git 跟踪
+（rootfs 的 modules.conf 由组件 require 并集生成）；`docker/` 是容器化
+内核开发环境（macOS 内核供给 + clangd，见 Code Map）；构建产物与缓存一律落
 `target/`（数据面，git 忽略）：`target/artifacts/`（initrd.img / rootfs.img /
 tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools 暂存目录）。
 
@@ -44,12 +46,12 @@ builder::verify 检查引擎（新增前置条件只动引擎，两侧呈现自�
 | 领域 | 入口 | 说明 |
 |---|---|---|
 | CLI 入口 | `xtask/src/main.rs` | 规范 bin 名 `virtuoso`（工作区别名 cargo xtask / cargo v）：clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
-| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查；`engine_report` 投影与 doctor 共用）/ `doctor.rs`（一屏体检：引擎检查按前缀分组呈现）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix）/ `probe.rs`（AI 交互通道）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
+| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查；`engine_report` 投影与 doctor 共用）/ `doctor.rs`（一屏体检：引擎检查按前缀分组呈现）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix；accel 解析：macOS 同构缺省 HVF、`--tcg` 强制、Linux 恒 TCG）/ `probe.rs`（AI 交互通道）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
 | 类型化配置 | `xtask/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `cli/diagnostics.rs` |
 | 运行工件与分诊 | `xtask/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
-| 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
-| 构建器 | `crates/builder/src/` | busybox 四层供给 / **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / C 用例 / **no_std Rust 用例** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / cpio+ext4 组装 / verify 检查引擎 |
-| 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 由单测冻结在历史 shell 基线；`QEMU=echo` 可打印对照；`data_disks` = 多 virtio-blk 数据盘，缺省空；`agent_serial` = AI 通道，缺省关）/ `numa.rs` / `lib.rs`（`DataDisk` 块设备抽象） |
+| 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `platform.rs`（**`HostOs` = QEMU 平台分支唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
+| 构建器 | `crates/builder/src/` | busybox 四层供给（applet 符号链接由 `infra/busybox/applets-<ver>.txt` 名单驱动，不执行 guest ELF）/ **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / C 用例 / **no_std Rust 用例（恒 `--target <musl triple>`）** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / `cpio.rs`（**initrd 原生 newc+gzip**，无 GNU 工具依赖、确定性输出）/ `cross.rs`（**非 Linux 宿主交叉接线**：zig cc 包装 → CMAKE_C_COMPILER / CARGO_TARGET_*_LINKER）/ `image.rs`（mke2fs 探测含 brew keg 路径） / verify 检查引擎（host_tools 按平台分表） |
+| 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 冻结在**按宿主平台的双基线**：Linux=memfd+KVM、macOS=ram+HVF，accel×平台错配在 argv 构造期报错；`QEMU=echo` 可打印对照；`data_disks` = 多 virtio-blk 数据盘，缺省空；`agent_serial` = AI 通道，缺省关）/ `numa.rs` / `lib.rs`（`DataDisk` 块设备抽象） |
 | 判定引擎 | `crates/judge/src/` | `lib.rs`（标记协议 v1 解析 + `judge` 对账，panic 假通过防护）/ `report.rs`（verdict.json schema + `RunMeta`）/ `exit.rs`（**退出码语义唯一表**） |
 | 跨 run 语义 | `crates/tracker/src/lib.rs` | 失败指纹归一化/聚类/flaky/补丁映射/diff→路径；输入是最小摘要 `RunSummary`（`From<VerdictReport>` 投影），IO 在 runs 层 |
 | 报告 schema | `crates/judge/src/report.rs::VerdictReport` | verdict.json 唯一 schema（serde 结构体）：构造（`VerdictReport::build`）与回读共用 |
@@ -59,6 +61,7 @@ builder::verify 检查引擎（新增前置条件只动引擎，两侧呈现自�
 | Rust 用例 | `infra/testcases/rust/` | 独立 workspace：`testfw` no_std 框架 + 用例 crate；裸 syscall 静态 ELF；`/tests/` 自动发现 |
 | VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 tools.img 的 `/bin/`（VM 内挂 `/tools`，init-hooks 注入 PATH），不进 `/tests/` 不参与判定 |
 | skill | `skills/kernel-dev/`、`skills/kernel-virtuoso/` | `virtuoso skill install` 装入内核树（后者 = AI 数据接口集成） |
+| 内核开发容器 | `docker/` | **macOS 内核供给**：Dockerfile.kernel（钉死工具链+clangd）+ kernel.sh 薄壳（clone/build/export 进 named volume，规避 APFS 大小写坑）+ devcontainer.json（VS Code 打开 volume 即 clangd 全量索引）；镜像由 `.github/workflows/kernel-builder.yml` 发 ghcr |
 | 文档站 | `docs/` + 根 `book.toml` | **docs/ 是文档唯一事实来源**（mdBook src 直指它）；`cli/docs.rs` 接线 `virtuoso docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
 
 ## 运行工件（AI 分诊数据源）
@@ -129,12 +132,13 @@ initramfs 的 modules-boot.conf 冻结基础集之后。`virtuoso probe` 恒开 
    `--- Running: X ---`、`PASSED:/FAILED: X`、`Test Results: N/M passed`、
    `TEST_COMPLETE: ALL TESTS PASSED|SOME TESTS FAILED`。改文本等于破坏所有下游解析。
 2. **test 退出码**：0=通过、124=超时、其余=失败。
-3. **argv 冻结**：`QemuInvocation::argv` 的输出冻结在既定基线上，由
-   `crates/launcher/src/qemu.rs` 的 `argv_*` 单测把守；
+3. **argv 冻结**：`QemuInvocation::argv` 的输出冻结在**按宿主平台的双基线**上
+   （`common::HostOs`；Linux=memfd 后端、macOS=ram 后端、HVF→`-accel hvf`），
+   由 `crates/launcher/src/qemu.rs` 的 `argv_*` 单测显式钉死平台把守；
    人工复核用 `QEMU=echo virtuoso shell` 打印 argv。数据盘（tools.img 等，
    追加 `-drive …,if=virtio` → `/dev/vdb` 起）与 agent 通道属调用方增量：
-   **缺省（无盘无 agent）argv 与基线逐字一致**；块设备抽象统一为 `DataDisk`
-   （多 virtio-blk 数据盘）。
+   **缺省（无盘无 agent）argv 与所属平台的基线逐字一致**；块设备抽象统一为
+   `DataDisk`（多 virtio-blk 数据盘）。
 4. 测试必须静态链接（`-static`），禁止用 `|| true` 掩盖失败。
 5. **配置优先级：进程环境变量 > `virtuoso.toml`**：同名标量键以进程环境变量
    为准（CI/命令行临时改参不动文件）；持久配置只写 `virtuoso.toml`。

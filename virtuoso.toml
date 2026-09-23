@@ -56,7 +56,8 @@ enabled = true
 # require = ["virtio_console"]
 
 # [components.vfio]
-# vfio-pci 直通：devices 逐条生成 -device vfio-pci,host=<bdf>（需 KVM）。
+# vfio-pci 直通：devices 逐条生成 -device vfio-pci,host=<bdf>。
+# 仅 Linux 宿主（需 KVM + IOMMU）；macOS 上启用会被 doctor/verify 拒绝。
 # enabled = true
 # devices = ["0000:01:00.0"]
 # require = ["vfio", "vfio_pci"]     # guest 侧驱动，按被测内核配置取舍

@@ -1,0 +1,45 @@
+// VS Code Dev Container —— 打开内核源码 volume 为 workspace。
+//
+// 用法（macOS / Linux 通用）：
+//   1. ./docker/kernel.sh clone <kernel-git-url>   （源码进 named volume）
+//   2. VS Code →「Dev Containers: Open Folder in Container」→ 选本 docker/ 目录
+//      （或命令面板 Reopen in Container）
+//   3. workspace 即 /ksrc：clangd 在容器内索引，构建走集成终端
+//      ./kernel.sh build（或直接 make）
+//
+// 源码在 volume 里而不在 mac 目录：ext4 大小写敏感（内核构建的硬要求），
+// 且避免 APFS bind-mount 的性能损耗。编辑器体验等价（VS Code server 在
+// 容器内读写 volume）。
+{
+  "name": "virtuoso-kernel",
+  "build": { "dockerfile": "Dockerfile.kernel" },
+  "workspaceMount": "src=virtuoso-kernel,dst=/ksrc,type=volume",
+  "workspaceFolder": "/ksrc",
+  "remoteUser": "root",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        // clangd 在容器内跑：吃 /ksrc/.clangd + compile_commands.json
+        "clangd.arguments": [
+          "--background-index",
+          "--clang-tidy=false",
+          "--header-insertion=never",
+          "--query-driver=/usr/bin/*"
+        ],
+        // 内核 C 风格：8 空格缩进
+        "editor.tabSize": 8,
+        "[c]": { "editor.insertSpaces": false },
+        "files.exclude": {
+          "**/*.o": true,
+          "**/*.cmd": true,
+          "**/*.ko": true,
+          "**/.*.cmd": true
+        }
+      }
+    }
+  }
+}

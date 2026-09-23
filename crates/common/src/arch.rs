@@ -84,6 +84,16 @@ impl Arch {
         }
     }
 
+    /// `zig cc -target` triple（非 Linux 宿主交叉编译；zig 自带 musl
+    /// sysroot，静态由 musl 目标天然满足）。
+    pub fn zig_triple(self) -> &'static str {
+        match self {
+            Arch::Arm64 => "aarch64-linux-musl",
+            Arch::X86_64 => "x86_64-linux-musl",
+            Arch::Riscv64 => "riscv64-linux-musl",
+        }
+    }
+
     /// 交叉编译前缀（builder 编译 C 用例用）；本机架构返回 None。
     pub fn cross_prefix(self) -> Option<&'static str> {
         match self {
