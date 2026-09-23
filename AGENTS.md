@@ -12,35 +12,40 @@ tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools �
 
 ## 快速命令（复制即用）
 
+`virtuoso` = 规范二进制（`cargo install --path xtask` 装入 PATH）；工作区内 `cargo xtask` / `cargo v`
+别名等价且改源码即重编——开发循环（改完 crates 后跑）用别名，免装免陈旧。
+
 ```bash
-cargo xtask verify             # 前置检查 + 类型化配置诊断
-cargo xtask build              # builder：重建 initrd.img / rootfs.img / tools.img
-cargo xtask test --timeout 60  # 测试：launcher 启动 → judge 判定 → 工件落盘
-cargo xtask test --replay-until-fail 5   # flaky 返场：首个非 passed 即停
-cargo xtask matrix [--arch a]  # 多架构矩阵（缺省三架构，串行）
-cargo xtask triage [--json]    # 最近一次运行的分诊报告
-cargo xtask runs [--json]      # 历史运行列表
-cargo xtask cluster [--json]   # 跨 run 失败指纹聚类 + flaky 清单 + 首现 run（tracker）
-cargo xtask suggest [--diff f] # 补丁↔测试映射：git diff → 最小测试集（tracker）
-cargo xtask replay --log <f>   # 任意串口日志的离线标记协议断言
-cargo xtask shell [--kvm]      # 交互式 VM
-cargo xtask debug              # GDB stub :1234 挂起启动
-cargo xtask probe --cmd 'uname -a' [--cmd-file f] [--json]
+virtuoso doctor             # 一屏体检：verify 同引擎的简化呈现（✓/✗ 组件行；--json）
+virtuoso verify             # 前置检查 + 类型化配置诊断（doctor 报 ✗ 时看全量）
+virtuoso build              # builder：重建 initrd.img / rootfs.img / tools.img
+virtuoso test --timeout 60  # 测试：launcher 启动 → judge 判定 → 工件落盘
+virtuoso test --replay-until-fail 5   # flaky 返场：首个非 passed 即停
+virtuoso matrix [--arch a]  # 多架构矩阵（缺省三架构，串行）
+virtuoso triage [--json]    # 最近一次运行的分诊报告
+virtuoso runs [--json]      # 历史运行列表
+virtuoso cluster [--json]   # 跨 run 失败指纹聚类 + flaky 清单 + 首现 run（tracker）
+virtuoso suggest [--diff f] # 补丁↔测试映射：git diff → 最小测试集（tracker）
+virtuoso replay --log <f>   # 任意串口日志的离线标记协议断言
+virtuoso shell [--kvm]      # 交互式 VM
+virtuoso debug              # GDB stub :1234 挂起启动
+virtuoso probe --cmd 'uname -a' [--cmd-file f] [--json]
                                # AI 交互通道：virtio-serial agent 命令批（结构化事件流）
-cargo xtask verify --backend firecracker  # microVM preflight（test/shell 同参数）
-cargo xtask skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核树
-cargo xtask docs [--serve]     # mdBook 文档构建到 target/book / 本地预览
+virtuoso verify --backend firecracker  # microVM preflight（test/shell 同参数）
+virtuoso skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核树
+virtuoso docs [--serve]     # mdBook 文档构建到 target/book / 本地预览
 ```
 
-AI 的标准验证循环：`verify → test → triage`。**判定以 triage 的 verdict 为准**，
-退出码只是接口契约；`verdict: passed` 才算通过。
+AI 的标准验证循环：`doctor → test → triage`。**判定以 triage 的 verdict 为准**，
+退出码只是接口契约；`verdict: passed` 才算通过。doctor 与 verify 共用
+builder::verify 检查引擎（新增前置条件只动引擎，两侧呈现自动跟随）。
 
 ## Code Map
 
 | 领域 | 入口 | 说明 |
 |---|---|---|
-| CLI 入口 | `xtask/src/main.rs` | clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
-| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix）/ `probe.rs`（AI 交互通道）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
+| CLI 入口 | `xtask/src/main.rs` | 规范 bin 名 `virtuoso`（工作区别名 cargo xtask / cargo v）：clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
+| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查；`engine_report`/`firecracker_checks` 投影与 doctor 共用）/ `doctor.rs`（一屏体检：引擎检查按前缀分组呈现）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix）/ `probe.rs`（AI 交互通道）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
 | 类型化配置 | `xtask/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `cli/diagnostics.rs` |
 | 运行工件与分诊 | `xtask/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
 | 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
@@ -55,12 +60,12 @@ AI 的标准验证循环：`verify → test → triage`。**判定以 triage 的
 | C 用例 | `infra/testcases/` | `test_<name>.c` + CMakeLists；`-static` 冻结 |
 | Rust 用例 | `infra/testcases/rust/` | 独立 workspace：`testfw` no_std 框架 + 用例 crate；裸 syscall 静态 ELF；`/tests/` 自动发现 |
 | VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 tools.img 的 `/bin/`（VM 内挂 `/tools`，init-hooks 注入 PATH），不进 `/tests/` 不参与判定 |
-| skill | `skills/kernel-dev/`、`skills/kernel-virtuoso/` | `cargo xtask skill install` 装入内核树（后者 = AI 数据接口集成） |
-| 文档站 | `docs/` + 根 `book.toml` | **docs/ 是文档唯一事实来源**（mdBook src 直指它）；`cli/docs.rs` 接线 `cargo xtask docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
+| skill | `skills/kernel-dev/`、`skills/kernel-virtuoso/` | `virtuoso skill install` 装入内核树（后者 = AI 数据接口集成） |
+| 文档站 | `docs/` + 根 `book.toml` | **docs/ 是文档唯一事实来源**（mdBook src 直指它）；`cli/docs.rs` 接线 `virtuoso docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
 
 ## 运行工件（AI 分诊数据源）
 
-每次 `cargo xtask test` / `matrix` 写入 `target/runs/<unix_ms>-<arch>/`（保留最近 20 次；
+每次 `virtuoso test` / `matrix` 写入 `target/runs/<unix_ms>-<arch>/`（保留最近 20 次；
 `probe` 也写 run 目录，内容为 `serial.log` + `qemu-stderr.log` + `agent-events.jsonl`，无 verdict）：
 
 | 文件 | 内容 |
@@ -118,7 +123,7 @@ enabled = true
 builder 把启用组件的 require 并集（schema 固定顺序
 tools_disk→agent→vfio→numa→pmem，去重保首个）生成 rootfs
 `/lib/modules/modules.conf`；`stage = "boot"` 的条目追加到
-initramfs 的 modules-boot.conf 冻结基础集之后。`cargo xtask probe` 恒开 agent 通道
+initramfs 的 modules-boot.conf 冻结基础集之后。`virtuoso probe` 恒开 agent 通道
 （强制并入 virtio_console，不依赖组件开关）。firecracker 后端不支持 agent 通道与
 pmem 组件（启用时 WARN 忽略）。
 
@@ -130,7 +135,7 @@ pmem 组件（启用时 WARN 忽略）。
 2. **test 退出码**：0=通过、124=超时、其余=失败。
 3. **argv 冻结**：`QemuInvocation::argv` 的输出冻结在既定基线上，由
    `crates/launcher/src/qemu.rs` 的 `argv_*` 单测把守；
-   人工复核用 `QEMU=echo cargo xtask shell` 打印 argv。数据盘（tools.img 等，
+   人工复核用 `QEMU=echo virtuoso shell` 打印 argv。数据盘（tools.img 等，
    追加 `-drive …,if=virtio` → `/dev/vdb` 起）与 agent 通道属调用方增量：
    **缺省（无盘无 agent）argv 与基线逐字一致**；块设备抽象统一为 `DataDisk`
    （QEMU/Firecracker 双后端多盘）。
@@ -140,7 +145,7 @@ pmem 组件（启用时 WARN 忽略）。
 
 ## 详细文档
 
-`docs/` 是文档唯一事实来源（mdBook：`book.toml` src 直指 docs/，`cargo xtask docs`
+`docs/` 是文档唯一事实来源（mdBook：`book.toml` src 直指 docs/，`virtuoso docs`
 构建，push main 自动发布 gh-pages）；改动文档只动 `docs/`，别处引用不复制内容。
 
 - `docs/user-guide.md` —— 日常操作手册：上手、配置、写用例、模块、调试、组件

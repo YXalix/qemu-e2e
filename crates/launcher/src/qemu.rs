@@ -300,7 +300,7 @@ impl QemuInvocation {
         {
             if !path.is_file() {
                 anyhow::bail!(
-                    "{what} not found at {} (build the kernel / run `cargo xtask build` first)",
+                    "{what} not found at {} (build the kernel / run `virtuoso build` first)",
                     path.display()
                 );
             }
@@ -315,7 +315,7 @@ impl QemuInvocation {
         }
         let child = cmd.spawn().with_context(|| {
             format!(
-                "{} not found; run `cargo xtask verify` for install hints",
+                "{} not found; run `virtuoso verify` for install hints",
                 self.qemu_bin()
             )
         })?;

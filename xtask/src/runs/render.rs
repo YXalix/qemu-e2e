@@ -13,7 +13,7 @@ use judge::Verdict;
 use super::rundir::{list_run_dirs, load_verdict_or_parse, resolve_run, runs_root};
 use crate::config::Config;
 
-/// `cargo xtask triage`：一次运行的分诊报告。
+/// `virtuoso triage`：一次运行的分诊报告。
 /// --json 输出 verdict 全文；verdict 非 passed 时退出 1（便于脚本串联）。
 pub fn run_triage(cfg: &Config, run_spec: Option<&str>, json: bool) -> anyhow::Result<i32> {
     let dir = resolve_run(&cfg.project_root, run_spec)?;
@@ -116,7 +116,7 @@ pub fn run_triage(cfg: &Config, run_spec: Option<&str>, json: bool) -> anyhow::R
     Ok(if v.verdict == Verdict::Passed { 0 } else { 1 })
 }
 
-/// `cargo xtask runs`：历史运行列表（最新在前）。
+/// `virtuoso runs`：历史运行列表（最新在前）。
 pub fn run_runs(cfg: &Config, json: bool) -> anyhow::Result<i32> {
     let dirs = list_run_dirs(&cfg.project_root);
 
@@ -139,7 +139,7 @@ pub fn run_runs(cfg: &Config, json: bool) -> anyhow::Result<i32> {
     }
     if dirs.is_empty() {
         println!(
-            "no runs yet — cargo xtask test 会写入 {}/",
+            "no runs yet — virtuoso test 会写入 {}/",
             runs_root(&cfg.project_root).display()
         );
         return Ok(0);
@@ -192,7 +192,7 @@ fn load_summaries(cfg: &Config) -> anyhow::Result<Vec<tracker::RunSummary>> {
     let dirs = list_run_dirs(&cfg.project_root);
     if dirs.is_empty() {
         anyhow::bail!(
-            "未找到运行记录（{}）——先执行一次 cargo xtask test 生成工件",
+            "未找到运行记录（{}）——先执行一次 virtuoso test 生成工件",
             runs_root(&cfg.project_root).display()
         );
     }
@@ -206,7 +206,7 @@ fn load_summaries(cfg: &Config) -> anyhow::Result<Vec<tracker::RunSummary>> {
         .collect())
 }
 
-/// `cargo xtask cluster`：跨 run 失败指纹聚类 + flaky 用例清单。
+/// `virtuoso cluster`：跨 run 失败指纹聚类 + flaky 用例清单。
 /// 聚类语义在 tracker；此处只做扫描与呈现。
 pub fn run_cluster(cfg: &Config, json: bool) -> anyhow::Result<i32> {
     let summaries = load_summaries(cfg)?;
@@ -268,14 +268,14 @@ pub fn run_cluster(cfg: &Config, json: bool) -> anyhow::Result<i32> {
     }
     if let Some(first) = clusters.first() {
         println!(
-            "  reproduce earliest: cargo xtask triage --run {}",
+            "  reproduce earliest: virtuoso triage --run {}",
             first.first_run_id
         );
     }
     Ok(0)
 }
 
-/// `cargo xtask suggest`：补丁↔测试映射。--diff 读统一 diff 文件；
+/// `virtuoso suggest`：补丁↔测试映射。--diff 读统一 diff 文件；
 /// 缺省对 KERNEL_PATH 内核树执行 git diff（工作区 + 暂存区，文件名去重）。
 /// 映射语义在 tracker（DEFAULT_RULES），此处只做 IO 与呈现。
 pub fn run_suggest(
@@ -332,7 +332,7 @@ pub fn run_suggest(
     println!("[SUGGEST] {} changed file(s) mapped", changed.len());
     if suggestions.is_empty() {
         println!("  no subsystem rule matched → full regression:");
-        println!("  cargo xtask test --timeout 60   # or: cargo xtask matrix");
+        println!("  virtuoso test --timeout 60   # or: virtuoso matrix");
     }
     for s in &suggestions {
         println!(
@@ -344,7 +344,7 @@ pub fn run_suggest(
         println!("    minimal set: {}", s.tests.join(", "));
     }
     println!(
-        "  run: cargo xtask test --timeout 60 --arch {}",
+        "  run: virtuoso test --timeout 60 --arch {}",
         cfg.arch()
             .map(|a| a.name().to_string())
             .unwrap_or_else(|| "arm64".into())
@@ -352,7 +352,7 @@ pub fn run_suggest(
     Ok(0)
 }
 
-/// `cargo xtask replay` 的 JSON 输出（summary 不含 skip，与 verdict.json 的
+/// `virtuoso replay` 的 JSON 输出（summary 不含 skip，与 verdict.json 的
 /// SummaryCounts 是不同面）。
 #[derive(serde::Serialize)]
 struct ReplaySummary {
@@ -373,7 +373,7 @@ struct ReplayReport {
     oops: Vec<String>,
 }
 
-/// `cargo xtask replay`：对任意串口日志离线做标记协议断言（不启动 QEMU）。
+/// `virtuoso replay`：对任意串口日志离线做标记协议断言（不启动 QEMU）。
 pub fn run_replay(log: &Path, json: bool) -> anyhow::Result<i32> {
     let text = std::fs::read_to_string(log)
         .with_context(|| format!("读取串口日志 {} 失败", log.display()))?;

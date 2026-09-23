@@ -37,6 +37,18 @@ enum Command {
         #[arg(long)]
         backend: Option<String>,
     },
+    /// 一屏环境体检：verify 的 flutter-doctor 风格简化呈现（✓/✗/! 组件行）
+    Doctor {
+        /// 覆盖目标架构（透传为 ARCH 环境变量）
+        #[arg(long)]
+        arch: Option<String>,
+        /// 启动后端（qemu | firecracker）；firecracker 追加 microVM preflight
+        #[arg(long)]
+        backend: Option<String>,
+        /// 机器可读 JSON 输出
+        #[arg(long)]
+        json: bool,
+    },
     /// 构建 initrd：C 用例 + modules.conf + BusyBox（make initrd 对等）
     Build,
     /// 交互式启动 QEMU，落入 BusyBox shell（make qemu 对等）
@@ -126,7 +138,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// parity 校验：同一 target 分别以 make 与 cargo xtask 执行并比较退出码
+    /// parity 校验：同一 target 分别以 make 与 virtuoso 执行并比较退出码
     Parity {
         /// make target 名（verify/busybox/initrd/qemu/qemu-kvm/qemu-debug/qemu-test/disk/clean/install-skill/uninstall-skill）
         target: String,

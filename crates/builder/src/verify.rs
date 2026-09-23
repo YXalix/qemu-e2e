@@ -99,7 +99,7 @@ pub fn run_checks(
         checks.push(pass("Configuration: virtuoso.toml found"));
     } else {
         checks.push(fail(
-            "Configuration: virtuoso.toml not found (run `cargo xtask` inside the project root, or restore the shipped template)",
+            "Configuration: virtuoso.toml not found (run `virtuoso` inside the project root, or restore the shipped template)",
         ));
     }
 
@@ -253,7 +253,7 @@ pub fn run_checks(
     checks.push(if tools_img_exists {
         info("Tools image: exists (attached as /dev/vdb, mounted at /tools)")
     } else {
-        info("Tools image: not built yet (run `cargo xtask build`)")
+        info("Tools image: not built yet (run `virtuoso build`)")
     });
 
     // 11. initrd
@@ -321,7 +321,8 @@ impl Report {
     }
 }
 
-fn is_stdout_tty() -> bool {
+/// 仅影响颜色，不影响判定（doctor 呈现层共用同一 NO_COLOR 语义）。
+pub fn is_stdout_tty() -> bool {
     // 无 libc 依赖的近似判断：TERM 存在且非 dumb，且没有 CI 强制管道。
     // 仅影响颜色，不影响判定。
     std::env::var_os("TERM")

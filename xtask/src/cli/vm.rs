@@ -138,7 +138,7 @@ fn resolve_timeout(cfg: &Config, cli_timeout: Option<u64>) -> anyhow::Result<u64
         .map(|s| s.to_string())
         .unwrap_or_else(|| cfg.timeout_raw());
     if raw.trim() == "0" {
-        anyhow::bail!("Set QEMU_TIMEOUT (e.g., cargo xtask test --timeout 60)");
+        anyhow::bail!("Set QEMU_TIMEOUT (e.g., virtuoso test --timeout 60)");
     }
     raw.trim().parse().context("QEMU_TIMEOUT 必须是数字")
 }
@@ -282,7 +282,7 @@ fn test_once(
         _ => {}
     }
     println!(
-        "[RUN] verdict: {verdict} (exit {code}, {:.1}s) — 详情: cargo xtask triage",
+        "[RUN] verdict: {verdict} (exit {code}, {:.1}s) — 详情: virtuoso triage",
         duration_ms as f64 / 1000.0
     );
     Ok(code)

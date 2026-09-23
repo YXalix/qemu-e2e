@@ -1,4 +1,4 @@
-//! parity 校验：同一 target 分别以 make 与 cargo xtask 执行，比较退出码。
+//! parity 校验：同一 target 分别以 make 与 virtuoso 执行，比较退出码。
 //! Makefile 是 xtask 的转发壳，双方退出码天然一致；
 //! 本命令作为行为对照工具保留。
 

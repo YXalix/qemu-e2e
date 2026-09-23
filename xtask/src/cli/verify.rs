@@ -1,4 +1,4 @@
-//! `cargo xtask verify`：前置检查。builder 负责检查引擎，本模块负责
+//! `virtuoso verify`：前置检查。builder 负责检查引擎，本模块负责
 //! 把类型化配置投影为检查输入并呈现结果；firecracker 后端追加 microVM
 //! 诊断（launcher::firecracker::preflight_checks）。
 
@@ -8,16 +8,9 @@ use launcher::{Arch, Backend};
 use super::{firecracker_kernel, resolve_arch, resolve_backend};
 use crate::config::Config;
 
-pub fn run_verify(
-    arch_override: Option<&str>,
-    backend_override: Option<&str>,
-) -> anyhow::Result<i32> {
-    let cfg = Config::load()?;
-    super::diagnostics::print_diagnostics(&cfg, arch_override);
-    let backend = resolve_backend(&cfg, backend_override)?;
-    println!("  backend: {}", backend.name());
-
-    let arch = resolve_arch(&cfg, arch_override)?;
+/// 检查引擎输入投影（verify 与 doctor 共用，保证检查语义单一来源——
+/// 新增前置条件只动 builder::verify::run_checks，两侧呈现自动跟随）。
+pub(super) fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<builder::verify::Report> {
     let host_arch = Arch::parse(std::env::consts::ARCH);
     let kernel_path = cfg.kernel_path().ok().map(|(kp, _)| kp);
     let kernel_img = kernel_path.as_ref().map(|p| p.join(arch.kernel_img()));
@@ -29,7 +22,7 @@ pub fn run_verify(
     let modules =
         builder::verify::module_presence(&module_lines, kernel_path.as_deref(), &cfg.infra_dir);
 
-    let report = builder::verify::run_checks(
+    Ok(builder::verify::run_checks(
         cfg.toml.is_some(),
         kernel_path.as_deref(),
         arch,
@@ -44,22 +37,42 @@ pub fn run_verify(
             .is_file(),
         cfg.artifacts_dir.join("tools.img").is_file(),
         Some(&cfg.artifacts_dir.join("initrd.img")),
-    );
+    ))
+}
+
+/// firecracker preflight 诊断项投影（同样共用）。
+pub(super) fn firecracker_checks(
+    cfg: &Config,
+    arch: Arch,
+) -> anyhow::Result<Vec<launcher::firecracker::PreflightCheck>> {
+    let kernel = firecracker_kernel(cfg, arch)?;
+    let kernel_config = cfg.kernel_path().ok().map(|(kp, _)| kp.join(".config"));
+    Ok(launcher::firecracker::preflight_checks(
+        arch,
+        &kernel,
+        kernel_config.as_deref(),
+        &cfg.firecracker_bin(),
+    ))
+}
+
+pub fn run_verify(
+    arch_override: Option<&str>,
+    backend_override: Option<&str>,
+) -> anyhow::Result<i32> {
+    let cfg = Config::load()?;
+    super::diagnostics::print_diagnostics(&cfg, arch_override);
+    let backend = resolve_backend(&cfg, backend_override)?;
+    println!("  backend: {}", backend.name());
+
+    let arch = resolve_arch(&cfg, arch_override)?;
+    let report = engine_report(&cfg, arch)?;
     print!("{}", report.render());
 
     // firecracker 后端追加 microVM preflight（只诊断不改判 qemu 侧结论）
     if backend == Backend::Firecracker {
         println!("  firecracker preflight:");
-        let kernel = firecracker_kernel(&cfg, arch)?;
-        let kernel_config = cfg.kernel_path().ok().map(|(kp, _)| kp.join(".config"));
-        let checks = launcher::firecracker::preflight_checks(
-            arch,
-            &kernel,
-            kernel_config.as_deref(),
-            &cfg.firecracker_bin(),
-        );
         let mut fc_fail = 0;
-        for chk in &checks {
+        for chk in firecracker_checks(&cfg, arch)? {
             if !chk.ok {
                 fc_fail += 1;
             }
@@ -79,11 +92,11 @@ pub fn run_verify(
 
     if report.critical_fail > 0 {
         println!();
-        println!("  Fix the issues above, then run: cargo xtask verify");
+        println!("  Fix the issues above, then run: virtuoso verify");
         Ok(1)
     } else {
         println!();
-        println!("  Ready. Run: cargo xtask test --timeout 30");
+        println!("  Ready. Run: virtuoso test --timeout 30");
         Ok(0)
     }
 }

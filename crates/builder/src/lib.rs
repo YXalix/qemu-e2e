@@ -89,7 +89,7 @@ pub fn build_boot_pair(
     // 与脚本一致的先决检查
     if !kernel_path.join("arch").is_dir() {
         anyhow::bail!(
-            "Cannot find kernel source directory at {}\nSet KERNEL_PATH environment variable to specify the location:\n  KERNEL_PATH=/path/to/kernel cargo xtask build",
+            "Cannot find kernel source directory at {}\nSet KERNEL_PATH environment variable to specify the location:\n  KERNEL_PATH=/path/to/kernel virtuoso build",
             kernel_path.display()
         );
     }

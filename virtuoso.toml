@@ -55,7 +55,7 @@ enabled = true
 # require = ["virtio_blk", "ext4"]   # 已在 boot 基础集，声明仅为文档
 
 # [components.agent]
-# AI probe 通道：virtio-serial 端口 + guest 内 virtuoso-agent（cargo xtask
+# AI probe 通道：virtio-serial 端口 + guest 内 virtuoso-agent（virtuoso
 # probe 恒开本通道，不依赖此开关）。启用后 shell/test 也附加通道，
 # virtio_console.ko 随本组件进 rootfs。段缺省 = 关闭（argv 保持冻结基线）。
 # enabled = true

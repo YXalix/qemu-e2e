@@ -100,7 +100,7 @@ impl RunMeta {
 
     fn repro(&self) -> String {
         format!(
-            "cargo xtask test --timeout {} --arch {}",
+            "virtuoso test --timeout {} --arch {}",
             self.timeout_s, self.arch
         )
     }

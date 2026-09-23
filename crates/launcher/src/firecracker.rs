@@ -213,7 +213,7 @@ impl FirecrackerInvocation {
         }
         let child = cmd.spawn().with_context(|| {
             format!(
-                "{} 启动失败（preflight 见 `cargo xtask verify --backend firecracker`）",
+                "{} 启动失败（preflight 见 `virtuoso verify --backend firecracker`）",
                 self.binary().display()
             )
         })?;
@@ -228,7 +228,7 @@ impl FirecrackerInvocation {
     }
 }
 
-/// preflight 单项结论（`cargo xtask verify` 的诊断视图）。
+/// preflight 单项结论（`virtuoso verify` 的诊断视图）。
 pub struct PreflightCheck {
     pub name: &'static str,
     pub ok: bool,
@@ -276,7 +276,7 @@ pub fn preflight_checks(
 }
 
 /// spawn 前硬校验：逐项核对，首个失败即 Err（可操作诊断）。
-/// microVM 引导的硬前提，见本模块文档（`cargo xtask verify --backend firecracker`
+/// microVM 引导的硬前提，见本模块文档（`virtuoso verify --backend firecracker`
 /// 提供同样的逐项诊断视图）。
 pub fn preflight(
     arch: Arch,

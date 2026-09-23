@@ -20,3 +20,9 @@ tracker = { path = "../crates/tracker" }
 [dependencies.serde]
 version = "1"
 features = ["derive"]
+
+# 规范二进制名：cargo install --path xtask 后 PATH 上是 virtuoso；
+# workspace 内仍可用 cargo xtask / cargo v 别名（.cargo/config.toml）。
+[[bin]]
+name = "virtuoso"
+path = "src/main.rs"

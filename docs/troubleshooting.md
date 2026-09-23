@@ -1,6 +1,6 @@
 # Troubleshooting — Symptom → Solution
 
-AI/人共用的故障速查。先跑 `cargo xtask triage`（或 `cargo xtask triage --run <id> --json`），
+AI/人共用的故障速查。先跑 `virtuoso triage`（或 `virtuoso triage --run <id> --json`），
 它直接给出 verdict、测试清单、panic 行与串口尾部；下文的每个症状都假设你已看过对应
 `target/runs/<id>/` 下的工件。
 
@@ -10,8 +10,8 @@ AI/人共用的故障速查。先跑 `cargo xtask triage`（或 `cargo xtask tri
 **Solution**:
 1. 看 `serial.log` 尾部：停在哪条打印之后，就是嫌疑点。
 2. `verdict.json` 的 `panics` 有内容？→ 转 "panic" 条目（panic 被超时掩盖的形态）。
-3. 需要现场调试：`cargo xtask debug` + `gdb-multiarch vmlinux -ex 'target remote :1234'`，
-   挂起后发送断点、看 `bt`；或 `cargo xtask shell` 手动执行 `/tests/*` 复现。
+3. 需要现场调试：`virtuoso debug` + `gdb-multiarch vmlinux -ex 'target remote :1234'`，
+   挂起后发送断点、看 `bt`；或 `virtuoso shell` 手动执行 `/tests/*` 复现。
 
 ## panic（verdict: panic）
 
@@ -32,7 +32,7 @@ AI/人共用的故障速查。先跑 `cargo xtask triage`（或 `cargo xtask tri
 ## verdict: failed（有 FAILED 测试）
 
 **Solution**: `triage` 列出每个测试的断言计数（pass/fail/skip）。找 `[FAIL]` 行上文；
-需复现用 `cargo xtask shell` 进 VM 手跑 `/tests/test_x`（rootfs 里保留全部用例）。
+需复现用 `virtuoso shell` 进 VM 手跑 `/tests/test_x`（rootfs 里保留全部用例）。
 
 ## insmod 失败 / 模块缺失
 
@@ -45,18 +45,18 @@ AI/人共用的故障速查。先跑 `cargo xtask triage`（或 `cargo xtask tri
 - `modules-boot.conf`（initramfs，virtio+ext4 引导关键）仍是手写冻结基础集；
   组件需要引导早期加载时用 `stage = "boot"` 追加。
 - 内核重编后 `.ko` 路径变化：`make modules INSTALL_MOD_PATH=...` 或确认
-  `cargo xtask verify` 报告的模块路径。
+  `virtuoso verify` 报告的模块路径。
 
 ## 测试二进制没出现在 /tests/
 
 **Symptom**: `Test Results: 0/0 passed` 或根本没有 `--- Running:` 行。
 **Solution**: `infra/testcases/CMakeLists.txt` 是否注册了新用例；确认 `-static`
-（禁止改成动态链接）；`cargo xtask clean && cargo xtask build` 重建；查
+（禁止改成动态链接）；`virtuoso clean && virtuoso build` 重建；查
 `target/runs/<id>/build.log` 的编译告警。
 
 ## kernel image not found / QEMU not found
 
-**Solution**: `cargo xtask verify` 的前置诊断会给出 MISSING 项与建议
+**Solution**: `virtuoso verify` 的前置诊断会给出 MISSING 项与建议
 （`KERNEL_PATH`、`ARCH`、`QEMU=` 覆盖）。交叉架构时确认装了对应
 `qemu-system-<arch>`。
 
@@ -67,20 +67,20 @@ AI/人共用的故障速查。先跑 `cargo xtask triage`（或 `cargo xtask tri
 
 ## Ctrl-C 中断后想看已输出的日志
 
-**Solution**: 串口是逐行同步落盘的：直接看最新 `target/runs/`（`cargo xtask runs`
+**Solution**: 串口是逐行同步落盘的：直接看最新 `target/runs/`（`virtuoso runs`
 找最新 id）下的 `serial.log`。verdict.json 缺失时 `triage` 会自动降级为现场解析
 serial.log（`verdict: unknown`）。
 
-## make qemu-test 与 cargo xtask 退出码不一致
+## make qemu-test 与 virtuoso 退出码不一致
 
 **Symptom**: parity 报 CI-equivalent 或 FAIL。
-**Solution**: 已知差异——GNU make 把脚本失败折叠为 2、吞掉 `exit 124`；xtask 保留
-真实码（设计文档 §7）。`cargo xtask parity <target> --strict` 可强制严格比较。
-以 xtask 为权威。
+**Solution**: 已知差异——GNU make 把脚本失败折叠为 2、吞掉 `exit 124`；virtuoso 保留
+真实码（设计文档 §7）。`virtuoso parity <target> --strict` 可强制严格比较。
+以 virtuoso 为权威。
 
 ## BusyBox 下载/构建失败
 
-**Solution**: `cargo xtask busybox` 走四级供应链（本地缓存 → release → 直链 →
+**Solution**: `virtuoso busybox` 走四级供应链（本地缓存 → release → 直链 →
 源码构建）。离线环境提前把对应架构的 busybox 放进 `target/build/busybox/bin/`；
 release 资产校验 ELF magic，损坏会自动回退源码构建。
 

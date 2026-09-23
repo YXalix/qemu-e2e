@@ -27,7 +27,7 @@ Activate this skill whenever the user asks to:
 kernel/                              # kernel source root
 ├── arch/ mm/ fs/ drivers/ ...       # kernel code
 └── virtuoso/                        # this harness
-    ├── Makefile                     # thin forwarder to cargo xtask
+    ├── Makefile                     # thin forwarder to virtuoso
     ├── virtuoso.toml                # single config surface: globals + [components.*]
     └── infra/                       # VM-side source assets (injected into images at build)
         ├── init                     # PID 1 inside VM: mount → insmod modules.conf → run /tests/*
@@ -68,9 +68,9 @@ The builder generates the rootfs module list from the enabled components'
 
 When the user changes kernel code and wants verification, execute this loop end-to-end. **Do not skip the verify step** — it catches missing modules, missing kernel images, and toolchain gaps before you waste a build cycle.
 
-1. **Verify prerequisites** — `cargo xtask verify` (run inside the harness dir)
-   - Confirms `virtuoso.toml` exists, host tools present, `kernel_path` resolves, kernel image built, QEMU installed, every module required by enabled components is findable, and warns on cross-compile mismatches.
-   - On failure, fix the reported gap before proceeding.
+1. **Verify prerequisites** — `virtuoso doctor` (run inside the harness dir)
+   - One-screen ✓/✗ health check sharing the same check engine as `verify` (Config / Toolchain / Kernel / QEMU / Modules / Artifacts).
+   - On ✗ (or when you need typed config diagnostics), run `virtuoso verify` for the full checklist; fix the reported gap before proceeding.
 
 2. **Build the kernel** (in the kernel tree root, not `virtuoso/`)
    ```bash
@@ -86,15 +86,15 @@ When the user changes kernel code and wants verification, execute this loop end-
    - Yes → proceed.
    - No → add one (see "Adding a Test Case" below) **before** running the harness. A green run with no relevant assertions is worthless.
 
-4. **Build the images** — `cargo xtask build`
+4. **Build the images** — `virtuoso build`
    - Ensures static BusyBox (cached after first run), copies every module from the generated module lists (failing loudly on missing `.ko`), builds tests, packs `target/artifacts/initrd.img` + `rootfs.img` (+ `tools.img` when tools are supplied).
 
-5. **Run the verification** — `cargo xtask test --timeout 30`
+5. **Run the verification** — `virtuoso test --timeout 30`
    - Boots QEMU with serial console to stdout, kernel cmdline includes `auto_test`, init runs every binary in `/tests/`, then powers off.
    - Bump the timeout if reclaim/swap-heavy tests take longer; the harness kills the VM at the cap and exits 124.
 
 6. **Judge the run** — the verdict is authoritative, the exit code is not:
-   - `cargo xtask triage` prints the verdict, per-test results, panics, and the serial tail (`--json` for machine-readable output; run dir under `target/runs/`).
+   - `virtuoso triage` prints the verdict, per-test results, panics, and the serial tail (`--json` for machine-readable output; run dir under `target/runs/`).
    - With `-no-reboot`, a kernel panic makes QEMU exit 0 — trust `verdict: passed` only.
 
 ## Adding a Test Case
@@ -138,14 +138,14 @@ The shared `main.c` prints a header, calls **`void run_tests(void)`** (which you
    ```
    Build flags (`-static -O2 -Wall`) come from the top of `CMakeLists.txt`; do not relax `-static` — the VM has no dynamic loader.
 
-3. **Rebuild and run** — `cargo xtask build && cargo xtask test --timeout 30`.
+3. **Rebuild and run** — `virtuoso build && virtuoso test --timeout 30`.
 
 ### no_std Rust test case
 
 Copy the `infra/testcases/rust/test-rs-example/` crate, rename it, add it to
 `infra/testcases/rust/Cargo.toml` members, and use the `testfw` framework's
 `PASS/FAIL/SKIP/INFO` macros (semantics aligned with the C side). Bare-syscall
-static ELF; built by `cargo xtask build` and dropped into `/tests/` like C tests.
+static ELF; built by `virtuoso build` and dropped into `/tests/` like C tests.
 
 ### Test design rules
 
@@ -174,7 +174,7 @@ hand-edit module lists:
 
 Rules:
 - **List dependencies before dependents** within `require`. `init` calls `insmod` in list order; `modprobe`-style auto-resolution does not happen.
-- **Module must be built.** If a name has no matching `.ko` in the kernel tree, `cargo xtask build` aborts with `Module X.ko not found`. Either build it (`make modules`) or remove the entry.
+- **Module must be built.** If a name has no matching `.ko` in the kernel tree, `virtuoso build` aborts with `Module X.ko not found`. Either build it (`make modules`) or remove the entry.
 - **Prefer `=m` over `=y`** for modules under test — easier to iterate without rebuilding the kernel image.
 
 ## Customizing the Boot Environment
@@ -188,7 +188,7 @@ mount -t hugetlbfs nodev /mnt/huge
 echo 20 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
 ```
 
-After editing `infra/init` (or `infra/init-initramfs`), rebuild: `cargo xtask build`.
+After editing `infra/init` (or `infra/init-initramfs`), rebuild: `virtuoso build`.
 The generated `/init-hooks.sh` inside the rootfs is builder-managed (tools-disk
 mount + PATH injection) — customize via `infra/init`, not the hook file.
 
@@ -196,24 +196,24 @@ mount + PATH injection) — customize via `infra/init`, not the hook file.
 
 | Need | Command | Notes |
 |---|---|---|
-| Interactive shell in VM | `cargo xtask shell` | Drops to BusyBox shell after init; `Ctrl-A x` to exit |
-| Native-speed run | `cargo xtask shell --kvm` | KVM only when host arch == target arch |
-| Source-level kernel debug | `cargo xtask debug` | Halts at boot waiting for GDB on `:1234` |
+| Interactive shell in VM | `virtuoso shell` | Drops to BusyBox shell after init; `Ctrl-A x` to exit |
+| Native-speed run | `virtuoso shell --kvm` | KVM only when host arch == target arch |
+| Source-level kernel debug | `virtuoso debug` | Halts at boot waiting for GDB on `:1234` |
 | GDB attach | `gdb-multiarch vmlinux -ex 'target remote :1234'` | Run from kernel tree root; needs `vmlinux` (built with `CONFIG_DEBUG_INFO=y`) |
-| Multi-arch sweep | `cargo xtask matrix [--arch a]` | Serial three-arch matrix (default all) |
-| VM-internal probe (AI) | `cargo xtask probe --cmd '…'` | virtio-serial agent channel; structured event stream |
+| Multi-arch sweep | `virtuoso matrix [--arch a]` | Serial three-arch matrix (default all) |
+| VM-internal probe (AI) | `virtuoso probe --cmd '…'` | virtio-serial agent channel; structured event stream |
 | PCI passthrough | `[components.vfio]` in `virtuoso.toml` | `devices = ["0000:01:00.0"]`; host needs IOMMU enabled |
 
 ## Triage Playbook
 
 When a test run fails, walk this list before reporting back to the user:
 
-1. **`verdict: timeout` (exit 124)** — increase `timeout_secs`; if it still hangs, suspect kernel deadlock/livelock or a test infinite loop. Use `cargo xtask debug` + GDB and `bt` on the offending CPU.
+1. **`verdict: timeout` (exit 124)** — increase `timeout_secs`; if it still hangs, suspect kernel deadlock/livelock or a test infinite loop. Use `virtuoso debug` + GDB and `bt` on the offending CPU.
 2. **`verdict: panic` / `Kernel panic` / `Oops` / `BUG:` in serial output** — copy the full stack trace plus the failing instruction; map it to source via `scripts/decode_stacktrace.sh` or `addr2line` against `vmlinux`. Do not "fix" the test until the kernel issue is understood.
 3. **`verdict: incomplete` (exit 0)** — the marker protocol never completed; treat as a failure (this catches the panic-exits-0 false pass).
 4. **Module fails to load (`insmod ...: -1 ...`)** — check `require` ordering in `virtuoso.toml`, missing exported symbols, or a tainted/CONFIG mismatch.
 5. **Test binary missing from `/tests/`** — verify the new target is in `CMakeLists.txt` (or the Rust workspace members) and that `set_target_properties(... RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)` is present; only `build/bin/*` is copied into the rootfs.
-6. **`verdict: build_failed` / `Kernel image not found`** — wrong `arch`, kernel not built, or a missing `.ko`; `cargo xtask verify` catches all of these with typed diagnostics.
+6. **`verdict: build_failed` / `Kernel image not found`** — wrong `arch`, kernel not built, or a missing `.ko`; `virtuoso verify` catches all of these with typed diagnostics (`virtuoso doctor` is the one-screen summary).
 
 Never paper over a failure by adding `|| true` or removing assertions. If the user pushes to skip a real failure, push back: regressions caught in the harness are exactly the ones that don't reach mainline review.
 

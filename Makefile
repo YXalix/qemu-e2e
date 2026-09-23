@@ -12,7 +12,8 @@ all: help
 help:
 	@echo "Virtuoso — kernel E2E virtualization test harness (Rust authoritative)"
 	@echo ""
-	@echo "All targets forward to 'cargo xtask' (single behavior source)."
+	@echo "All targets forward to the workspace CLI: canonical 'virtuoso' (cargo install --path xtask);"
+	@echo "In-workspace aliases: 'cargo xtask' / 'cargo v' (single behavior source)."
 	@echo ""
 	@echo "Available targets:"
 	@echo "  verify        - Check prerequisites before building/running"

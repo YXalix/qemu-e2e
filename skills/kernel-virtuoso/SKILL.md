@@ -22,7 +22,7 @@ You are an E2E 分诊与测试工程专家。你的工作是**基于 virtuoso ha
 
 ## 数据接口
 
-每次 `cargo xtask test` / `matrix` 写入 `target/runs/<unix_ms>-<arch>/`：
+每次 `virtuoso test` / `matrix` 写入 `target/runs/<unix_ms>-<arch>/`：
 
 | 文件 | 用途 |
 |---|---|
@@ -35,7 +35,7 @@ You are an E2E 分诊与测试工程专家。你的工作是**基于 virtuoso ha
 ### 1. 失败分诊（单 run）
 
 ```
-cargo xtask triage [--run <id>] [--json]     # verdict + 测试条目 + panic/oops + 串口尾部
+virtuoso triage [--run <id>] [--json]     # verdict + 测试条目 + panic/oops + 串口尾部
 ```
 
 步骤：先读 verdict（八态语义，`exit 0 + incomplete = 失败`）→ 定位 events.jsonl 里
@@ -45,8 +45,8 @@ cargo xtask triage [--run <id>] [--json]     # verdict + 测试条目 + panic/oo
 ### 2. 跨 run 聚类 / flaky 猎捕
 
 ```
-cargo xtask cluster [--json]     # 失败指纹桶（归一化 panic 行 / 失败测试集）+ flaky 清单 + 首现 run
-cargo xtask triage --run <first_run_id>   # 从首现 run 回溯引入点
+virtuoso cluster [--json]     # 失败指纹桶（归一化 panic 行 / 失败测试集）+ flaky 清单 + 首现 run
+virtuoso triage --run <first_run_id>   # 从首现 run 回溯引入点
 ```
 
 指纹归一化规则（tracker）：剥离内核时间戳 `[ 1.2345]`、数字折叠为 `N`。同桶 = 同根因假设。
@@ -54,16 +54,16 @@ cargo xtask triage --run <first_run_id>   # 从首现 run 回溯引入点
 ### 3. 补丁 ↔ 测试映射（最小测试集）
 
 ```
-cargo xtask suggest [--diff <unified.diff>] [--json]   # 缺省对 KERNEL_PATH 内核树 git diff
+virtuoso suggest [--diff <unified.diff>] [--json]   # 缺省对 KERNEL_PATH 内核树 git diff
 ```
 
-子系统路径前缀 → 最小测试集。**审 patch 前先跑这个**，把推荐的 `cargo xtask test`
+子系统路径前缀 → 最小测试集。**审 patch 前先跑这个**，把推荐的 `virtuoso test`
 命令交给开发者，而不是全量回归。
 
 ### 4. 可疑 flaky 返场
 
 ```
-cargo xtask test --replay-until-fail N    # 最多 N 轮，首个非 passed 即停
+virtuoso test --replay-until-fail N    # 最多 N 轮，首个非 passed 即停
 ```
 
 ### 5. 测试脚手架生成
@@ -81,8 +81,9 @@ rootfs `/tests/`。
 ### 6. Firecracker microVM（可选后端）
 
 ```
-cargo xtask verify --backend firecracker   # preflight：KVM / binary / ELF 内核 / =y 内建项
-cargo xtask test --backend firecracker
+virtuoso doctor --backend firecracker   # 一屏体检（verify 同引擎，含 Firecracker preflight 组）
+virtuoso verify --backend firecracker   # preflight：KVM / binary / ELF 内核 / =y 内建项
+virtuoso test --backend firecracker
 ```
 
 约束：仅 x86_64/aarch64；KVM 必需；无 initramfs（virtio-blk/ext4/串口必须 `=y`）。

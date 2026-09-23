@@ -1,4 +1,4 @@
-//! 配置诊断呈现（`cargo xtask verify` 的前置输出）。
+//! 配置诊断呈现（`virtuoso verify` 的前置输出）。
 //! 从 config 层拆出：config 只管解析与取值，本模块负责打印。
 
 use launcher::{Arch, NumaTopology};
@@ -99,7 +99,7 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
     println!(
         "  timeout: {t}s{}",
         if t == "0" {
-            " (cargo xtask test will reject 0)"
+            " (virtuoso test will reject 0)"
         } else {
             ""
         }

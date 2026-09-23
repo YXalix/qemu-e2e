@@ -1,5 +1,5 @@
 # mdBook 配置：docs/ 是文档唯一事实来源，本文件只描述"怎么呈现"。
-# 本地构建：cargo xtask docs（产物在 target/book，git 忽略）；
+# 本地构建：virtuoso docs（产物在 target/book，git 忽略）；
 # 线上发布：push main 自动构建到 gh-pages（.github/workflows/docs.yml）。
 
 [book]

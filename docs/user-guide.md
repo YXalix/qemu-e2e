@@ -30,18 +30,25 @@ make modules -j"$(nproc)"        # 只要有任何模块是 =m
 ### 1.3 验证与首跑
 
 ```bash
-cargo xtask verify               # 前置检查 + 类型化配置诊断（最快确认接线）
-cargo xtask test --timeout 60    # 构建 → 启动 → 判定 → 工件落盘
-cargo xtask triage               # 分诊最近一次运行
+cargo install --path xtask    # 规范二进制 virtuoso 装入 PATH（一次）；工作区内 cargo xtask / cargo v 别名等价
+virtuoso doctor               # 一屏体检：✓/✗ 组件行，最快确认接线
+virtuoso test --timeout 60    # 构建 → 启动 → 判定 → 工件落盘
+virtuoso triage               # 分诊最近一次运行
 ```
 
-**AI 的标准验证循环：`verify → test → triage`。判定以 triage 的 verdict 为准**：
+**AI 的标准验证循环：`doctor → test → triage`。判定以 triage 的 verdict 为准**：
 `verdict: passed` 才算通过。退出码只是接口契约（0=通过、124=超时、其余=失败）——
 `-no-reboot` 下内核 panic 会让 QEMU 以 exit 0 退出，只看退出码会假通过；
 `exit 0` 但 `verdict: incomplete` = 标记协议没走完，同样按失败处理。
 
 Verdict 全集（`judge::Verdict`）：`passed` / `failed` / `timeout` / `panic` /
 `incomplete` / `interrupted` / `build_failed`。
+
+`doctor` 与 `verify` 共用同一检查引擎（`builder::verify`），只是呈现繁简之别：
+doctor 把全部检查归并为 ✓/✗/! 组件行（Config / Toolchain / Kernel / QEMU /
+Modules / Artifacts，firecracker 后端追加 Firecracker 组）；`virtuoso verify`
+则附全量清单与类型化配置诊断。doctor 报 ✗ 时用 verify 看细节；两者同参
+（`--arch` / `--backend`，doctor 另有 `--json`）。
 
 ---
 
@@ -87,7 +94,7 @@ toml，临时改参不动文件，持久配置写 toml）；未知键 / 非法�
 | `pmem` | 持久内存（DT 途径 → `/dev/pmem0` + DAX；从 guest RAM 顶部挖出） | `size`（须小于总内存）、`require`（内核 =m 时声明） |
 | `[busybox]` | BusyBox 版本（如 `"1.36.1"`） | 全局段，非组件 |
 
-firecracker 后端不支持 agent 通道与 pmem（启用时 WARN 忽略）。`cargo xtask probe`
+firecracker 后端不支持 agent 通道与 pmem（启用时 WARN 忽略）。`virtuoso probe`
 恒开 agent 通道，不依赖组件开关。
 
 ### 2.3 架构矩阵
@@ -98,7 +105,7 @@ firecracker 后端不支持 agent 通道与 pmem（启用时 WARN 忽略）。`c
 | `x86_64` | `qemu-system-x86_64` | `arch/x86/boot/bzImage` | `ttyS0` | `q35` |
 | `riscv64` | `qemu-system-riscv64` | `arch/riscv/boot/Image` | `ttyS0` | `virt` |
 
-交叉组合随意（如 arm64 宿主跑 `--arch x86_64`），目标与宿主不同构时 verify 会告警。
+交叉组合随意（如 arm64 宿主跑 `--arch x86_64`），目标与宿主不同构时 doctor / verify 会告警。
 
 ---
 
@@ -148,7 +155,7 @@ set_target_properties(test-<name> PROPERTIES
 3. 重建并运行：
 
 ```bash
-cargo xtask build && cargo xtask test --timeout 30
+virtuoso build && virtuoso test --timeout 30
 ```
 
 ### 3.2 Rust 用例（no_std）
@@ -190,8 +197,8 @@ cargo xtask build && cargo xtask test --timeout 30
 ### 5.1 交互 shell
 
 ```bash
-cargo xtask shell            # TCG（跨架构适用）
-cargo xtask shell --kvm      # 原生加速（宿主 = 目标架构时）
+virtuoso shell            # TCG（跨架构适用）
+virtuoso shell --kvm      # 原生加速（宿主 = 目标架构时）
 ```
 
 退出：`Ctrl-A` 然后 `x`。
@@ -201,7 +208,7 @@ cargo xtask shell --kvm      # 原生加速（宿主 = 目标架构时）
 内核开 `CONFIG_DEBUG_INFO=y`（建议加 `CONFIG_DEBUG_INFO_DWARF5=y`、`CONFIG_GDB_SCRIPTS=y`）。
 
 ```bash
-cargo xtask debug            # 终端 1：挂起启动，监听 :1234
+virtuoso debug            # 终端 1：挂起启动，监听 :1234
 cd "$KERNEL_PATH"            # 终端 2：
 gdb-multiarch vmlinux -ex 'target remote :1234'
 ```
@@ -209,8 +216,8 @@ gdb-multiarch vmlinux -ex 'target remote :1234'
 ### 5.3 AI probe（virtio-serial 通道）
 
 ```bash
-cargo xtask probe --cmd 'uname -a' --cmd 'dmesg | tail'
-cargo xtask probe --cmd-file cmds.txt --json    # 机器可读事件流
+virtuoso probe --cmd 'uname -a' --cmd 'dmesg | tail'
+virtuoso probe --cmd-file cmds.txt --json    # 机器可读事件流
 ```
 
 经 guest 侧 `tools/virtuoso-agent`（JSON 行协议）下发命令批，事件流写
@@ -219,8 +226,9 @@ run 目录的 `agent-events.jsonl`；`probe` 恒开 agent 通道。
 ### 5.4 Firecracker 后端
 
 ```bash
-cargo xtask verify --backend firecracker    # microVM preflight
-cargo xtask test --timeout 60 --backend firecracker
+virtuoso doctor --backend firecracker    # 一屏体检（含 microVM preflight 组）
+virtuoso verify --backend firecracker    # 全量清单 + microVM preflight
+virtuoso test --timeout 60 --backend firecracker
 ```
 
 x86_64 / aarch64 + KVM；不支持 agent 通道与 pmem（WARN 忽略）。
@@ -234,13 +242,13 @@ x86_64 / aarch64 + KVM；不支持 agent 通道与 pmem（WARN 忽略）。
 `events.jsonl`、`verdict.json`（probe 无 verdict，另有 `agent-events.jsonl`）。
 
 ```bash
-cargo xtask triage [--run <id>] [--json]
-cargo xtask runs [--json]              # 历史运行
-cargo xtask replay --log <f>           # 离线标记协议断言（不启动 QEMU）
-cargo xtask matrix [--arch a]          # 多架构矩阵（缺省三架构，串行）
-cargo xtask test --replay-until-fail 5 # flaky 返场：首个非 passed 即停
-cargo xtask cluster [--json]           # 跨 run 失败指纹聚类 + flaky 清单
-cargo xtask suggest [--diff f]         # git diff → 推荐最小测试集
+virtuoso triage [--run <id>] [--json]
+virtuoso runs [--json]              # 历史运行
+virtuoso replay --log <f>           # 离线标记协议断言（不启动 QEMU）
+virtuoso matrix [--arch a]          # 多架构矩阵（缺省三架构，串行）
+virtuoso test --replay-until-fail 5 # flaky 返场：首个非 passed 即停
+virtuoso cluster [--json]           # 跨 run 失败指纹聚类 + flaky 清单
+virtuoso suggest [--diff f]         # git diff → 推荐最小测试集
 ```
 
 `triage` / `runs` / `cluster` / `suggest` / `replay` 都支持 `--json`，可直接进管道。
@@ -264,7 +272,7 @@ VM 内资产（init、testcases、tools）都在 `infra/`，git 跟踪、构建�
 - **VM 内工具（`infra/tools/`）**：std Rust + musl 静态，装 tools.img 的
   `/bin/`（guest 内挂 `/tools` 注入 PATH），不进 `/tests/`、不参与判定。
 
-改完 `infra/` 后重建：`cargo xtask build`。
+改完 `infra/` 后重建：`virtuoso build`。
 哪些文件改了会进哪个镜像，见
 [Initramfs 与 Rootfs 构建指南](initramfs-rootfs-guide.md) 的文件索引与怪癖表
 （已知怪癖**不要"修复"**——都是 openEuler 内核的实测行为）。
@@ -274,8 +282,8 @@ VM 内资产（init、testcases、tools）都在 `infra/`，git 跟踪、构建�
 ## 8. AI skill 集成
 
 ```bash
-cargo xtask skill install      # kernel-dev + kernel-virtuoso skill 装入内核树
-cargo xtask skill uninstall
+virtuoso skill install      # kernel-dev + kernel-virtuoso skill 装入内核树
+virtuoso skill uninstall
 ```
 
 `kernel-dev` 教 AI 驱动测试回路 / 写用例 / 解析串口 / 分诊失败；
@@ -286,7 +294,7 @@ cargo xtask skill uninstall
 ## 9. 贡献约定
 
 - VM 内 shell 代码保持 POSIX 兼容（`init` 跑在 BusyBox `sh`，不是 bash）。
-- 新增前置条件 → 同步 `crates/builder/src/verify.rs`。
+- 新增前置条件 → 同步 `crates/builder/src/verify.rs`（doctor 的分组呈现自动跟随）。
 - harness 暴露新行为 → 配一个对应测试用例。
 - 用户可见行为变化 → 更新本文档与 `skills/kernel-dev/SKILL.md`。
 - 冻结项不许动：标记协议 v1、test 退出码语义、`QemuInvocation::argv` 基线

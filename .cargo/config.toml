@@ -1,3 +1,4 @@
+# bin 名为 virtuoso；本 alias 保留工作区肌肉记忆（详见 xtask/Cargo.toml 尾注）。
 [alias]
 xtask = "run --package xtask --"
 v = "xtask"

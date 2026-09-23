@@ -1,6 +1,7 @@
 //! CLI 编排：子命令分发与各命令组的接线。
 //!
-//! - verify  → `cli::verify`（前置检查 + firecracker 诊断）
+//! - verify  → `cli::verify`（前置检查 + firecracker 诊断；引擎投影供 doctor 共用）
+//! - doctor  → `cli::doctor`（verify 的 flutter-doctor 风格一屏简化呈现）
 //! - build   → `cli::build`（build / busybox / clean / skill）
 //! - vm      → `cli::vm`（shell / debug / test / matrix：启动、看门狗、判定接线）
 //! - parity  → `cli::parity`（make ↔ xtask 行为对照）
@@ -11,6 +12,7 @@
 
 mod build;
 mod diagnostics;
+mod doctor;
 mod docs;
 mod parity;
 mod probe;
@@ -47,6 +49,11 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
         CliCommand::Verify { arch, backend } => {
             verify::run_verify(arch.as_deref(), backend.as_deref())
         }
+        CliCommand::Doctor {
+            arch,
+            backend,
+            json,
+        } => doctor::run_doctor(arch.as_deref(), backend.as_deref(), json),
         CliCommand::Build => build::run_build(),
         CliCommand::Shell { kvm, backend } => vm::run_shell(kvm, backend.as_deref()),
         CliCommand::Debug => vm::run_debug(),

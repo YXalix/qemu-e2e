@@ -72,7 +72,7 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 重新发布：Actions 页手动 `workflow_dispatch`（默认 1.36.1），或推 `busybox-v*` tag。
 发布是幂等的：同名 asset 先删后传，release 已存在则复用。
 
-### 2.2 BusyBox 二进制的本地供给链（builder::busybox，`cargo xtask busybox`）
+### 2.2 BusyBox 二进制的本地供给链（builder::busybox，`virtuoso busybox`）
 
 按序尝试，命中即缓存到 `target/build/busybox/bin/busybox-<arch>`：
 
@@ -83,7 +83,7 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 
 发布仓库推导：`$BUSYBOX_RELEASE_REPO` > 扫描 git remotes 找 github.com 的那个。
 
-### 2.3 cpio.gz → ext4 转换（并入 `cargo xtask build`）
+### 2.3 cpio.gz → ext4 转换（并入 `virtuoso build`）
 
 ext4 打包由 builder 完成（`crates/builder/src/image.rs::make_ext4`，
 `mke2fs -d` + 自动尺寸）：先 cpio 解包成树，再按 `du -sm` + **2MB 余量**
@@ -93,10 +93,10 @@ journal 会把创建时声明的大小全部真实占满）。release 的 rootfs
 
 ---
 
-## 3. 本地构建流水线（builder，`cargo xtask build`）
+## 3. 本地构建流水线（builder，`virtuoso build`）
 
 ```
-make initrd   ⇒   cargo xtask build   （crates/builder）
+make initrd   ⇒   virtuoso build   （crates/builder）
 ```
 
 **输入**：`kernel_path`（内核源码树，找 .ko）、`arch`、`modules-boot.conf`
@@ -195,7 +195,7 @@ insmod 顺序（被依赖者在前）。缺 `.ko` 构建期报错。
 
 **加一个测试模块**（最常见）
 → 在 `virtuoso.toml` 里给对应组件加/启用 `require`（注意依赖顺序，被依赖者
-在前），`cargo xtask build`。**不要**碰 `modules-boot.conf`——那会让
+在前），`virtuoso build`。**不要**碰 `modules-boot.conf`——那会让
 initrd.img 无谓变化。
 
 **改测试流程 / 加测试用例**
@@ -236,7 +236,7 @@ POSIX/busybox-ash 语法（本地校验：
 busybox sh -n infra/init-initramfs && busybox sh -n infra/init
 
 # 1. 构建
-KERNEL_PATH=/path/to/kernel ARCH=arm64 cargo xtask build
+KERNEL_PATH=/path/to/kernel ARCH=arm64 virtuoso build
 
 # 2. 交互模式：应看到 [initramfs] 模块日志 → root 挂载 → 测试 init 横幅 → ~ # shell
 qemu-system-aarch64 -M virt -cpu cortex-a72 -m 1G -nographic -no-reboot \

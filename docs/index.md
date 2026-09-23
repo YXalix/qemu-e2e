@@ -9,9 +9,9 @@ QEMU（或 Firecracker microVM）里跑真实测试程序，用一条命令回�
 ## 最短路径
 
 ```bash
-cargo xtask verify             # 前置检查 + 类型化配置诊断
-cargo xtask test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
-cargo xtask triage             # 以 verdict 为准的判定报告
+virtuoso doctor             # 一屏环境体检（简化版 verify，✓/✗ 组件行）
+virtuoso test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
+virtuoso triage             # 以 verdict 为准的判定报告
 ```
 
 ## 文档地图
@@ -29,7 +29,7 @@ cargo xtask triage             # 以 verdict 为准的判定报告
 
 Rust workspace 是唯一行为权威：`common`（基础层）→ `builder`（构建）→
 `launcher`（启动 DSL + QEMU/Firecracker 双后端）→ `judge`（判定）→
-`guardian`（进程治理）→ `tracker`（跨 run 聚类），`xtask` 是 CLI 入口，
+`guardian`（进程治理）→ `tracker`（跨 run 聚类），入口 CLI 是 `virtuoso`（xtask crate），
 `Makefile` 是转发壳。每次运行落盘 `target/runs/<id>-<arch>/`，
 `verdict.json` 是判定的唯一事实（exit code 不是——`-no-reboot` 下内核
 panic 会让 QEMU 以 exit 0 退出）。

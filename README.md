@@ -4,7 +4,7 @@
 microVM 里跑真实测试程序，一条命令回答 *"does my patch actually work?"*。
 
 构建（builder）、启动（launcher）、判定（judge）、进程治理（guardian）、
-跨 run 聚类（tracker）全部在类型化的 Rust workspace 中，`cargo xtask` 是唯一
+跨 run 聚类（tracker）全部在类型化的 Rust workspace 中，`virtuoso` 是唯一
 CLI 入口，`Makefile` 只是转发壳。
 
 **📖 在线文档：<https://yxalix.github.io/virtuoso/>**
@@ -16,27 +16,29 @@ CLI 入口，`Makefile` 只是转发壳。
 `virtuoso.toml` 设 `kernel_path`。
 
 ```bash
-cargo xtask verify             # 前置检查 + 类型化配置诊断
-cargo xtask test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
-cargo xtask triage             # 分诊报告（判定以 verdict 为准）
+cargo install --path xtask    # 规范二进制 virtuoso 装入 PATH；工作区内 cargo xtask / cargo v 别名等价
+virtuoso doctor             # 一屏环境体检（简化版 verify，✓/✗ 组件行）
+virtuoso test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
+virtuoso triage             # 分诊报告（判定以 verdict 为准）
 ```
 
 ## 常用命令
 
 | 命令 | 作用 |
 |---|---|
-| `cargo xtask build` | 重建 initrd.img / rootfs.img / tools.img |
-| `cargo xtask shell [--kvm]` | 交互式 VM（BusyBox shell） |
-| `cargo xtask debug` | GDB stub `:1234` 挂起启动 |
-| `cargo xtask matrix [--arch a]` | 多架构矩阵（x86_64 / arm64 / riscv64） |
-| `cargo xtask probe --cmd '…'` | AI 交互通道（virtio-serial agent 命令批） |
-| `cargo xtask cluster` / `suggest` | 跨 run 失败聚类 / 补丁→最小测试集 |
-| `cargo xtask docs [--serve]` | 文档构建 / 本地预览（mdBook） |
+| `virtuoso doctor` | 一屏环境体检（简化版 verify，`--json` 机器可读） |
+| `virtuoso build` | 重建 initrd.img / rootfs.img / tools.img |
+| `virtuoso shell [--kvm]` | 交互式 VM（BusyBox shell） |
+| `virtuoso debug` | GDB stub `:1234` 挂起启动 |
+| `virtuoso matrix [--arch a]` | 多架构矩阵（x86_64 / arm64 / riscv64） |
+| `virtuoso probe --cmd '…'` | AI 交互通道（virtio-serial agent 命令批） |
+| `virtuoso cluster` / `suggest` | 跨 run 失败聚类 / 补丁→最小测试集 |
+| `virtuoso docs [--serve]` | 文档构建 / 本地预览（mdBook） |
 
 ## 文档
 
 `docs/` 是文档唯一事实来源，经 mdBook 发布到 GitHub Pages；本地
-`cargo xtask docs` 构建到 `target/book`，push main 自动更新站点。
+`virtuoso docs` 构建到 `target/book`，push main 自动更新站点。
 
 - [使用指南](docs/user-guide.md) — 上手、配置、写用例、模块、调试、组件
 - [Initramfs 与 Rootfs 构建指南](docs/initramfs-rootfs-guide.md) — 两段式引导逐行解读、"改哪个文件"手册

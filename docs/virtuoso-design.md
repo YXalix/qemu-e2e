@@ -34,12 +34,14 @@ crate 以角色名词命名（common / builder / launcher / judge / guardian / t
 xtask），名字与职责一一对应：可以直接说"让 builder 重建 initrd"、"judge 在等
 TEST_COMPLETE"。
 
+入口 crate 保留 xtask 这个 workspace 任务器传统名（工作区别名 `cargo xtask` / `cargo v`），对外的规范二进制名是 virtuoso——指挥家本人：`cargo install --path xtask` 后，PATH 上的就是它。
+
 ### 2.2 架构图
 
 ```text
                +-------------------------------------------------------------+
                |                  Developer / CI Engine                      |
-               |        cargo xtask test   ·   Claude Code (AI Skill)        |
+               |        virtuoso test   ·   Claude Code (AI Skill)        |
                +-------------------------------------------------------------+
                                               |
                                               v
@@ -47,7 +49,7 @@ TEST_COMPLETE"。
 | Host: Virtuoso Rust Workspace (Control Plane)                                     |
 |                                                                                   |
 |  +------------------------+      +------------------------+    +---------------+  |
-|  |      cargo xtask       | ---> |        builder         | -->| target/bins   |  |
+|  |      virtuoso       | ---> |        builder         | -->| target/bins   |  |
 |  |  (总编排 CLI)           |      | initrd/rootfs/tools.img |   | target/runs   |  |
 |  +------------------------+      +------------------------+    +---------------+  |
 |              |                                                                   |
@@ -86,15 +88,15 @@ TEST_COMPLETE"。
 ```text
 virtuoso/
 ├── Cargo.toml                  # Root Workspace
-├── .cargo/config.toml          # cargo xtask 别名
+├── .cargo/config.toml          # virtuoso 别名
 ├── virtuoso.toml               # 唯一配置面（模板：活动行 = 缺省常规启动配置）
-├── Makefile                    # 转发壳（make 旧习惯 → cargo xtask）
+├── Makefile                    # 转发壳（make 旧习惯 → virtuoso）
 ├── book.toml                   # mdBook 配置（src = docs/）
 ├── xtask/
 │   └── src/
 │       ├── main.rs             # clap 子命令定义
 │       ├── config.rs           # 类型化配置（virtuoso.toml 唯一配置面）
-│       ├── cli/                # verify / build / vm / probe / docs / parity / mod（分发+解析 helpers）/ diagnostics
+│       ├── cli/                # verify / doctor / build / vm / probe / docs / parity / mod（分发+解析 helpers）/ diagnostics
 │       └── runs/               # rundir（run 目录、输出泵、verdict 落盘回读）+ render（triage/runs/cluster/suggest/replay 呈现）
 ├── crates/
 │   ├── common/                 # 基础层（零依赖）：Arch 矩阵 / which / ELF / 内存单位 / 时间 / 人类可读大小
@@ -109,18 +111,19 @@ virtuoso/
 │   ├── modules-boot.conf       # 冻结 boot 基础模块集（virtio + ext4 及依赖）
 │   ├── testcases/              # C 用例（CMake，-static）+ rust/（no_std 独立 workspace）
 │   └── tools/                  # VM 内工具独立 workspace（std Rust + musl 静态；agent = virtuoso-agent）
-├── skills/                     # kernel-dev + kernel-virtuoso（cargo xtask skill install 装入内核树）
+├── skills/                     # kernel-dev + kernel-virtuoso（virtuoso skill install 装入内核树）
 └── docs/                       # 文档唯一事实来源（mdBook → gh-pages）
 ```
 
 ### 2.4 CLI
 
-`cargo xtask` 是唯一 CLI 入口（`.cargo/config.toml` 别名，另有短别名 `v`）；
+`virtuoso` 是唯一 CLI 入口（`.cargo/config.toml` 别名，另有短别名 `v`）；
 `Makefile` 的每个 target 一一转发到对应子命令，语义与退出码不变。
 
 | 命令 | 层 | 说明 |
 |---|---|---|
 | `verify [--arch a] [--backend b]` | builder | 前置检查 + 类型化配置诊断；firecracker 追加 microVM preflight |
+| `doctor [--arch a] [--backend b] [--json]` | builder | 同一检查引擎的 flutter-doctor 风格一屏体检（✓/✗/! 组件行）；报 ✗ 时用 verify 看全量 |
 | `build` | builder | 重建 initrd.img / rootfs.img / tools.img |
 | `busybox` | builder | 确保当前架构静态 BusyBox（Release 下载优先，源码兜底） |
 | `clean` | builder | 清理生成镜像与暂存目录 |
@@ -136,7 +139,7 @@ virtuoso/
 | `suggest [--diff f] [--json]` | tracker | git diff 子系统路径 → 推荐最小测试集 |
 | `skill install/uninstall` | xtask | AI skill 装入 / 移出内核树 |
 | `docs [--serve] [--open]` | xtask | mdBook 文档构建到 target/book / 本地预览 |
-| `parity <target>` | xtask | make 与 cargo xtask 行为对照（退出码三态判定） |
+| `parity <target>` | xtask | make 与 virtuoso 行为对照（退出码三态判定） |
 
 ---
 
@@ -171,7 +174,7 @@ VM 能力按组件声明，每个组件段支持：
 `ComponentPlan` 把启用组件的 require 并集（schema 固定顺序
 tools_disk→agent→vfio→numa→pmem，按首 token 去重保首个）按 stage 分区，
 builder 据此生成 rootfs `/lib/modules/modules.conf`（runtime）并把 boot 条目
-追加到 initramfs 冻结基础集之后。`cargo xtask probe` 恒开 agent 通道（强制并入
+追加到 initramfs 冻结基础集之后。`virtuoso probe` 恒开 agent 通道（强制并入
 virtio_console，不依赖组件开关）；firecracker 后端不支持 agent 与 pmem
 （启用时 WARN 忽略）。
 
@@ -197,7 +200,7 @@ pmem（DT 补丁三件套）、`qemu_opts` 原样透传、cmdline
 `console=<serial> root=/dev/vda rw init=/init loglevel=8 [auto_test]`。
 
 **argv 冻结基线**：缺省（无数据盘、无 agent）时 `QemuInvocation::argv` 输出与
-既定基线逐字一致，由单测把守；人工复核用 `QEMU=echo cargo xtask shell` 打印。
+既定基线逐字一致，由单测把守；人工复核用 `QEMU=echo virtuoso shell` 打印。
 数据盘与 agent 通道属调用方增量，追加在基线之后。
 
 **pmem（DT 途径，arm64/riscv64）**：从 guest RAM 顶部挖出 `size` 区域 ——
@@ -241,7 +244,7 @@ test_end / assert / summary / marker / panic / oops / run_end）、
 * **`ProcessGroupGuard`（RAII）**：QEMU 进程组收割，Drop / 超时 / Ctrl-C 三路径统一 KILL；pgid=0 惰性登记防自杀。
 * **`registry`**：活动进程组全局注册表 + Ctrl-C 守护（`install_ctrlc_guard`，xtask 入口装载）+ 墙钟看门狗。`Supervised` 是"登记 + 收割守卫"组合句柄，与 launcher 的 `spawn_supervised` 消除 spawn 样板。
 
-`cargo xtask test` 中途被 Ctrl-C 打断时：收割 QEMU 进程组 → 落盘已产出的 run 工件 → 以 130 退出，宿主机不残留虚拟化进程。
+`virtuoso test` 中途被 Ctrl-C 打断时：收割 QEMU 进程组 → 落盘已产出的 run 工件 → 以 130 退出，宿主机不残留虚拟化进程。
 
 ### 3.7 tracker — 跨 run 语义
 
@@ -257,10 +260,10 @@ test_end / assert / summary / marker / panic / oops / run_end）、
 | 能力 | 输入 | 输出 | 对接点 |
 |---|---|---|---|
 | **测试脚手架生成** | 自然语言描述 / git diff | C 或 no_std Rust 用例 + 构建注册 | builder 编译即用 |
-| **串口日志分诊** | `events.jsonl` / `verdict.json` | 根因假设 + 建议复现命令 | `cargo xtask triage` |
-| **失败指纹聚类** | 跨 run 的 verdict/事件流 | flaky 清单 + 失败首现 run | `cargo xtask cluster`（tracker） |
-| **补丁↔测试映射** | `git diff` + 子系统路径 | 推荐最小测试集 | `cargo xtask suggest`（tracker） |
-| **VM 内交互探测** | shell 命令批 | 结构化事件流（`agent-events.jsonl`） | `cargo xtask probe`（virtio-serial + tools/virtuoso-agent，JSON 行协议） |
+| **串口日志分诊** | `events.jsonl` / `verdict.json` | 根因假设 + 建议复现命令 | `virtuoso triage` |
+| **失败指纹聚类** | 跨 run 的 verdict/事件流 | flaky 清单 + 失败首现 run | `virtuoso cluster`（tracker） |
+| **补丁↔测试映射** | `git diff` + 子系统路径 | 推荐最小测试集 | `virtuoso suggest`（tracker） |
+| **VM 内交互探测** | shell 命令批 | 结构化事件流（`agent-events.jsonl`） | `virtuoso probe`（virtio-serial + tools/virtuoso-agent，JSON 行协议） |
 
 架构约束（安全边界）：
 

@@ -9,7 +9,7 @@ use std::process::Command;
 
 use super::code_of;
 
-/// `cargo xtask docs`：构建文档；`--serve` 起本地预览服务
+/// `virtuoso docs`：构建文档；`--serve` 起本地预览服务
 /// （默认 http://localhost:3000，改文件实时刷新）。
 pub fn run_docs(serve: bool, open: bool) -> anyhow::Result<i32> {
     let mut cmd = Command::new("mdbook");

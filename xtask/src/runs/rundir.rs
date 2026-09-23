@@ -47,7 +47,7 @@ pub fn resolve_run(project_root: &Path, spec: Option<&str>) -> anyhow::Result<Pa
     };
     path.ok_or_else(|| {
         anyhow::anyhow!(
-            "未找到运行记录（{}）——先执行一次 cargo xtask test 生成工件",
+            "未找到运行记录（{}）——先执行一次 virtuoso test 生成工件",
             root.display()
         )
     })
