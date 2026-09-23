@@ -193,11 +193,12 @@ fn test_once(
     let watchdog =
         guardian::registry::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
 
-    let status = runs::pump_child(
+    let pumped = runs::pump_child(
         &mut child,
         &run.path.join("serial.log"),
         &run.path.join("qemu-stderr.log"),
     )?;
+    let status = pumped.status;
     let duration_ms = started.elapsed().as_millis() as u64;
     let timed_out_now = timed_out.load(Ordering::SeqCst);
     timed_out.store(true, Ordering::SeqCst);
@@ -215,6 +216,10 @@ fn test_once(
         code
     };
     sup.finish();
+
+    // QEMU 自身输出与 guest 串口分离呈现：失败/超时时补看 stderr 尾部
+    // （QEMU 早夭或参数被拒的现场）；成功保持安静。
+    pumped.report_tail_on_failure(code);
 
     // ---- 判定与工件（judge + runs）----
     let meta = runs::RunMeta {

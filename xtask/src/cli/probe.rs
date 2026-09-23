@@ -79,8 +79,8 @@ pub fn run_probe(
     let serial_log = run.path.join("serial.log");
     let stderr_log = run.path.join("qemu-stderr.log");
     let pump = std::thread::spawn(move || {
-        let status = crate::runs::pump_child(&mut child, &serial_log, &stderr_log);
-        (child, status)
+        let outcome = crate::runs::pump_child(&mut child, &serial_log, &stderr_log);
+        (child, outcome)
     });
 
     let started = Instant::now();
@@ -93,12 +93,10 @@ pub fn run_probe(
     sup.kill_now();
     timed_out.store(true, Ordering::SeqCst);
     let _ = watchdog.join();
-    let pump = pump
+    let (mut child, pumped) = pump
         .join()
-        .map_err(|_| anyhow::anyhow!("serial pump thread panicked"));
-    if let Ok((mut child, _)) = pump {
-        let _ = child.wait();
-    }
+        .map_err(|_| anyhow::anyhow!("serial pump thread panicked"))?;
+    let _ = child.wait();
     sup.finish();
 
     let exit_code = match &outcome {
@@ -112,6 +110,10 @@ pub fn run_probe(
         _ if timed_out_now => judge::exit::EXIT_TIMEOUT,
         _ => 1,
     };
+    // 与 test 同一分离呈现：失败时补看 QEMU stderr 尾部，成功保持安静。
+    if let Ok(pumped) = &pumped {
+        pumped.report_tail_on_failure(exit_code);
+    }
     match &outcome {
         Ok(true) => println!("[RUN] probe: all commands passed"),
         Ok(false) => println!("[RUN] probe: some commands failed"),
