@@ -148,13 +148,15 @@ pmem 组件（启用时 WARN 忽略）。
 `docs/` 是文档唯一事实来源（mdBook：`book.toml` src 直指 docs/，`virtuoso docs`
 构建，push main 自动发布 gh-pages）；改动文档只动 `docs/`，别处引用不复制内容。
 
-- `docs/user-guide.md` —— 日常操作手册：上手、配置、写用例、模块、调试、组件
-- `docs/virtuoso-design.md` —— 总体架构、核心模块设计、冻结契约、标记协议 v1 冻结文本
-- `docs/initramfs-rootfs-guide.md` —— 两段式引导逐行解读、"改哪个文件"手册
-- `docs/troubleshooting.md` —— Symptom → Solution 速查
+- `docs/quick-start.md` —— 从零到第一个 verdict: passed（装依赖 → 构建内核 → 体检 → 首跑）
+- `docs/architecture/` —— `overview.md`（总体架构/目录结构）、`crates.md`（核心 crate 设计）、`contracts.md`（冻结契约 + 标记协议 v1 冻结文本）
+- `docs/components/` —— 组件机制 `overview.md` + 逐组件页（tools-disk / agent / vfio / numa / pmem）
+- `docs/guide/` —— `configuration.md`（virtuoso.toml 全键）、`writing-tests.md`（C/no_std Rust 用例）、`debugging.md`、`artifacts.md`（运行工件与跨 run 分析）、`ai-integration.md`（skill + probe）
+- `docs/internals/boot-pipeline.md` —— 两段式引导逐行解读、资产供给链、"改哪个文件"手册
+- `docs/cli-reference.md` —— 命令一览；`docs/troubleshooting.md` —— Symptom → Solution 速查；`docs/contributing.md` —— 贡献约定 + CI
 
 ## 已知环境怪癖（勿"修复"）
 
-见 `docs/initramfs-rootfs-guide.md` 的怪癖表：空 `/dev` 回退 mknod、sysfs dev 属性
+见 `docs/internals/boot-pipeline.md` 的怪癖表：空 `/dev` 回退 mknod、sysfs dev 属性
 为空、virtio/ext4 必须 `=m` 进 initramfs、BusyBox 裁掉 `CONFIG_TC` 等——都是
 openEuler 内核的实测行为，删掉对应 fallback 会重新踩坑。

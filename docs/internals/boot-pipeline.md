@@ -1,12 +1,10 @@
-# Initramfs 与 Rootfs 构建全流程指南
+# 两段式引导与构建流水线
 
 > **面向未来维护者（包括 AI）的完整参考**：两阶段启动的架构、资产供给链、
 > 构建流水线、VM 内执行流程，以及"常见的修改应该动哪个文件"。
 >
 > 读前提：本文假设你已经知道 QEMU `-kernel`/`-initrd`/`-drive` 是什么。
-> 相关设计背景见 `virtuoso-design.md`。
-
----
+> 相关设计背景见[总体架构](../architecture/overview.md)。
 
 ## 1. 架构总览：两阶段启动
 
@@ -40,8 +38,6 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 | 生命周期 | switch_root 后内存释放 | 持久 ext4，可 loop mount 随意改 |
 | 变更频率 | 换内核/换 boot 模块时 | 加测试、改测试流程时 |
 
----
-
 ## 2. 资产供给链
 
 ### 2.1 GitHub Release（通用产物，刻意保持稳定）
@@ -62,7 +58,6 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 - release **不含**任何测试内容（无 `/tests`、无测试 init、无模块清单）。
   模块清单由组件 require 并集生成（§5），测试是本仓库的场景注入，由本地
   构建（§3）完成。
-  测试是本仓库的场景注入，由本地构建（§3）完成。
 - rootfs 目录树：`bin/`(busybox + 全量 applet 符号链接) + `sbin usr/{bin,sbin}`
   + 空骨架目录（`proc sys dev tmp mnt etc/init.d var/run root lib`）
   + `/etc/passwd`、`/etc/group`（root）。
@@ -91,13 +86,7 @@ ext4 打包由 builder 完成（`crates/builder/src/image.rs::make_ext4`，
 journal 会把创建时声明的大小全部真实占满）。release 的 rootfs cpio.gz
 如需单独转 ext4，解包后 loop mount 即可。
 
----
-
 ## 3. 本地构建流水线（builder，`virtuoso build`）
-
-```
-make initrd   ⇒   virtuoso build   （crates/builder）
-```
 
 **输入**：`kernel_path`（内核源码树，找 .ko）、`arch`、`modules-boot.conf`
 （冻结 boot 基础集）、`virtuoso.toml` 组件 require 并集（boot 附加 + runtime）、
@@ -130,8 +119,6 @@ make initrd   ⇒   virtuoso build   （crates/builder）
 （宿主 ≠ 目标架构）不可用——这是上游供给链的老限制，cross 场景需用
 `qemu-user` 或等 CI 产物。
 
----
-
 ## 4. VM 内执行流程逐行说明
 
 ### 4.1 阶段 1：`infra/init-initramfs`（busybox ash，POSIX 语法）
@@ -160,8 +147,6 @@ exec switch_root /mnt /init            # busybox 会把 /proc /sys /dev 挂载�
   有 → 依次执行 `/tests/*`，汇总 `Test Results: N/M` +
   `TEST_COMPLETE: ALL/SOME TESTS FAILED/PASSED`（CI 断言此标记）→ `poweroff -f`。
 
----
-
 ## 5. 模块双清单规则
 
 | 清单 | 语义 | 去向 | 谁加载 | 来源 |
@@ -175,7 +160,7 @@ exec switch_root /mnt /init            # busybox 会把 /proc /sys /dev 挂载�
 `"<module> [key=val ...]"`；并集按组件固定顺序去重保首个，条目顺序即
 insmod 顺序（被依赖者在前）。缺 `.ko` 构建期报错。
 
----
+组件机制总览见[组件机制](../components/overview.md)。
 
 ## 6. 已知内核怪癖与必要 workaround（不可删！）
 
@@ -189,8 +174,6 @@ insmod 顺序（被依赖者在前）。缺 `.ko` 构建期报错。
 | C | 裸 ext4 root 直接 panic | `CONFIG_VIRTIO_BLK`/`CONFIG_EXT4_FS` = m | 两阶段架构本身（§1） |
 | D | busybox 1.36.1 `tc` applet 编不过 | 内核头 ≥ 6.8 不兼容 | CI 里 `sed` 关掉 CONFIG_TC（workflow） |
 
----
-
 ## 7. 常见修改任务手册
 
 **加一个测试模块**（最常见）
@@ -198,9 +181,18 @@ insmod 顺序（被依赖者在前）。缺 `.ko` 构建期报错。
 在前），`virtuoso build`。**不要**碰 `modules-boot.conf`——那会让
 initrd.img 无谓变化。
 
-**改测试流程 / 加测试用例**
-→ 改 `infra/init`（流程）或 `testcases/`（用例），`make initrd` 后
-`make qemu-test QEMU_TIMEOUT=30` 验证。
+**加测试用例** → 见[编写测试用例](../guide/writing-tests.md)；
+改测试流程 → 改 `infra/init`。验证：`virtuoso build && virtuoso test --timeout 30`。
+
+**VM 内环境定制**（如预分配大页）
+→ 通用定制点写 `init-hooks.sh` 片段（builder 注入 rootfs `/init-hooks.sh`，
+init 侧守卫 source，位于 devtmpfs 挂载后、insmod/agent 拉起前）：
+
+  ```sh
+  mkdir -p /mnt/huge
+  mount -t hugetlbfs nodev /mnt/huge
+  echo 20 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+  ```
 
 **改 pivot / 提前加载行为**
 → 改 `infra/init-initramfs`。守住两条：只做"够到 root="的事；
@@ -227,8 +219,6 @@ POSIX/busybox-ash 语法（本地校验：
 `init-initramfs`）以 busybox ash 为准，同样按 POSIX 写，改完先做
 `busybox sh -n` 语法校验。
 
----
-
 ## 8. 验证手册（改动后必跑）
 
 ```bash
@@ -236,19 +226,23 @@ POSIX/busybox-ash 语法（本地校验：
 busybox sh -n infra/init-initramfs && busybox sh -n infra/init
 
 # 1. 构建
-KERNEL_PATH=/path/to/kernel ARCH=arm64 virtuoso build
+virtuoso build
 
 # 2. 交互模式：应看到 [initramfs] 模块日志 → root 挂载 → 测试 init 横幅 → ~ # shell
+virtuoso shell
+
+# 3. 自动测试：应输出 TEST_COMPLETE: ALL TESTS PASSED 且干净关机（exit 0）
+virtuoso test --timeout 30
+```
+
+需要脱离 virtuoso 直接驱 QEMU 排查时（等价形态）：
+
+```bash
 qemu-system-aarch64 -M virt -cpu cortex-a72 -m 1G -nographic -no-reboot \
   -kernel $KERNEL_PATH/arch/arm64/boot/Image -initrd target/artifacts/initrd.img \
   -drive file=target/artifacts/rootfs.img,format=raw,if=virtio \
   -append "console=ttyAMA0 root=/dev/vda rw init=/init loglevel=3"
-
-# 3. 自动测试：应输出 TEST_COMPLETE: ALL TESTS PASSED 且干净关机（exit 0）
-#    （即 make qemu-test QEMU_TIMEOUT=30，AUTO_TEST 经 cmdline auto_test 传递）
 ```
-
----
 
 ## 9. 文件索引
 

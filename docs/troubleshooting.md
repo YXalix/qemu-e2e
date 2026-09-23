@@ -2,7 +2,8 @@
 
 AI/人共用的故障速查。先跑 `virtuoso triage`（或 `virtuoso triage --run <id> --json`），
 它直接给出 verdict、测试清单、panic 行与串口尾部；下文的每个症状都假设你已看过对应
-`target/runs/<id>/` 下的工件。
+`target/runs/<id>/` 下的工件。调试手段（shell / GDB / probe）见
+[调试](guide/debugging.md)。
 
 ## 超时（exit 124，verdict: timeout）
 
@@ -75,8 +76,8 @@ serial.log（`verdict: unknown`）。
 
 **Symptom**: parity 报 CI-equivalent 或 FAIL。
 **Solution**: 已知差异——GNU make 把脚本失败折叠为 2、吞掉 `exit 124`；virtuoso 保留
-真实码（设计文档 §7）。`virtuoso parity <target> --strict` 可强制严格比较。
-以 virtuoso 为权威。
+真实码（退出码语义见[冻结契约](architecture/contracts.md)）。`virtuoso parity <target> --strict`
+可强制严格比较。以 virtuoso 为权威。
 
 ## BusyBox 下载/构建失败
 
@@ -86,5 +87,5 @@ release 资产校验 ELF magic，损坏会自动回退源码构建。
 
 ## 工件占满磁盘
 
-**Solution**: 每次运行保留最近 20 次（`observability::RUNS_KEEP` 常量），
+**Solution**: 每次运行保留最近 20 次（`xtask/src/runs/rundir.rs` 的 `RUNS_KEEP`），
 `target/runs/` 在 `/target` 下随 `cargo clean` 一并清除；单次工件通常 < 1 MiB。

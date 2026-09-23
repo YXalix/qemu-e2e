@@ -5,7 +5,7 @@
 //! `config`。领域逻辑全部在库 crate（common/builder/launcher/judge/guardian/
 //! tracker）。
 //!
-//! 设计文档：docs/virtuoso-design.md
+//! 设计文档：docs/architecture/overview.md
 
 mod cli;
 mod config;

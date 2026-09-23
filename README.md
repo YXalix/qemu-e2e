@@ -11,7 +11,7 @@ CLI 入口，`Makefile` 只是转发壳。
 
 ## 快速开始
 
-前置条件与内核构建步骤见[使用指南](https://yxalix.github.io/virtuoso/user-guide.html)。
+从零上手见[快速开始](https://yxalix.github.io/virtuoso/quick-start.html)。
 装置设计为放进内核源码树内运行（如 `kernel/virtuoso/`），放别处时在
 `virtuoso.toml` 设 `kernel_path`。
 
@@ -40,10 +40,12 @@ virtuoso triage             # 分诊报告（判定以 verdict 为准）
 `docs/` 是文档唯一事实来源，经 mdBook 发布到 GitHub Pages；本地
 `virtuoso docs` 构建到 `target/book`，push main 自动更新站点。
 
-- [使用指南](docs/user-guide.md) — 上手、配置、写用例、模块、调试、组件
-- [Initramfs 与 Rootfs 构建指南](docs/initramfs-rootfs-guide.md) — 两段式引导逐行解读、"改哪个文件"手册
+- [快速开始](docs/quick-start.md) — 从零到第一个 `verdict: passed`
+- [架构](docs/architecture/overview.md) — 总体架构、核心 crate 设计、[冻结契约](docs/architecture/contracts.md)
+- [组件](docs/components/overview.md) — VM 能力组件：tools_disk / agent / vfio / numa / pmem
+- [使用指南](docs/guide/configuration.md) — 配置、[编写测试](docs/guide/writing-tests.md)、[调试](docs/guide/debugging.md)、[运行工件与跨 run 分析](docs/guide/artifacts.md)
+- [两段式引导与构建流水线](docs/internals/boot-pipeline.md) — 逐行解读、"改哪个文件"手册、内核怪癖表
 - [Troubleshooting](docs/troubleshooting.md) — Symptom → Solution 速查
-- [架构与设计](docs/virtuoso-design.md) — 总体架构、核心模块设计、冻结契约、标记协议 v1（冻结）
 - [AGENTS.md](AGENTS.md) — AI 面向的仓库地图与不变量
 
 ## License

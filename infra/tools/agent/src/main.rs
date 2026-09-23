@@ -11,7 +11,7 @@
 //! - 解析失败的行回 `{"type":"error","reason":"..."}`（无 id）。
 //!
 //! 设备发现：优先现成节点，再扫 sysfs class 并按 dev 属性 mknod 兜底
-//! （openEuler devtmpfs 留空 /dev 的实测怪癖，见 docs/initramfs-rootfs-guide.md）。
+//! （openEuler devtmpfs 留空 /dev 的实测怪癖，见 docs/internals/boot-pipeline.md）。
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
