@@ -85,7 +85,6 @@ virtuoso/
 ├── .cargo/config.toml          # virtuoso 别名
 ├── virtuoso.toml               # 唯一配置面（模板：活动行 = 缺省常规启动配置）
 ├── Makefile                    # 转发壳（make 旧习惯 → virtuoso）
-├── book.toml                   # mdBook 配置（src = docs/）
 ├── xtask/
 │   └── src/
 │       ├── main.rs             # clap 子命令定义
@@ -106,7 +105,7 @@ virtuoso/
 │   ├── testcases/              # 用例 workspace（testfw std 框架 + 用例 crate，C 体经 build.rs+cc 编入，musl 静态）
 │   └── tools/                  # VM 内工具独立 workspace（std Rust + musl 静态；agent = virtuoso-agent）
 ├── skills/                     # kernel-dev + kernel-virtuoso（virtuoso skill install 装入内核树）
-└── docs/                       # 文档唯一事实来源（mdBook → gh-pages）
+└── docs/                       # 文档唯一事实来源（mdBook → gh-pages；book.toml 内嵌，书根 = docs/）
 ```
 
 两段式引导（initramfs → rootfs）的逐行解读与构建流水线见

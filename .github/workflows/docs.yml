@@ -1,7 +1,7 @@
 name: docs
 
-# 文档站点：docs/ 是唯一事实来源，mdBook 构建后发布到 GitHub Pages（gh-pages）。
-# - 触发：main 上 docs/**、book.toml 或本工作流变更；或手动 workflow_dispatch。
+# 文档站点：docs/ 是唯一事实来源（书根 = docs/，mdBook 配置在其内），构建后发布到 GitHub Pages（gh-pages）。
+# - 触发：main 上 docs/** 或本工作流变更；或手动 workflow_dispatch。
 # - 仓库需一次性开启：Settings → Pages → Source = GitHub Actions。
 # - 线上地址：https://yxalix.github.io/virtuoso/
 # - 本地预览：virtuoso docs --serve（工作区别名 cargo xtask docs）。
@@ -9,7 +9,7 @@ name: docs
 on:
   push:
     branches: ["main"]
-    paths: ["docs/**", "book.toml", ".github/workflows/docs.yml"]
+    paths: ["docs/**", ".github/workflows/docs.yml"]
   workflow_dispatch:
 
 permissions:
@@ -38,8 +38,8 @@ jobs:
           mdbook-version: "latest"
 
       - name: Build Book
-        run: mdbook build
-        # create-missing = false：SUMMARY 引用不存在的文档会在此硬失败
+        run: mdbook build docs
+        # 书根 = docs/（docs/book.toml）；create-missing = false：SUMMARY 引用不存在的文档会在此硬失败
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3

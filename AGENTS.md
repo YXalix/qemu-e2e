@@ -65,7 +65,7 @@ builder::verify 检查引擎（新增前置条件只动引擎，两侧呈现自�
 | VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 tools.img 的 `/bin/`（VM 内挂 `/tools`，init-hooks 注入 PATH），不进 `/tests/` 不参与判定 |
 | skill | `skills/kernel-dev/`、`skills/kernel-virtuoso/` | `virtuoso skill install` 装入内核树（后者 = AI 数据接口集成） |
 | 内核开发容器 | `docker/` | **macOS 内核供给**：Dockerfile.kernel（钉死工具链+clangd）+ kernel.sh 薄壳（clone/build/export 进 named volume，规避 APFS 大小写坑）+ devcontainer.json（VS Code 打开 volume 即 clangd 全量索引）；镜像由 `.github/workflows/kernel-builder.yml` 发 ghcr |
-| 文档站 | `docs/` + 根 `book.toml` | **docs/ 是文档唯一事实来源**（mdBook src 直指它）；`cli/docs.rs` 接线 `virtuoso docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
+| 文档站 | `docs/`（含 `book.toml`） | **docs/ 是文档唯一事实来源**且文档站自包含其内（书根 = docs/，book.toml 的 src 指向自身）；`cli/docs.rs` 接线 `virtuoso docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
 
 ## 运行工件（AI 分诊数据源）
 
@@ -149,8 +149,9 @@ initramfs 的 modules-boot.conf 冻结基础集之后。`virtuoso probe` 恒开 
 
 ## 详细文档
 
-`docs/` 是文档唯一事实来源（mdBook：`book.toml` src 直指 docs/，`virtuoso docs`
-构建，push main 自动发布 gh-pages）；改动文档只动 `docs/`，别处引用不复制内容。
+`docs/` 是文档唯一事实来源（mdBook 书根 = `docs/`：`docs/book.toml` 的 src 指向
+自身，`virtuoso docs` 构建，push main 自动发布 gh-pages）；改动文档只动 `docs/`，
+别处引用不复制内容。
 
 - `docs/quick-start.md` —— 从零到第一个 verdict: passed（装依赖 → 构建内核 → 体检 → 首跑）
 - `docs/architecture/` —— `overview.md`（总体架构/目录结构）、`crates.md`（核心 crate 设计）、`contracts.md`（冻结契约 + 标记协议 v1 冻结文本）
