@@ -1,7 +1,0 @@
-[package]
-name = "testfw"
-version = "0.1.0"
-edition = "2021"
-description = "Virtuoso no_std 测试框架：标记协议 v1 的 Rust 侧宏与裸机运行器"
-
-[dependencies]

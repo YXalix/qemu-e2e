@@ -111,8 +111,10 @@ journal 会把创建时声明的大小全部真实占满）。release 的 rootfs
    无 GNU cpio/wget 依赖；mtime 恒 0 + 路径排序 → 产物确定性可复现）；
 4. **rootfs 树** = busybox 树 + `init`（测试 init）→ `/init`
    + 组件 require 并集生成 `modules.conf` → `/lib/modules/`
-   + 构建 testcases（C/CMake + Rust no_std 静态二进制 → `/tests/`；
-   非 Linux 宿主经 `builder::cross` 接 zig cc，Rust 恒 `--target <musl triple>`）
+   + 构建 testcases（全走 cargo：Rust 入口 + C 体经 build.rs+cc 编入同一
+   musl 静态二进制 → `/tests/`；`builder::cross` 全宿主注入 `CC_<TRIPLE>`
+   zig cc 包装，非 Linux 宿主另接 `CARGO_TARGET_<TRIPLE>_LINKER`，
+   Rust 恒 `--target <musl triple>`）
    + 生成 `/init-hooks.sh`（tools.img 挂载 hook，见下）
    → `mke2fs -d` 打成 ext4（尺寸 = `du -sm` + 2MB；macOS 上 mke2fs 探测
    brew keg 路径）；

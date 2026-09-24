@@ -9,11 +9,13 @@ use crate::modconf;
 
 /// 宿主工具表（按平台）。initrd 打包已原生化（builder::cpio），cpio/gzip/
 /// wget/nproc/timeout 不再是硬需求；下载层 wget 缺失时有 curl 回退。
+/// testcases 全走 cargo（build.rs + cc）后 C 编译器统一 zig cc 包装
+/// （builder::cross），cmake 随 CMake 路径退役。
 pub fn host_tools(host: HostOs) -> &'static [&'static str] {
     match host {
-        HostOs::Linux => &["tar", "make", "cmake", "find", "sed"],
+        HostOs::Linux => &["tar", "make", "zig", "find", "sed"],
         // sed 仅 busybox 源码兜底路径使用（非 Linux 宿主该路径直接拒绝）
-        HostOs::Darwin => &["tar", "make", "cmake", "find"],
+        HostOs::Darwin => &["tar", "make", "zig", "find"],
     }
 }
 

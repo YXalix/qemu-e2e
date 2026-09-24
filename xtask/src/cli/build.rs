@@ -67,9 +67,10 @@ pub fn run_clean() -> anyhow::Result<i32> {
             std::fs::remove_dir_all(&p)?;
         }
     }
-    let build = cfg.infra_dir.join("testcases/build");
-    if build.is_dir() {
-        std::fs::remove_dir_all(&build)?;
+    // 用例 workspace 构建缓存（cargo target；含改名后遗留的旧产物）
+    let testcases_target = cfg.infra_dir.join("testcases/target");
+    if testcases_target.is_dir() {
+        std::fs::remove_dir_all(&testcases_target)?;
     }
     Ok(0)
 }

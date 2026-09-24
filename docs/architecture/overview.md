@@ -103,7 +103,7 @@ virtuoso/
 │   ├── init                    # 测试 init（rootfs 的 PID 1）
 │   ├── init-initramfs          # stage-1 init（initramfs 的 PID 1：mount root= → switch_root）
 │   ├── modules-boot.conf       # 冻结 boot 基础模块集（virtio + ext4 及依赖）
-│   ├── testcases/              # C 用例（CMake，-static）+ rust/（no_std 独立 workspace）
+│   ├── testcases/              # 用例 workspace（testfw std 框架 + 用例 crate，C 体经 build.rs+cc 编入，musl 静态）
 │   └── tools/                  # VM 内工具独立 workspace（std Rust + musl 静态；agent = virtuoso-agent）
 ├── skills/                     # kernel-dev + kernel-virtuoso（virtuoso skill install 装入内核树）
 └── docs/                       # 文档唯一事实来源（mdBook → gh-pages）

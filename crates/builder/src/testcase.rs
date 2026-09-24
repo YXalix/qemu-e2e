@@ -1,9 +1,14 @@
-//! 用例编译与安装。C 路径（build-initrd.sh install_testcases + testcases/Makefile
-//! 的 Rust 接管）与 Rust 路径（Phase 3 的 no_std testfw 框架）并存：
-//! `-static` 约束在 CMakeLists 与 rust/.cargo/config.toml 中各自冻结 —— VM 内
-//! 无动态加载器，**不可放松**。交叉编译：C 走 `cross::CrossSetup` 的
-//! CMAKE_C_COMPILER（非 Linux 宿主 = zig cc 包装）；Rust 恒以
-//! `--target <arch musl triple>` 构建（rustflags 挂在 triple 上，宿主 OS 无关）。
+//! 用例编译与安装。C/Rust 用例同走一个 cargo workspace
+//! （`infra/testcases/`）：Rust 框架为入口，C 测试体由用例 crate 的
+//! build.rs（cc crate）编入同一二进制（C over Rust）。产物是 musl 静态
+//! ELF——VM 内无动态加载器，**-static 约束不可放松**；交叉编译：Rust 恒
+//! `--target <arch musl triple>`（rustflags 不挂文件，宿主 OS 无关），
+//! C 的编译器由 `cross::CrossSetup` 以 `CC_<TRIPLE>` 注入（zig cc 包装）。
+//!
+//! 降级规则（与禁止掩盖失败的冻结约束不冲突——降级是显式 WARN，不是吞错）：
+//! - 目录缺失 → 静默跳过（未采用 Rust 用例的项目不受影响）；
+//! - cargo 缺失或 musl target 未随 toolchain 安装 → WARN 跳过；
+//! - 构建失败 → **bail**（不静默）。
 
 use std::path::{Path, PathBuf};
 
@@ -12,104 +17,10 @@ use anyhow::Context;
 use crate::cross::CrossSetup;
 use crate::Progress;
 
-/// 编译 testcases 并把可执行文件装入 `<rootfs>/tests/`。
-/// 返回装入的二进制名列表。构建日志语义与脚本一致：
-/// 失败时提取 `error:` 行（否则全文）作为错误信息；成功时打印 `warning:` 行。
-pub fn install(
-    testcases_dir: &Path,
-    dest_tests: &Path,
-    cross: &CrossSetup,
-    progress: &mut Progress,
-) -> anyhow::Result<()> {
-    progress.line("Building testcases...");
-    std::fs::create_dir_all(dest_tests)?;
-    if !testcases_dir.is_dir() {
-        progress.line("  WARNING: no testcases dir");
-        return Ok(());
-    }
-
-    let build_dir = testcases_dir.join("build");
-    std::fs::create_dir_all(&build_dir)?;
-    let log_path = testcases_dir.join(".build.log");
-
-    let mut cmake = std::process::Command::new("cmake");
-    cmake.arg("..").current_dir(&build_dir);
-    if let Some(cc) = &cross.cc_wrapper {
-        // 交叉：包装脚本即 C 编译器（zig cc -target <triple>）。必须声明目标
-        // 系统，否则 Darwin 宿主的 CMake 按本机编译器探测注入 `-arch` 等
-        // Apple 旗标，zig cc 以 linux 目标拒绝。
-        cmake.arg("-DCMAKE_SYSTEM_NAME=Linux");
-        let triple = cross.target_triple();
-        cmake.arg(format!("-DCMAKE_SYSTEM_PROCESSOR={}", triple.split('-').next().unwrap_or("")));
-        cmake.arg(format!("-DCMAKE_C_COMPILER={}", cc.display()));
-    }
-    let cmake = cmake.output().context("cmake 启动失败（安装 cmake）")?;
-    let make = std::process::Command::new("make")
-        .current_dir(&build_dir)
-        .output()
-        .context("make 启动失败")?;
-    let make_log = format!(
-        "{}{}",
-        String::from_utf8_lossy(&make.stdout),
-        String::from_utf8_lossy(&make.stderr)
-    );
-    std::fs::write(
-        &log_path,
-        format!(
-            "-- cmake --\n{}{}\n-- make --\n{}",
-            String::from_utf8_lossy(&cmake.stdout),
-            String::from_utf8_lossy(&cmake.stderr),
-            make_log
-        ),
-    )?;
-
-    if !cmake.status.success() || !make.status.success() {
-        let shown: Vec<&str> = make_log.lines().filter(|l| l.contains("error:")).collect();
-        let body = if shown.is_empty() {
-            make_log.clone()
-        } else {
-            shown.join("\n")
-        };
-        anyhow::bail!("Testcases build failed\n{body}");
-    }
-    for line in make_log.lines().filter(|l| l.contains("warning:")) {
-        progress.line(line);
-    }
-    let _ = std::fs::remove_file(&log_path);
-
-    let bin_dir = build_dir.join("bin");
-    if bin_dir.is_dir() {
-        for entry in std::fs::read_dir(&bin_dir)?.flatten() {
-            let p = entry.path();
-            let is_exec = p.is_file() && is_executable(&p);
-            if is_exec {
-                let name = p.file_name().unwrap().to_string_lossy().to_string();
-                std::fs::copy(&p, dest_tests.join(&name))?;
-                common::fsutil::set_executable(&dest_tests.join(&name))?;
-                progress.line(&format!("  Test: {name}"));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn is_executable(p: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(p)
-        .map(|m| m.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
-}
-
-/// 编译 no_std Rust 用例（`testcases/rust/` 独立 workspace）并装入
-/// `<rootfs>/tests/`。产物走裸 syscall 静态链接（无 libc 依赖），标记协议
-/// 与 C 用例完全一致，init 自动发现。
-///
-/// 恒以 `--target <arch musl triple>` 构建（宿主 OS 无关；rustflags 见
-/// rust/.cargo/config.toml 的显式 triple 段）。降级规则（与禁止掩盖失败的
-/// 冻结约束不冲突——降级是显式 WARN，不是吞错）：
-/// - 目录缺失 → 静默跳过（未采用 Rust 用例的项目不受影响）；
-/// - cargo 缺失或 musl target 未随 toolchain 安装 → WARN 跳过；
-/// - 构建失败 → **bail**（与 C 路径同语义，不静默）。
+/// 编译用例 workspace（`infra/testcases/`）并装入 `<rootfs>/tests/`。
+/// 返回装入的二进制名列表无必要——init 自动发现，这里只保证产物齐全。
+/// 构建日志语义：失败时全文 bail（cargo 已含 `error:` 行），成功时打印
+/// `warning:` 行。
 pub fn install_rust(
     rust_dir: &Path,
     dest_tests: &Path,
@@ -133,7 +44,8 @@ pub fn install_rust(
         return Ok(());
     }
 
-    progress.line("Building rust testcases...");
+    progress.line("Building testcases (cargo: rust entry + C bodies via cc)...");
+    std::fs::create_dir_all(dest_tests)?;
     let target_dir = rust_dir.join("target");
     let mut cmd = std::process::Command::new("cargo");
     cmd.args(["build", "--release", "--target", triple])
@@ -148,6 +60,12 @@ pub fn install_rust(
         );
         anyhow::bail!("Rust testcases build failed\n{log}");
     }
+    for line in String::from_utf8_lossy(&out.stderr)
+        .lines()
+        .filter(|l| l.contains("warning:"))
+    {
+        progress.line(line);
+    }
 
     let mut installed = 0usize;
     let release_dir = target_dir.join(triple).join("release");
@@ -157,7 +75,7 @@ pub fn install_rust(
             std::fs::copy(&bin, dest_tests.join(&name))
                 .with_context(|| format!("拷贝 {} 失败", bin.display()))?;
             common::fsutil::set_executable(&dest_tests.join(&name))?;
-            progress.line(&format!("  Test (rust): {name}"));
+            progress.line(&format!("  Test: {name}"));
             installed += 1;
         }
     }
@@ -185,6 +103,13 @@ pub(crate) fn rust_test_binary(p: &Path) -> Option<PathBuf> {
     (!skip).then(|| p.to_path_buf())
 }
 
+fn is_executable(p: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p)
+        .map(|m| m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,8 +125,8 @@ mod tests {
             std::fs::set_permissions(&p, std::fs::Permissions::from_mode(mode)).unwrap();
             p
         };
-        let bin = mk("test-rs-example", 0o755);
-        let dep = mk("test-rs-example.d", 0o644);
+        let bin = mk("test-example", 0o755);
+        let dep = mk("test-example.d", 0o644);
         let rlib = mk("libtestfw.rlib", 0o644);
         let script = mk("build_script_build-xxxx", 0o755);
 

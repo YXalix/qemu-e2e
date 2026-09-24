@@ -1,6 +1,4 @@
-# Test build directory
-infra/testcases/build/
-infra/testcases/.*
+# testcase workspace 的 compile_commands.json（用例 build.rs 生成，clangd 用）
 infra/testcases/compile_commands.json
 
 # Build artifacts
@@ -12,11 +10,13 @@ infra/testcases/compile_commands.json
 # Rust build artifacts
 /target
 
-# Local editor settings
-.vscode/
+# Local editor settings（白名单 .vscode/settings.json：rust-analyzer 需要
+# linkedProjects 才能索引被主 workspace exclude 的 testcases workspace）
+.vscode/*
+!.vscode/settings.json
 
-# no_std rust testcase firmware build dir
-infra/testcases/rust/target/
+# testcase workspace build dir
+infra/testcases/target/
 
 # guest tools workspace build dir
 infra/tools/target/

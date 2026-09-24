@@ -1,8 +1,0 @@
-[package]
-name = "test-rs-example"
-version = "0.1.0"
-edition = "2021"
-description = "no_std Rust 用例骨架（对齐 C 侧 test-example）：新用例复制本目录改 tests 列表"
-
-[dependencies]
-testfw = { path = "../framework" }

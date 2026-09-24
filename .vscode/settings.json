@@ -1,0 +1,6 @@
+{
+    // testcases workspace 独立于主 workspace（根 Cargo.toml exclude），显式
+    // link 才能被 rust-analyzer 索引；build script 默认开启，会顺带生成
+    // compile_commands.json 供 clangd 消费 C 测试体。
+    "rust-analyzer.linkedProjects": ["infra/testcases/Cargo.toml"]
+}

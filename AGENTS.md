@@ -54,15 +54,14 @@ builder::verify 检查引擎（新增前置条件只动引擎，两侧呈现自�
 | 类型化配置 | `xtask/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `cli/diagnostics.rs` |
 | 运行工件与分诊 | `xtask/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
 | 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `platform.rs`（**`HostOs` = QEMU 平台分支唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
-| 构建器 | `crates/builder/src/` | busybox 四层供给（applet 符号链接由 `infra/busybox/applets-<ver>.txt` 名单驱动，不执行 guest ELF）/ **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / C 用例 / **no_std Rust 用例（恒 `--target <musl triple>`）** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / `cpio.rs`（**initrd 原生 newc+gzip**，无 GNU 工具依赖、确定性输出）/ `preset.rs`（**kernel_preset 预编内核供给**：pin/release 版本解析 + gh/直链下载 + SHA256 校验；供给端 = kernel-release.yml）/ `cross.rs`（**非 Linux 宿主交叉接线**：zig cc 包装 → CMAKE_C_COMPILER / CARGO_TARGET_*_LINKER）/ `image.rs`（mke2fs 探测含 brew keg 路径） / verify 检查引擎（host_tools 按平台分表；preset 激活时源码树/.ko 检查降级为 preset 语义） |
+| 构建器 | `crates/builder/src/` | busybox 四层供给（applet 符号链接由 `infra/busybox/applets-<ver>.txt` 名单驱动，不执行 guest ELF）/ **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / **用例编译（C over Rust：testfw std 框架 + 用例 crate 的 build.rs cc 编 C，恒 `--target <musl triple>`）** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / `cpio.rs`（**initrd 原生 newc+gzip**，无 GNU 工具依赖、确定性输出）/ `preset.rs`（**kernel_preset 预编内核供给**：pin/release 版本解析 + gh/直链下载 + SHA256 校验；供给端 = kernel-release.yml）/ `cross.rs`（**全宿主交叉接线**：zig cc 包装（`-target` 追加式覆盖外部 rust 风格 target）→ `CC_<TRIPLE>`（C 测试体，全宿主）/ `CARGO_TARGET_*_LINKER`（仅非 Linux 宿主））/ `image.rs`（mke2fs 探测含 brew keg 路径） / verify 检查引擎（host_tools 按平台分表，zig 替位 cmake；preset 激活时源码树/.ko 检查降级为 preset 语义） |
 | 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 冻结在**按宿主平台的双基线**：Linux=memfd+KVM、macOS=ram+HVF，accel×平台错配在 argv 构造期报错；`QEMU=echo` 可打印对照；`data_disks` = 多 virtio-blk 数据盘，缺省空；`agent_serial` = AI 通道，缺省关）/ `numa.rs` / `lib.rs`（`DataDisk` 块设备抽象） |
 | 判定引擎 | `crates/judge/src/` | `lib.rs`（标记协议 v1 解析 + `judge` 对账，panic 假通过防护）/ `report.rs`（verdict.json schema + `RunMeta`）/ `exit.rs`（**退出码语义唯一表**） |
 | 跨 run 语义 | `crates/tracker/src/lib.rs` | 失败指纹归一化/聚类/flaky/补丁映射/diff→路径；输入是最小摘要 `RunSummary`（`From<VerdictReport>` 投影），IO 在 runs 层 |
 | 报告 schema | `crates/judge/src/report.rs::VerdictReport` | verdict.json 唯一 schema（serde 结构体）：构造（`VerdictReport::build`）与回读共用 |
 | 进程治理 | `crates/guardian/src/` | `lib.rs`（`ProcessGroupGuard` RAII + `Supervised` 组合句柄）/ `registry.rs`（活动进程组注册表 + Ctrl-C 守护 + 墙钟看门狗） |
 | VM 内 init | `infra/init`、`infra/init-initramfs` | PID 1 脚本；`/init-hooks.sh` 为 builder 注入点 |
-| C 用例 | `infra/testcases/` | `test_<name>.c` + CMakeLists；`-static` 冻结 |
-| Rust 用例 | `infra/testcases/rust/` | 独立 workspace：`testfw` no_std 框架 + 用例 crate；裸 syscall 静态 ELF；`/tests/` 自动发现 |
+| 测试用例 | `infra/testcases/` | 独立 workspace（`Cargo.toml` 在目录根）：`testfw`（std）框架 + 用例 crate（C 测试体在 crate 的 `c/`，经 build.rs+cc 编入同一二进制；C 侧宏在 `framework/include/testfw.h`，FFI 落回 testfw 计数）；musl 静态 ELF（零 rustflags，与 tools 同配方）；`/tests/` 自动发现 |
 | VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 tools.img 的 `/bin/`（VM 内挂 `/tools`，init-hooks 注入 PATH），不进 `/tests/` 不参与判定 |
 | skill | `skills/kernel-dev/`、`skills/kernel-virtuoso/` | `virtuoso skill install` 装入内核树（后者 = AI 数据接口集成） |
 | 内核开发容器 | `docker/` | **macOS 内核供给**：Dockerfile.kernel（钉死工具链+clangd）+ kernel.sh 薄壳（clone/build/export 进 named volume，规避 APFS 大小写坑）+ devcontainer.json（VS Code 打开 volume 即 clangd 全量索引）；镜像由 `.github/workflows/kernel-builder.yml` 发 ghcr |
@@ -156,7 +155,7 @@ initramfs 的 modules-boot.conf 冻结基础集之后。`virtuoso probe` 恒开 
 - `docs/quick-start.md` —— 从零到第一个 verdict: passed（装依赖 → 构建内核 → 体检 → 首跑）
 - `docs/architecture/` —— `overview.md`（总体架构/目录结构）、`crates.md`（核心 crate 设计）、`contracts.md`（冻结契约 + 标记协议 v1 冻结文本）
 - `docs/components/` —— 组件机制 `overview.md` + 逐组件页（tools-disk / agent / vfio / numa / pmem）
-- `docs/guide/` —— `configuration.md`（virtuoso.toml 全键）、`kernel-preset.md`（预编内核开箱路径与供给链）、`writing-tests.md`（C/no_std Rust 用例）、`debugging.md`、`artifacts.md`（运行工件与跨 run 分析）、`ai-integration.md`（skill + probe）
+- `docs/guide/` —— `configuration.md`（virtuoso.toml 全键）、`kernel-preset.md`（预编内核开箱路径与供给链）、`writing-tests.md`（用例编写：Rust 入口 + C 体 FFI）、`debugging.md`、`artifacts.md`（运行工件与跨 run 分析）、`ai-integration.md`（skill + probe）
 - `docs/internals/boot-pipeline.md` —— 两段式引导逐行解读、资产供给链、"改哪个文件"手册
 - `docs/cli-reference.md` —— 命令一览；`docs/troubleshooting.md` —— Symptom → Solution 速查；`docs/contributing.md` —— 贡献约定 + CI
 

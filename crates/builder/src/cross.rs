@@ -1,44 +1,55 @@
-//! 非 Linux 宿主的交叉编译接线（macOS → guest Linux 静态 ELF）。
+//! 交叉编译接线（任意宿主 → guest Linux 静态 ELF）。
 //!
 //! 单一机制：`zig cc -target <triple>` 包装脚本。zig 自带 musl sysroot 与
-//! lld，任意宿主可产出静态 Linux ELF，一个依赖（`brew install zig`）覆盖
-//! C 用例与 Rust 两条线：
-//! - C 用例：包装脚本作为 `CMAKE_C_COMPILER`（CMake 编译器探测一次通过）；
-//! - Rust 用例 / tools：经 `CARGO_TARGET_<TRIPLE>_LINKER` 注入（no_std 用例
-//!   的 `-nostdlib` 链接参数在 infra/testcases/rust/.cargo/config.toml）。
+//! lld，任意宿主可产出静态 Linux ELF，一个依赖（`brew install zig` /
+//! 发行版 zig 包）覆盖 C/Rust 两条线（testcases 已全走 cargo，见
+//! testcase.rs）：
+//! - C 测试体：包装脚本经 `CC_<TRIPLE>` 注入 cc crate（用例 crate 的
+//!   build.rs 显式探测该键）；
+//! - Rust 用例 / tools：经 `CARGO_TARGET_<TRIPLE>_LINKER` 注入，zig 接管
+//!   链接时配 `-C link-self-contained=no`（rustc 交出自含 crt1/libc，由
+//!   zig 的 musl sysroot 供给，否则 `_start` 重复定义）。
 //!
-//! Linux 宿主恒返回空接线（host cc 直构，行为不变）；`CC` /
-//! `CARGO_TARGET_*_LINKER` 环境变量已设时对应接线让位（用户自带工具链优先）。
+//! 分平台差异只在链接通道：Linux 宿主不注入 LINKER/rustflags（rustc 自含
+//! musl 链接路径不变，tools 在 Linux CI 零行为变化），但 CC 通道恒尝试
+//! 注入——C 测试体需要 musl 编译器，host gcc 的 glibc 目标码与 musl libc
+//! 混链有 ABI 风险，不允许静默回退（用例 build.rs 对无接管交叉构建
+//! fail-fast；verify 的 host_tools 表把 zig 作为硬前置）。
+//! `CC` / `CARGO_TARGET_*_LINKER` / `CC_<TRIPLE>` 环境变量已设时对应接线
+//! 让位（用户自带工具链优先）。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use common::{Arch, HostOs};
 
-/// 一次构建的交叉接线（值语义；Linux 宿主全 None）。
+/// 一次构建的交叉接线（值语义；各注入通道独立让位）。
 #[derive(Debug, Default)]
 pub struct CrossSetup {
-    /// C 用例的 CMAKE_C_COMPILER（None = 无需交叉或 CC 已接管）。
-    pub cc_wrapper: Option<PathBuf>,
-    /// cargo 链接器注入（key 如 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER）。
+    /// C 测试体的 cc crate 编译器注入（key 如 CC_AARCH64_UNKNOWN_LINUX_MUSL）。
+    pub cc_env: Option<(String, String)>,
+    /// cargo 链接器注入（key 如 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER；
+    /// 仅非 Linux 宿主）。
     pub cargo_linker: Option<(String, String)>,
-    /// cargo rustflags 注入（key 如 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS）。
-    /// zig 接管链接时携带 `-C link-self-contained=no`：rustc 交出自含 crt1/libc，
-    /// 由 zig 的 musl sysroot 供给，否则两边 crt1 重复定义 `_start`。
+    /// cargo rustflags 注入（key 如 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS；
+    /// 仅非 Linux 宿主，恒配 `-C link-self-contained=no`）。
     pub cargo_rustflags: Option<(String, String)>,
-    /// 目标 triple（如 aarch64-linux-musl；Linux 宿主为空，接线全 None）。
+    /// 目标 triple（如 aarch64-linux-musl）。
     pub triple: String,
     /// 呈现用说明（progress line / 诊断）。
     pub note: Option<String>,
 }
 
 impl CrossSetup {
-    /// 目标 triple（CMake 交叉声明用；Linux 宿主为空）。
+    /// 目标 triple（诊断呈现用）。
     pub fn target_triple(&self) -> &str {
         &self.triple
     }
 
-    /// 把链接器/rustflags 注入应用到 cargo 命令（未接线 / 用户已设环境时为 no-op）。
+    /// 把 CC / 链接器 / rustflags 注入应用到 cargo 命令（未接线时为 no-op）。
     pub fn apply_to_cargo(&self, cmd: &mut std::process::Command) {
+        if let Some((k, v)) = &self.cc_env {
+            cmd.env(k, v);
+        }
         if let Some((k, v)) = &self.cargo_linker {
             cmd.env(k, v);
         }
@@ -48,65 +59,82 @@ impl CrossSetup {
     }
 }
 
-/// 解析当前宿主的交叉接线。非 Linux 宿主且 CC、zig 皆缺 → 显式报错
-/// （fail fast，好过把 Apple clang 交给 CMake 后的连串编译错）。
+/// 解析当前宿主的交叉接线。非 Linux 宿主且 zig 缺失 → 显式报错
+/// （fail fast，无 zig 无法产出任何 guest 资产）；Linux 宿主缺 zig 时不
+/// 注入 CC 通道，让 C 测试体在用例 build.rs 拿到明确报错（verify 的
+/// host_tools 表是前置闸门）。
 pub fn setup(arch: Arch, build_dir: &Path) -> anyhow::Result<CrossSetup> {
-    if HostOs::current() == HostOs::Linux {
-        return Ok(CrossSetup::default());
-    }
-    let triple = arch.zig_triple();
-    let linker_key = format!(
-        "CARGO_TARGET_{}_LINKER",
-        arch.rust_musl_triple().to_uppercase().replace('-', "_")
-    );
+    let triple = arch.zig_triple().to_string();
+    let upper = arch.rust_musl_triple().to_uppercase().replace('-', "_");
+    let linker_key = format!("CARGO_TARGET_{upper}_LINKER");
+    let rustflags_key = format!("CARGO_TARGET_{upper}_RUSTFLAGS");
+    let cc_key = format!("CC_{upper}");
+    let non_linux = HostOs::current() != HostOs::Linux;
 
-    if std::env::var_os("CC").is_some() && std::env::var_os(&linker_key).is_some() {
-        // 用户自带全套交叉工具链
+    if std::env::var_os("CC").is_some() && (!non_linux || std::env::var_os(&linker_key).is_some()) {
+        // 用户自带全套工具链：CC 交 C 测试体（build.rs 自会探测 CC），
+        // 链接交用户 linker
         return Ok(CrossSetup {
-            triple: triple.to_string(),
-            note: Some("cross: CC / CARGO_TARGET_*_LINKER 已由环境接管".into()),
+            triple,
+            note: Some("cross: CC / 链接器已由环境接管".into()),
             ..Default::default()
         });
     }
-    let Some(zig) = common::fsutil::which_path("zig") else {
-        anyhow::bail!(
-            "非 Linux 宿主编译 guest 用例需要 zig（brew install zig）\n  \
-             或自带工具链：CC=<cross-gcc> + CARGO_TARGET_{linker_key}=<linker>"
-        );
+    let Some(_zig) = common::fsutil::which_path("zig") else {
+        if non_linux {
+            anyhow::bail!(
+                "非 Linux 宿主编译 guest 资产需要 zig（brew install zig）\n  \
+                 或自带工具链：CC=<cross-cc> + CARGO_TARGET_{linker_key}=<linker>"
+            );
+        }
+        return Ok(CrossSetup {
+            triple,
+            note: Some(
+                "cross: zig 缺失——C 测试体将在构建期报错（`virtuoso verify` 可先行拦截）".into(),
+            ),
+            ..Default::default()
+        });
     };
-    let _ = zig; // PATH 命中即可，脚本内按名调用
+    let _ = _zig; // PATH 命中即可，脚本内按名调用
 
     let dir = build_dir.join("cross");
     std::fs::create_dir_all(&dir)?;
     let wrapper = dir.join(format!("zig-cc-{}.sh", arch.name()));
+    // -target 追加在 "$@" 之后：clang 驱动后者胜。cc crate 交叉时会透传
+    // rust 风格 --target=<rust triple>（zig 报 UnknownOperatingSystem，
+    // zig 0.16 实测），追加式内嵌 target 把它稳稳盖掉。
     std::fs::write(
         &wrapper,
-        format!("#!/bin/sh\n# generated by builder::cross — zig cc wrapper for {triple}\nexec zig cc -target {triple} \"$@\"\n"),
+        format!("#!/bin/sh\n# generated by builder::cross — zig cc wrapper for {triple}\nexec zig cc \"$@\" -target {triple}\n"),
     )?;
     common::fsutil::set_executable(&wrapper)?;
 
-    let rustflags_key = format!(
-        "CARGO_TARGET_{}_RUSTFLAGS",
-        arch.rust_musl_triple().to_uppercase().replace('-', "_")
-    );
-    let cargo_linker = if std::env::var_os(&linker_key).is_none() {
-        Some((linker_key.clone(), wrapper.display().to_string()))
+    let cc_env = if std::env::var_os(&cc_key).is_none() {
+        Some((cc_key, wrapper.display().to_string()))
     } else {
         None
     };
+    let (cargo_linker, cargo_rustflags) = if !non_linux {
+        (None, None)
+    } else {
+        (
+            if std::env::var_os(&linker_key).is_none() {
+                Some((linker_key.clone(), wrapper.display().to_string()))
+            } else {
+                None
+            },
+            if std::env::var_os(&rustflags_key).is_none() {
+                Some((rustflags_key, "-C link-self-contained=no".into()))
+            } else {
+                None
+            },
+        )
+    };
     Ok(CrossSetup {
-        cc_wrapper: if std::env::var_os("CC").is_none() {
-            Some(wrapper.clone())
-        } else {
-            None
-        },
+        cc_env,
         cargo_linker,
-        cargo_rustflags: if std::env::var_os(&rustflags_key).is_none() {
-            Some((rustflags_key, "-C link-self-contained=no".into()))
-        } else {
-            None
-        },
-        triple: triple.to_string(),
+        cargo_rustflags,
+        triple: triple.clone(),
         note: Some(format!("cross: zig cc -target {triple}")),
     })
 }
@@ -116,26 +144,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn linker_env_key_shape() {
+    fn env_key_shape() {
         // 与 setup() 内拼接规则互为镜像，防拼写漂移
-        let key = format!(
-            "CARGO_TARGET_{}_LINKER",
-            Arch::Arm64
-                .rust_musl_triple()
-                .to_uppercase()
-                .replace('-', "_")
+        let upper = Arch::Arm64
+            .rust_musl_triple()
+            .to_uppercase()
+            .replace('-', "_");
+        assert_eq!(
+            format!("CARGO_TARGET_{upper}_LINKER"),
+            "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER"
         );
-        assert_eq!(key, "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER");
+        assert_eq!(format!("CC_{upper}"), "CC_AARCH64_UNKNOWN_LINUX_MUSL");
     }
 
     #[test]
-    fn linux_host_setup_is_empty() {
+    fn linux_host_has_no_linker_injection() {
         // 本测试恒在 Linux 跑（CI 与开发机均为 Linux）；Darwin 分支由
-        // 真机验收覆盖
+        // 真机验收覆盖。Linux 宿主链接通道恒空（rustc 自含 musl），CC
+        // 通道取决于 zig 是否在 PATH，不在此断言。
         if HostOs::current() == HostOs::Linux {
             let s = setup(Arch::Arm64, Path::new("/tmp")).unwrap();
-            assert!(s.cc_wrapper.is_none());
             assert!(s.cargo_linker.is_none());
+            assert!(s.cargo_rustflags.is_none());
         }
+    }
+
+    #[test]
+    fn apply_to_cargo_sets_only_wired_keys() {
+        let s = CrossSetup {
+            cc_env: Some(("CC_X".into(), "wrapper".into())),
+            ..Default::default()
+        };
+        let mut cmd = std::process::Command::new("true");
+        s.apply_to_cargo(&mut cmd);
+        assert_eq!(cmd.get_envs().count(), 1);
+        assert_eq!(cmd.get_envs().next().unwrap().0, "CC_X");
     }
 }

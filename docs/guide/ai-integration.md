@@ -17,7 +17,7 @@ QEMU 以 exit 0 退出，只看退出码会假通过。
 
 | 能力 | 输入 | 输出 | 对接点 |
 |---|---|---|---|
-| **测试脚手架生成** | 自然语言描述 / git diff | C 或 no_std Rust 用例 + 构建注册 | builder 编译即用 |
+| **测试脚手架生成** | 自然语言描述 / git diff | 用例 crate（Rust 入口 + C 体） | builder 编译即用 |
 | **串口日志分诊** | `events.jsonl` / `verdict.json` | 根因假设 + 建议复现命令 | `virtuoso triage` |
 | **失败指纹聚类** | 跨 run 的 verdict/事件流 | flaky 清单 + 失败首现 run | `virtuoso cluster`（tracker） |
 | **补丁↔测试映射** | `git diff` + 子系统路径 | 推荐最小测试集 | `virtuoso suggest`（tracker） |

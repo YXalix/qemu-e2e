@@ -56,7 +56,7 @@ FAILED: <name>
 [SKIP] <message>
 [INFO] <message>
 
-# 单二进制汇总（共享 main.c 打印）
+# 单二进制汇总（init 依各用例退出码汇编）
 Test Results: <N>/<M> passed
 
 # 全局终止标记（harness 判定依据）

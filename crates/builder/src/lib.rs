@@ -110,7 +110,7 @@ pub fn build_boot_pair(
     std::fs::create_dir_all(build_dir)?;
     std::fs::create_dir_all(artifacts_dir)?;
 
-    // 交叉接线（Linux 宿主为空操作；macOS 解析 zig/CC，缺则显式报错）
+    // 交叉接线（全宿主：CC 通道供 C 测试体；LINKER/rustflags 仅非 Linux）
     let cross_setup = cross::setup(arch, build_dir)?;
     if let Some(note) = &cross_setup.note {
         progress.line(note);
@@ -176,14 +176,8 @@ pub fn build_boot_pair(
         infra_dir,
         progress,
     )?;
-    testcase::install(
-        &infra_dir.join("testcases"),
-        &rootfs_dir.join("tests"),
-        &cross_setup,
-        progress,
-    )?;
     testcase::install_rust(
-        &infra_dir.join("testcases/rust"),
+        &infra_dir.join("testcases"),
         &rootfs_dir.join("tests"),
         arch,
         &cross_setup,

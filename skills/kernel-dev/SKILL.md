@@ -14,7 +14,7 @@ You are an Expert Linux Kernel Developer and Systems Engineer. Your job is to he
 Activate this skill whenever the user asks to:
 * Implement, modify, or debug a Linux kernel feature.
 * Verify a kernel patch by booting and running tests.
-* Add a new test case (C under `infra/testcases/src/`, or no_std Rust under `infra/testcases/rust/`).
+* Add a new test case (one crate under `infra/testcases/`).
 * Declare kernel modules a capability needs (`[components.*].require` in `virtuoso.toml`).
 * Diagnose a kernel panic, boot hang, module load failure, or test-binary failure observed in QEMU serial output.
 * Switch target architecture (arm64 / x86_64 / riscv64) or use hardware accel (KVM on Linux, HVF on macOS) / GDB.
@@ -98,53 +98,50 @@ When the user changes kernel code and wants verification, execute this loop end-
 
 ## Adding a Test Case
 
-C and no_std Rust paths coexist; both speak the same serial marker protocol.
-`init` auto-discovers every binary in `/tests/` — new tests need no wiring.
+Test cases live in one cargo workspace, `infra/testcases/`: **testfw
+(std Rust) is the framework and entry point; C test bodies are compiled into
+the same static binary by the crate's `build.rs` (cc crate)**. Both sides
+speak the same serial marker protocol and share the same counters (C macros
+land in testfw via FFI). `init` auto-discovers every binary in `/tests/` —
+new tests need no wiring.
 
-### C test case
+1. **Copy** `infra/testcases/test-example/` to `test-<name>/` and add it
+   to `members` in `infra/testcases/Cargo.toml`. The crate name is the
+   binary name (it appears as `--- Running: test-<name> ---` on serial).
 
-The shared `main.c` prints a header, calls **`void run_tests(void)`** (which you define), then prints a summary.
+2. **Rust tests** — register in `TESTS` (`src/main.rs`); assert with
+   `testfw::check!` or `pass!/fail!/skip!`:
+   ```rust
+   fn my_feature() -> bool {
+       // exercise kernel via syscalls, /proc, /sys, /dev, ioctls (std available)
+       testfw::check!(/* expected condition */, "the thing happened")
+   }
+   ```
 
-1. **Create** `infra/testcases/src/test_<name>.c`:
+3. **C tests** — put `.c` files under `c/` (build.rs compiles them in);
+   assert with `PASS/FAIL/SKIP/INFO` from `testfw.h` and call them from
+   `run_c_tests` (keep the name in sync with the `extern "C"` block in
+   `main.rs`):
    ```c
-   #include "test_common.h"
+   #include "testfw.h"
 
    static void test_my_feature(void)
    {
-       printf("\nTest: my feature does the thing\n");
-       /* ... exercise kernel via syscalls, /proc, /sys, /dev, ioctls ... */
        if (/* expected condition */) PASS("the thing happened");
        else                          FAIL("expected X, got Y");
    }
 
-   void run_tests(void)
+   void run_c_tests(void)
    {
        test_my_feature();
-       /* add more test_*() calls here */
    }
    ```
-   Use **only** `PASS()`, `FAIL()`, `SKIP()`, `INFO()` from `test_common.h`. They increment the counters `main.c` reports. Do not implement your own `main()` — the shared one is linked in.
+   Never print protocol prefixes yourself (`--- Running:`, `PASSED:`,
+   `FAILED:`, `Test Results:`, `TEST_COMPLETE:`) — those belong to `init`.
+   Static linking is frozen (musl default); do not relax it — the VM has no
+   dynamic loader.
 
-2. **Register** the binary in `infra/testcases/CMakeLists.txt`:
-   ```cmake
-   add_executable(test-<name>
-       src/main.c
-       src/test_common.c
-       src/test_<name>.c
-   )
-   set_target_properties(test-<name> PROPERTIES
-       RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-   ```
-   Build flags (`-static -O2 -Wall`) come from the top of `CMakeLists.txt`; do not relax `-static` — the VM has no dynamic loader.
-
-3. **Rebuild and run** — `virtuoso build && virtuoso test --timeout 30`.
-
-### no_std Rust test case
-
-Copy the `infra/testcases/rust/test-rs-example/` crate, rename it, add it to
-`infra/testcases/rust/Cargo.toml` members, and use the `testfw` framework's
-`PASS/FAIL/SKIP/INFO` macros (semantics aligned with the C side). Bare-syscall
-static ELF; built by `virtuoso build` and dropped into `/tests/` like C tests.
+4. **Rebuild and run** — `virtuoso build && virtuoso test --timeout 30`.
 
 ### Test design rules
 

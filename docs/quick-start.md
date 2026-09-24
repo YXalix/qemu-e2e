@@ -5,10 +5,10 @@
 
 ## 1. 前置条件
 
-- 宿主工具：`rust`（stable）、`gcc` / `cmake`、`wget` / `cpio` / `gzip`、`qemu-system-*`
+- 宿主工具：`rust`（stable）、`zig`（C 测试用例编译器）、`make`、`qemu-system-*`
 - 内核源码树（本装置设计为放进内核树内运行，如 `kernel/virtuoso/`）
-- openEuler / Fedora：`sudo dnf install -y gcc make cmake wget cpio gzip qemu-system-aarch64 qemu-img`
-- Debian / Ubuntu：`sudo apt install -y gcc make cmake wget cpio gzip qemu-system-arm qemu-utils`
+- openEuler / Fedora：`sudo dnf install -y gcc make wget cpio gzip qemu-system-aarch64 qemu-img`，zig 从 [ziglang.org/download](https://ziglang.org/download/) 获取（发行版源一般不收录）
+- Debian / Ubuntu：`sudo apt install -y gcc make zig wget cpio gzip qemu-system-arm qemu-utils`
 
 > initrd 打包已 Rust 原生化（builder::cpio），`cpio` / `gzip` / `wget` 不再
 > 是硬依赖（下载层有 curl 回退）——装了更省事，没装 doctor 也不报 ✗。
@@ -16,13 +16,14 @@
 ### macOS（Apple Silicon，M1–M5）前置
 
 ```bash
-brew install qemu e2fsprogs dtc cmake zig
+brew install qemu e2fsprogs dtc zig
 ```
 
 - `qemu`：`qemu-system-aarch64` 带 HVF 加速（Apple Silicon 上近原生）；
 - `e2fsprogs`：`mke2fs`（keg-only，virtuoso 自动探测 keg 路径，无需加 PATH）；
 - `dtc`：pmem 组件的 dumpdtb/fdtput 工具（不用 pmem 可不装）；
-- `zig`：C 测试用例交叉编译（macOS 的 clang 产不出 Linux 静态 ELF）；
+- `zig`：C 测试用例交叉编译（统一编译器路径：`zig cc -target <musl triple>`
+  三宿主一致，产 Linux 静态 ELF；testcases 已全走 cargo，无需 cmake）；
 - Rust 侧另需 `rustup target add aarch64-unknown-linux-musl`。
 - vfio 直通不支持 macOS（架构性依赖 Linux IOMMU），doctor 会直接拒绝。
 

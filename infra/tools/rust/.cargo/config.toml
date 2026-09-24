@@ -1,4 +1,4 @@
-# 与 testcases/rust/.cargo/config.toml 逐字对齐的冻结约束：
+# tools 内 no_std 子项目（rt + agent 裸机形态）的冻结约束：
 # VM 内无动态加载器 —— -static；无 libc、无 crt0 —— -nostdlib -nostartfiles，
 # 入口由各工具 _start 提供，系统调用走裸 syscall（rt 提供）。
 [target.'cfg(target_os = "linux")']

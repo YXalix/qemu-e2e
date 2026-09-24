@@ -68,15 +68,15 @@ virtuoso test --replay-until-fail N    # 最多 N 轮，首个非 passed 即停
 
 ### 5. 测试脚手架生成
 
-**Rust 用例（新用例默认 Rust）**：复制
-`infra/testcases/rust/test-rs-example/` 为 `test-<name>/`，在 `TESTS` 注册
-`("名称", 函数)`，断言用 `testfw::check!`。产物为静态 ELF，构建时自动装入
-rootfs `/tests/`。
+**新用例 = 一个 crate**：复制 `infra/testcases/test-example/` 为
+`test-<name>/`，加入 workspace `members`。Rust 测试在 `TESTS` 注册
+`("名称", 函数)`，断言用 `testfw::check!`；C 测试体放 crate 的 `c/` 下
+（build.rs 经 cc 编入同一二进制），断言用 `testfw.h` 的
+`PASS/FAIL/SKIP/INFO` 宏，入口 `run_c_tests()`。产物为 musl 静态 ELF，
+构建时自动装入 rootfs `/tests/`。
 
-**C 用例（存量风格）**：`infra/testcases/src/test_<name>.c` + CMakeLists 注册；
-`PASS/FAIL/SKIP/INFO` 宏、`run_tests()` 约定不变。
-
-两者共用同一标记协议 v1，init 按 `/tests/` 下可执行文件自动发现——**不需要**改 init。
+标记协议 v1 对 Rust/C 断言一视同仁（C 宏经 FFI 落回 testfw，计数同源），
+init 按 `/tests/` 下可执行文件自动发现——**不需要**改 init。
 
 ## 判定纪律
 

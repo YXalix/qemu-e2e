@@ -51,9 +51,9 @@ AI/人共用的故障速查。先跑 `virtuoso triage`（或 `virtuoso triage --
 ## 测试二进制没出现在 /tests/
 
 **Symptom**: `Test Results: 0/0 passed` 或根本没有 `--- Running:` 行。
-**Solution**: `infra/testcases/CMakeLists.txt` 是否注册了新用例；确认 `-static`
-（禁止改成动态链接）；`virtuoso clean && virtuoso build` 重建；查
-`target/runs/<id>/build.log` 的编译告警。
+**Solution**: 用例 crate 是否加入了 `infra/testcases/Cargo.toml` 的
+`members`；确认静态链接（musl 目标缺省即静态，禁止改成动态）；`virtuoso
+clean && virtuoso build` 重建；查 `target/runs/<id>/build.log` 的编译告警。
 
 ## kernel image not found / QEMU not found
 

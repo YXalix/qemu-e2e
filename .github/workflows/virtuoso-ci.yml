@@ -63,6 +63,7 @@ jobs:
 
   # 内核 E2E（boot + 标记协议断言）需要内核树与 KVM/TCG 资源，
   # 放在自建 runner（openEuler 宿主，virtuoso.toml 指向内核树）上手动触发。
+  # runner 前置：zig（C 测试体编译器，verify 硬闸门）、内核树、KVM。
   # runner 上以 systemd 服务或 tmux 会话常驻 virtuoso（或工作区别名 cargo xtask）均可；
   # 产物 target/runs/ 会由 triage 消化，失败时把 runs 目录整体上传。
   kernel-e2e:
@@ -108,6 +109,11 @@ jobs:
 
       - name: Cargo Cache
         uses: Swatinem/rust-cache@v2
+
+      - name: Install zig
+        uses: mlugg/setup-zig@v1
+        with:
+          zig-version: 0.16.0
 
       - name: Install QEMU
         run: |

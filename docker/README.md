@@ -1,7 +1,7 @@
 # docker/ —— 容器化内核开发环境
 
 **容器只做宿主做不到的事**（编 Linux 内核 + clangd 索引环境）；测试资产
-构建（busybox / C / no_std Rust 用例）与 QEMU 运行留在宿主原生——macOS 上
+构建（busybox / 用例 workspace）与 QEMU 运行留在宿主原生——macOS 上
 QEMU 走 HVF 近原生速度，容器里没有（嵌套虚拟化不可用），塞进去等于自废。
 
 | 文件 | 作用 |

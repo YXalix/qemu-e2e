@@ -1,0 +1,11 @@
+[package]
+name = "test-example"
+version = "0.1.0"
+edition = "2021"
+description = "示例用例（Rust 入口 + C 测试体经 FFI）：新用例复制本目录改 TESTS 列表与 c/ 内容"
+
+[build-dependencies]
+cc = "1"
+
+[dependencies]
+testfw = { path = "../framework" }

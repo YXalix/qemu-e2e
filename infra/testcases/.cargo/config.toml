@@ -1,0 +1,9 @@
+# 用例 workspace 零 rustflags：std + musl 静态的完整配方就是
+# `cargo build --release --target <musl triple>`（musl 目标 crt-static 为
+# rustc 默认；rustc 自含 musl libc.a + rust-lld，与 infra/tools 同配方）。
+# 交叉接线（非 Linux 宿主的 LINKER / link-self-contained=no / CC_<TRIPLE>）
+# 全部由 builder 在 cargo 进程环境注入（见 builder::cross）——写在文件里
+# 反而会污染 IDE 侧的 host check（rust-analyzer / clangd）。
+#
+# 此文件保留作契约说明锚点；历史上曾挂 no_std 的
+# -nostdlib/-nostartfiles/link-self-contained=no，testfw 转 std 后作废。

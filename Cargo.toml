@@ -9,8 +9,8 @@ members = [
     "crates/tracker",
 ]
 exclude = [
-    # 测试用例固件是独立 workspace（no_std，裸 syscall），不进主依赖图
-    "infra/testcases/rust",
+    # 测试用例固件是独立 workspace（testfw std + C 体 build.rs 编入），不进主依赖图
+    "infra/testcases",
 ]
 
 [workspace.package]
