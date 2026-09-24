@@ -21,8 +21,31 @@ pub struct CrossSetup {
     pub cc_wrapper: Option<PathBuf>,
     /// cargo 链接器注入（key 如 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER）。
     pub cargo_linker: Option<(String, String)>,
+    /// cargo rustflags 注入（key 如 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS）。
+    /// zig 接管链接时携带 `-C link-self-contained=no`：rustc 交出自含 crt1/libc，
+    /// 由 zig 的 musl sysroot 供给，否则两边 crt1 重复定义 `_start`。
+    pub cargo_rustflags: Option<(String, String)>,
+    /// 目标 triple（如 aarch64-linux-musl；Linux 宿主为空，接线全 None）。
+    pub triple: String,
     /// 呈现用说明（progress line / 诊断）。
     pub note: Option<String>,
+}
+
+impl CrossSetup {
+    /// 目标 triple（CMake 交叉声明用；Linux 宿主为空）。
+    pub fn target_triple(&self) -> &str {
+        &self.triple
+    }
+
+    /// 把链接器/rustflags 注入应用到 cargo 命令（未接线 / 用户已设环境时为 no-op）。
+    pub fn apply_to_cargo(&self, cmd: &mut std::process::Command) {
+        if let Some((k, v)) = &self.cargo_linker {
+            cmd.env(k, v);
+        }
+        if let Some((k, v)) = &self.cargo_rustflags {
+            cmd.env(k, v);
+        }
+    }
 }
 
 /// 解析当前宿主的交叉接线。非 Linux 宿主且 CC、zig 皆缺 → 显式报错
@@ -40,6 +63,7 @@ pub fn setup(arch: Arch, build_dir: &Path) -> anyhow::Result<CrossSetup> {
     if std::env::var_os("CC").is_some() && std::env::var_os(&linker_key).is_some() {
         // 用户自带全套交叉工具链
         return Ok(CrossSetup {
+            triple: triple.to_string(),
             note: Some("cross: CC / CARGO_TARGET_*_LINKER 已由环境接管".into()),
             ..Default::default()
         });
@@ -61,6 +85,10 @@ pub fn setup(arch: Arch, build_dir: &Path) -> anyhow::Result<CrossSetup> {
     )?;
     common::fsutil::set_executable(&wrapper)?;
 
+    let rustflags_key = format!(
+        "CARGO_TARGET_{}_RUSTFLAGS",
+        arch.rust_musl_triple().to_uppercase().replace('-', "_")
+    );
     let cargo_linker = if std::env::var_os(&linker_key).is_none() {
         Some((linker_key.clone(), wrapper.display().to_string()))
     } else {
@@ -73,17 +101,14 @@ pub fn setup(arch: Arch, build_dir: &Path) -> anyhow::Result<CrossSetup> {
             None
         },
         cargo_linker,
+        cargo_rustflags: if std::env::var_os(&rustflags_key).is_none() {
+            Some((rustflags_key, "-C link-self-contained=no".into()))
+        } else {
+            None
+        },
+        triple: triple.to_string(),
         note: Some(format!("cross: zig cc -target {triple}")),
     })
-}
-
-impl CrossSetup {
-    /// 把链接器注入应用到 cargo 命令（未接线 / 用户已设环境时为 no-op）。
-    pub fn apply_to_cargo(&self, cmd: &mut std::process::Command) {
-        if let Some((k, v)) = &self.cargo_linker {
-            cmd.env(k, v);
-        }
-    }
 }
 
 #[cfg(test)]

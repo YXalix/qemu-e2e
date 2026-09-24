@@ -35,7 +35,12 @@ pub fn install(
     let mut cmake = std::process::Command::new("cmake");
     cmake.arg("..").current_dir(&build_dir);
     if let Some(cc) = &cross.cc_wrapper {
-        // 交叉：包装脚本即 C 编译器（zig cc -target <triple>）
+        // 交叉：包装脚本即 C 编译器（zig cc -target <triple>）。必须声明目标
+        // 系统，否则 Darwin 宿主的 CMake 按本机编译器探测注入 `-arch` 等
+        // Apple 旗标，zig cc 以 linux 目标拒绝。
+        cmake.arg("-DCMAKE_SYSTEM_NAME=Linux");
+        let triple = cross.target_triple();
+        cmake.arg(format!("-DCMAKE_SYSTEM_PROCESSOR={}", triple.split('-').next().unwrap_or("")));
         cmake.arg(format!("-DCMAKE_C_COMPILER={}", cc.display()));
     }
     let cmake = cmake.output().context("cmake 启动失败（安装 cmake）")?;
@@ -43,20 +48,20 @@ pub fn install(
         .current_dir(&build_dir)
         .output()
         .context("make 启动失败")?;
-    std::fs::write(
-        &log_path,
-        format!(
-            "{}{}",
-            String::from_utf8_lossy(&cmake.stdout),
-            String::from_utf8_lossy(&cmake.stderr)
-        ),
-    )?;
     let make_log = format!(
         "{}{}",
         String::from_utf8_lossy(&make.stdout),
         String::from_utf8_lossy(&make.stderr)
     );
-    std::fs::write(&log_path, &make_log)?;
+    std::fs::write(
+        &log_path,
+        format!(
+            "-- cmake --\n{}{}\n-- make --\n{}",
+            String::from_utf8_lossy(&cmake.stdout),
+            String::from_utf8_lossy(&cmake.stderr),
+            make_log
+        ),
+    )?;
 
     if !cmake.status.success() || !make.status.success() {
         let shown: Vec<&str> = make_log.lines().filter(|l| l.contains("error:")).collect();
