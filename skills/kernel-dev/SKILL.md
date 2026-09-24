@@ -27,13 +27,12 @@ Activate this skill whenever the user asks to:
 kernel/                              # kernel source root
 ├── arch/ mm/ fs/ drivers/ ...       # kernel code
 └── virtuoso/                        # this harness
-    ├── Makefile                     # thin forwarder to virtuoso
     ├── virtuoso.toml                # single config surface: globals + [components.*]
     └── infra/                       # VM-side source assets (injected into images at build)
         ├── init                     # PID 1 inside VM: mount → insmod modules.conf → run /tests/*
         ├── init-initramfs           # stage-1 PID 1: mount root= → switch_root
         ├── modules-boot.conf        # frozen boot-critical module set → initramfs
-        ├── testcases/               # C tests (CMake, -static) + rust/ (no_std workspace)
+        ├── testcases/               # test-case workspace: testfw (std) + case crates; C bodies via build.rs cc, musl-static
         └── tools/                   # VM-side tools (musl-static; agent = virtuoso-agent)
 ```
 
@@ -208,7 +207,7 @@ When a test run fails, walk this list before reporting back to the user:
 2. **`verdict: panic` / `Kernel panic` / `Oops` / `BUG:` in serial output** — copy the full stack trace plus the failing instruction; map it to source via `scripts/decode_stacktrace.sh` or `addr2line` against `vmlinux`. Do not "fix" the test until the kernel issue is understood.
 3. **`verdict: incomplete` (exit 0)** — the marker protocol never completed; treat as a failure (this catches the panic-exits-0 false pass).
 4. **Module fails to load (`insmod ...: -1 ...`)** — check `require` ordering in `virtuoso.toml`, missing exported symbols, or a tainted/CONFIG mismatch.
-5. **Test binary missing from `/tests/`** — verify the new target is in `CMakeLists.txt` (or the Rust workspace members) and that `set_target_properties(... RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)` is present; only `build/bin/*` is copied into the rootfs.
+5. **Test binary missing from `/tests/`** — verify the case crate is listed in `members` of `infra/testcases/Cargo.toml`; each member builds one musl-static binary that the builder copies into the rootfs, where `init` auto-discovers `/tests/*`.
 6. **`verdict: build_failed` / `Kernel image not found`** — wrong `arch`, kernel not built, or a missing `.ko`; `virtuoso verify` catches all of these with typed diagnostics (`virtuoso doctor` is the one-screen summary).
 
 Never paper over a failure by adding `|| true` or removing assertions. If the user pushes to skip a real failure, push back: regressions caught in the harness are exactly the ones that don't reach mainline review.

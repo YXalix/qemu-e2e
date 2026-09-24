@@ -4,7 +4,7 @@ Virtuoso 是 QEMU 内核 E2E 测试装置。**Rust workspace 是唯一行为权�
 角色名词命名——
 common（基础层）、builder（构建）、launcher（启动 DSL）、
 judge（判定 + verdict.json schema）、guardian（进程治理）、tracker（跨 run 聚类/返场）
-接管全部实际逻辑；`Makefile` 是转发壳；`infra/` 只保留源资产（init、
+接管全部实际逻辑；`infra/` 只保留源资产（init、
 init-initramfs、modules-boot.conf（冻结基础集）、testcases/、tools/、
 busybox/applets-*.txt（applet 名单冻结数据）、kernel/（preset 内核
 fragment/pin/构建脚本）），git 跟踪
@@ -50,7 +50,7 @@ builder::verify 检查引擎（新增前置条件只动引擎，两侧呈现自�
 | 领域 | 入口 | 说明 |
 |---|---|---|
 | CLI 入口 | `xtask/src/main.rs` | 规范 bin 名 `virtuoso`（工作区别名 cargo xtask / cargo v）：clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
-| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查；`engine_report` 投影与 doctor 共用）/ `doctor.rs`（一屏体检：引擎检查按前缀分组呈现）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix；accel 解析：macOS 同构缺省 HVF、`--tcg` 强制、Linux 恒 TCG）/ `probe.rs`（AI 交互通道）/ `parity.rs`（make 对照）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
+| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查；`engine_report` 投影与 doctor 共用）/ `doctor.rs`（一屏体检：引擎检查按前缀分组呈现）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix；accel 解析：macOS 同构缺省 HVF、`--tcg` 强制、Linux 恒 TCG）/ `probe.rs`（AI 交互通道）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
 | 类型化配置 | `xtask/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `cli/diagnostics.rs` |
 | 运行工件与分诊 | `xtask/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
 | 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `platform.rs`（**`HostOs` = QEMU 平台分支唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |

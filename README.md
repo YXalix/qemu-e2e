@@ -5,7 +5,7 @@
 
 构建（builder）、启动（launcher）、判定（judge）、进程治理（guardian）、
 跨 run 聚类（tracker）全部在类型化的 Rust workspace 中，`virtuoso` 是唯一
-CLI 入口，`Makefile` 只是转发壳。
+CLI 入口。
 
 **📖 在线文档：<https://yxalix.github.io/virtuoso/>**
 

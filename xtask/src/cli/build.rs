@@ -87,7 +87,7 @@ pub fn run_busybox() -> anyhow::Result<i32> {
 
 pub fn run_skill(action: SkillAction) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
-    // parity：make install-skill 要求显式设置 KERNEL_PATH（不自动探测）
+    // 安装目标必须显式指定 KERNEL_PATH（不自动探测：探测到的树未必是用户想装入的树）
     let Ok((kernel_path, explicit)) = cfg.kernel_path() else {
         eprintln!("ERROR: KERNEL_PATH is not set.");
         eprintln!("  Set kernel_path in virtuoso.toml (or the KERNEL_PATH env var).");

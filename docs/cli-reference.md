@@ -1,8 +1,7 @@
 # CLI 参考
 
 `virtuoso` 是唯一 CLI 入口（`cargo install --path xtask` 装入 PATH；工作区内
-`cargo xtask` / `cargo v` 别名等价且改源码即重编）。`Makefile` 的每个 target
-一一转发到对应子命令，语义与退出码不变（`virtuoso parity <target>` 可对照）。
+`cargo xtask` / `cargo v` 别名等价且改源码即重编）。
 
 ## 命令一览
 
@@ -26,7 +25,6 @@
 | `suggest [--diff f] [--json]` | tracker | git diff 子系统路径 → 推荐最小测试集 |
 | `skill install \| uninstall` | xtask | AI skill 装入 / 移出内核树 |
 | `docs [--serve] [--open]` | xtask | mdBook 文档构建到 target/book / 本地预览 |
-| `parity <target> [--force] [--strict]` | xtask | make 与 virtuoso 行为对照（退出码三态判定） |
 
 ## 通用行为
 

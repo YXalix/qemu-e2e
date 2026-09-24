@@ -361,7 +361,7 @@ impl ComponentPlan {
 // ---------------------------------------------------------------- toml schema
 
 /// 接受 string 或 integer 标量并统一成 String（timeout_secs = 60 与 = "60"
-/// 等价，兼容 Makefile 透传语义）。其余类型（bool/array…）在解析期报错。
+/// 等价）。其余类型（bool/array…）在解析期报错。
 #[derive(Debug, Clone)]
 struct StrVal(String);
 

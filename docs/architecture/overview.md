@@ -6,7 +6,7 @@
 
 | 原则 | 含义 |
 |---|---|
-| **Rust workspace 是唯一行为权威** | 构建与运行的全部逻辑在类型化 crate 中，`Makefile` 只是转发壳 |
+| **Rust workspace 是唯一行为权威** | 构建与运行的全部逻辑在类型化 crate 中，CLI 是唯一操作面 |
 | **类型安全** | 架构矩阵、NUMA 拓扑、组件依赖全部强类型化，非法配置解析期报错（而非运行时） |
 | **RAII 资源治理** | QEMU 进程组、临时目录在任何退出路径（错误、panic、Ctrl-C、看门狗）下被收割 |
 | **协议稳定** | 串口标记协议 v1 与退出码语义冻结（[冻结契约](contracts.md)），CI 与 AI 接口零感知演进 |
@@ -84,12 +84,11 @@ virtuoso/
 ├── Cargo.toml                  # Root Workspace
 ├── .cargo/config.toml          # virtuoso 别名
 ├── virtuoso.toml               # 唯一配置面（模板：活动行 = 缺省常规启动配置）
-├── Makefile                    # 转发壳（make 旧习惯 → virtuoso）
 ├── xtask/
 │   └── src/
 │       ├── main.rs             # clap 子命令定义
 │       ├── config.rs           # 类型化配置（virtuoso.toml 唯一配置面）
-│       ├── cli/                # verify / doctor / build / vm / probe / docs / parity / mod（分发+解析 helpers）/ diagnostics
+│       ├── cli/                # verify / doctor / build / vm / probe / docs / mod（分发+解析 helpers）/ diagnostics
 │       └── runs/               # rundir（run 目录、输出泵、verdict 落盘回读）+ render（triage/runs/cluster/suggest/replay 呈现）
 ├── crates/
 │   ├── common/                 # 基础层（零依赖）：Arch 矩阵 / which / ELF / 内存单位 / 时间 / 人类可读大小

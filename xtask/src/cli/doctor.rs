@@ -2,7 +2,7 @@
 //! 检查引擎复用 builder::verify::run_checks（语义单一来源，输入投影见
 //! cli/verify 的 engine_report），本模块只做分组呈现：引擎检查按消息前缀
 //! 归并为组件行，✓/✗/! 一眼可读；全量清单与类型化配置诊断仍是
-//! `virtuoso verify`（make verify 对等基线不动）。退出码与 verify
+//! `virtuoso verify`。退出码与 verify
 //! 一致：critical 未过 → 1。
 
 use builder::verify::{Level, Report};
@@ -420,7 +420,7 @@ mod tests {
             "initrd.img (12M)"
         );
         assert_eq!(
-            short_detail("Initrd: not built yet (run 'make initrd')"),
+            short_detail("Initrd: not built yet (run `virtuoso build`)"),
             "initrd (not built)"
         );
     }

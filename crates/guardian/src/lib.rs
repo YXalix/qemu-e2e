@@ -1,6 +1,6 @@
 //! guardian — 守护者：进程组 RAII 治理。
 //!
-//! `ProcessGroupGuard` 取代 Phase 1 Makefile 的 PID 文件 + `kill -- -PGID` hack：
+//! `ProcessGroupGuard` 取代早期 Makefile 驱动方案的 PID 文件 + `kill -- -PGID` hack：
 //! guard 存活即持有进程组，`Drop`（含 panic 展开、错误提前返回、Ctrl-C 退出路径）
 //! 保证收割，宿主机不残留 QEMU 子进程。`Supervised` 在此之上叠加活动进程组
 //! 注册表（Ctrl-C 守护收割），`registry` 承载注册表与看门狗。

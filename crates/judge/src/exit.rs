@@ -8,7 +8,7 @@ pub const EXIT_TIMEOUT: i32 = 124;
 pub const EXIT_INTERRUPTED: i32 = 130;
 
 /// 退出码归一：137（SIGKILL）按超时语义归一为 124；无退出码（信号死亡）
-/// 归一为 130；其余保留真实码（xtask 保留 make 折叠前的原始语义）。
+/// 归一为 130；其余保留真实码。
 pub fn normalize(code: Option<i32>) -> i32 {
     match code {
         Some(124) | Some(137) => EXIT_TIMEOUT,

@@ -326,7 +326,7 @@ pub fn run_checks(
                 common::fmt::human_size_ls(size)
             )));
         }
-        None => checks.push(info("Initrd: not built yet (run 'make initrd')")),
+        None => checks.push(info("Initrd: not built yet (run `virtuoso build`)")),
     }
 
     // 12. 组件平台门：vfio 架构性依赖 Linux（IOMMU + vfio-pci）；pmem 的

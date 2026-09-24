@@ -4,7 +4,6 @@
 //! - doctor  → `cli::doctor`（verify 的 flutter-doctor 风格一屏简化呈现）
 //! - build   → `cli::build`（build / busybox / clean / skill）
 //! - vm      → `cli::vm`（shell / debug / test / matrix：启动、看门狗、判定接线）
-//! - parity  → `cli::parity`（make ↔ xtask 行为对照）
 //! - docs    → `cli::docs`（mdBook 文档构建 / 本地预览）
 //! - 呈现命令 → `runs::render`（triage / runs / cluster / suggest / replay）
 //!
@@ -15,7 +14,6 @@ mod diagnostics;
 mod docs;
 mod doctor;
 mod fetch;
-mod parity;
 mod probe;
 mod verify;
 mod vm;
@@ -32,17 +30,6 @@ use crate::Command as CliCommand;
 
 pub(crate) fn code_of(status: std::process::ExitStatus) -> i32 {
     status.code().unwrap_or(130)
-}
-
-/// spawn 失败时模拟 shell 的 127（command not found），保持与 make 的退出码对齐。
-pub(crate) fn spawn_status(mut cmd: Command) -> std::io::Result<i32> {
-    cmd.status().map(code_of).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            std::io::Error::from_raw_os_error(127)
-        } else {
-            e
-        }
-    })
 }
 
 pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
@@ -81,11 +68,6 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
             runs::run_runs(&cfg, json)
         }
         CliCommand::Replay { log, json } => runs::run_replay(&log, json),
-        CliCommand::Parity {
-            target,
-            force,
-            strict,
-        } => parity::run_parity(&target, force, strict),
         CliCommand::Cluster { json } => {
             let cfg = Config::load()?;
             runs::run_cluster(&cfg, json)

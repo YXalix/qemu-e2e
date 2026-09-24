@@ -72,13 +72,6 @@ clean && virtuoso build` 重建；查 `target/runs/<id>/build.log` 的编译告�
 找最新 id）下的 `serial.log`。verdict.json 缺失时 `triage` 会自动降级为现场解析
 serial.log（`verdict: unknown`）。
 
-## make qemu-test 与 virtuoso 退出码不一致
-
-**Symptom**: parity 报 CI-equivalent 或 FAIL。
-**Solution**: 已知差异——GNU make 把脚本失败折叠为 2、吞掉 `exit 124`；virtuoso 保留
-真实码（退出码语义见[冻结契约](architecture/contracts.md)）。`virtuoso parity <target> --strict`
-可强制严格比较。以 virtuoso 为权威。
-
 ## BusyBox 下载/构建失败
 
 **Solution**: `virtuoso busybox` 走四级供应链（本地缓存 → release → 直链 →

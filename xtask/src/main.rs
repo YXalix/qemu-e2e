@@ -1,7 +1,7 @@
 //! Virtuoso — kernel E2E 虚拟化测试装置的 CLI 入口。
 //!
-//! 本 crate 只保留 clap 定义与子命令分发：命令实现在 `cli`（verify/build/vm/
-//! parity），运行工件与呈现命令在 `runs`（rundir/render），类型化配置在
+//! 本 crate 只保留 clap 定义与子命令分发：命令实现在 `cli`（verify/build/vm），
+//! 运行工件与呈现命令在 `runs`（rundir/render），类型化配置在
 //! `config`。领域逻辑全部在库 crate（common/builder/launcher/judge/guardian/
 //! tracker）。
 //!
@@ -28,7 +28,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// 前置检查：类型化配置诊断 + 构建环境检查（make verify 对等）
+    /// 前置检查：类型化配置诊断 + 构建环境检查
     Verify {
         /// 覆盖目标架构（透传为 ARCH 环境变量）
         #[arg(long)]
@@ -43,7 +43,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// 构建 initrd：C 用例 + modules.conf + BusyBox（make initrd 对等）
+    /// 构建 initrd：C 用例 + modules.conf + BusyBox
     Build,
     /// 拉取 preset 预编内核（mainline mini Image，全 =y 零模块）到
     /// target/kernel/preset —— kernel_preset = "mainline" 的开箱供给
@@ -55,7 +55,7 @@ enum Command {
         #[arg(long)]
         arch: Option<String>,
     },
-    /// 交互式启动 QEMU，落入 BusyBox shell（make qemu 对等）
+    /// 交互式启动 QEMU，落入 BusyBox shell
     Shell {
         /// KVM 加速（Linux；仅宿主与目标同构时可用）
         #[arg(long)]
@@ -64,9 +64,9 @@ enum Command {
         #[arg(long)]
         tcg: bool,
     },
-    /// 调试启动：挂起等待 GDB 连接 :1234（make qemu-debug 对等）
+    /// 调试启动：挂起等待 GDB 连接 :1234
     Debug,
-    /// CI 模式：重建 initrd → 超时运行 → 标记协议判定退出码（make qemu-test 对等）。
+    /// CI 模式：重建 initrd → 超时运行 → 标记协议判定退出码。
     /// --replay-until-fail N：对可疑 flaky 场景自动返场最多 N 次，出现首个
     /// 非 passed verdict 即停（tracker 返场语义）。
     Test {
@@ -83,12 +83,12 @@ enum Command {
         #[arg(long)]
         tcg: bool,
     },
-    /// 确保 ARCH 对应的静态 BusyBox：release 下载优先，源码兜底（make busybox 对等）
+    /// 确保 ARCH 对应的静态 BusyBox：release 下载优先，源码兜底
     #[command(name = "busybox")]
     BusyBox,
-    /// 清理生成物（make clean 对等）
+    /// 清理生成物
     Clean,
-    /// AI skill 管理（make install-skill / uninstall-skill 对等）
+    /// AI skill 管理（装入 / 移出内核树）
     Skill {
         #[command(subcommand)]
         action: SkillAction,
@@ -141,17 +141,6 @@ enum Command {
         /// 机器可读 JSON 输出
         #[arg(long)]
         json: bool,
-    },
-    /// parity 校验：同一 target 分别以 make 与 virtuoso 执行并比较退出码
-    Parity {
-        /// make target 名（verify/busybox/initrd/qemu/qemu-kvm/qemu-debug/qemu-test/disk/clean/install-skill/uninstall-skill）
-        target: String,
-        /// 允许执行会启动 VM 或触发 BusyBox 全量构建的 target
-        #[arg(long)]
-        force: bool,
-        /// 要求退出码严格相等（缺省容忍 make 将脚本失败折叠为 2 的行为）
-        #[arg(long)]
-        strict: bool,
     },
     /// 跨 run 失败指纹聚类（tracker）：flaky 用例清单 + 失败首现 run
     Cluster {
