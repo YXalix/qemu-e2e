@@ -6,9 +6,11 @@
 //! fail-fast**——防止 cc crate 静默落到 host cc，编出 glibc 目标码混链
 //! musl libc（ABI 风险），这正是统一 zig 的理由。
 //!
-//! 顺带把解析出的编译命令写成 workspace 根的 `compile_commands.json`
-//! （gitignore）：clangd 据此供 C 侧 LSP；rust-analyzer 触发的 host check
-//! 生成 host 版，恰是 IDE 想要的形态。
+//! 顺带把解析出的编译命令写成 crate 根的 `compile_commands.json`
+//! （gitignore）：clangd 沿源文件祖先目录取最近的 CDB，按 crate 天然
+//! 路由，多用例并行构建各写各的、无共享写点。rust-analyzer 触发的 host
+//! check 生成 host 版，恰是 IDE 想要的形态；旧版写 workspace 根的共享
+//! CDB（后建 crate 整文件覆写先建 crate 的条目）已退役，这里清掉存量。
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -88,7 +90,7 @@ fn c_sources(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// 把本次 C 编译的条目写成 workspace 根 `compile_commands.json`。
+/// 把本次 C 编译的条目写成 crate 根 `compile_commands.json`。
 /// 条目是给 clangd 的最小形态（编译器 + include + -std），不必与 cc
 /// crate 的完整 argv 逐字一致。
 fn write_compile_commands(workspace: &Path, manifest: &Path, compiler: Option<&Path>) {
@@ -101,13 +103,17 @@ fn write_compile_commands(workspace: &Path, manifest: &Path, compiler: Option<&P
         .join("framework")
         .join("include");
 
-    let mut sources = c_sources(&manifest.join("c"));
-    // header 也给一条条目，clangd 悬停头文件时有落点
-    sources.push(framework_include.join("testfw.h"));
+    let sources = c_sources(&manifest.join("c"));
+
+    // 旧版 workspace 根共享 CDB 的存量清理（per-crate 后不再写那里）。
+    let _ = std::fs::remove_file(workspace.join("compile_commands.json"));
+
+    if sources.is_empty() {
+        return;
+    }
 
     let entries: Vec<String> = sources
         .iter()
-        .filter(|f| f.exists())
         .map(|file| {
             let args = [
                 compiler.clone(),
@@ -129,7 +135,7 @@ fn write_compile_commands(workspace: &Path, manifest: &Path, compiler: Option<&P
             )
         })
         .collect();
-    let out = workspace.join("compile_commands.json");
+    let out = manifest.join("compile_commands.json");
     let _ = std::fs::write(&out, format!("[{}]\n", entries.join(",\n")));
 }
 

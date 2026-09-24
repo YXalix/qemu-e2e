@@ -1,5 +1,7 @@
-# testcase workspace 的 compile_commands.json（用例 build.rs 生成，clangd 用）
-infra/testcases/compile_commands.json
+# testcase 的 compile_commands.json（各用例 crate 的 build.rs 生成，clangd 用）
+infra/testcases/**/compile_commands.json
+# clangd background-index 本机缓存（跟随 CDB 落在用例 crate 根）
+.cache/
 
 # Build artifacts
 **.cmd

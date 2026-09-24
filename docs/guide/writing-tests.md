@@ -55,11 +55,12 @@ void run_c_tests(void)
 virtuoso build && virtuoso test --timeout 30
 ```
 
-> IDE：仓库自带 `.vscode/settings.json`（rust-analyzer 索引本 workspace）；
-> C 侧 clangd 吃 build.rs 生成的
-> `infra/testcases/compile_commands.json`（跑一次 `cargo check` 即
-> 生成，交叉构建会被 `virtuoso build` 覆写为 zig 条目，再跑一次
-> `cargo check` 恢复 host 版）。
+> IDE：仓库自带 `.vscode/settings.json`（rust-analyzer 索引本 workspace，
+> 并覆盖用户级 clangd 参数——`--compile-commands-dir` 会把 CDB 查找钉死
+> 在单一路径、关掉沿祖先目录的自动搜索，必须避免）；C 侧 clangd 吃各用例
+> crate 的 build.rs 生成的 `<crate>/compile_commands.json`（跑一次
+> `cargo check` 即生成，交叉构建会被 `virtuoso build` 覆写为 zig 条目，
+> 再跑一次 `cargo check` 恢复 host 版）。
 
 ## 断言输出规则
 
