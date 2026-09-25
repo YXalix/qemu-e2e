@@ -53,10 +53,12 @@ virtuoso kernel path           # → volume 的宿主可见路径（QEMU 消费�
 
 `virtuoso.toml` 里 `kernel_path` 指 **`virtuoso kernel path` 的输出**（纯宿主
 路径，virtuoso 直接读 Image 与 .ko），即可跑宿主主循环。源码查看/编辑走
-VS Code devcontainer（`devkit/docker/` 目录 Open Folder in Container，
-容器内 clangd 吃 build 产出的 CDB；构建走 `virtuoso kernel build`）。
+VS Code devcontainer（`kernel use/clone` 自动渲染 repo 根 git 忽略的
+`.devcontainer/devcontainer.json`，打开仓库「Reopen in Container」即进
+current 卷的 /ksrc；容器内 clangd 吃 build 产出的 CDB；构建走
+`virtuoso kernel build`；远端服务器经 Remote-SSH 同一流程）。
 多内核切换见 `virtuoso kernel list` / `use`（current 状态文件
-`.virtuoso/kernel-current.json`）。
+`.virtuoso/kernel-current.json`，devcontainer 随 use 自动跟随）。
 详见 [devkit/docker/README.md](../devkit/docker/README.md)。
 
 内核树也可在任何 Linux 机器上构建后 rsync 过来——virtuoso 只要求

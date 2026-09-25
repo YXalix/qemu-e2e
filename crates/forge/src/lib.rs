@@ -12,6 +12,7 @@
 //! + `virtuoso doctor / build / test`。
 
 pub mod clone;
+pub mod devcontainer;
 pub mod state;
 pub mod toolchain;
 pub mod volume;

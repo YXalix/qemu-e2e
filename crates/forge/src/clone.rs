@@ -69,7 +69,7 @@ pub fn run(
         "Kernel: cloning {url}@{ref_name} → volume {volume_name} ..."
     ));
     let script = format!(
-        "git clone --depth 1 --branch {} {} /tmp/k && cp -a /tmp/k/. /ksrc/",
+        "git clone --progress --depth 1 --branch {} {} /tmp/k && cp -a /tmp/k/. /ksrc/",
         shell_quote(ref_name),
         shell_quote(url)
     );

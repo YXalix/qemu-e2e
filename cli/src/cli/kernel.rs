@@ -68,10 +68,7 @@ fn current_volume(cfg: &Config) -> anyhow::Result<String> {
 /// 工具链镜像：env KERNEL_TOOLCHAIN_IMAGE > ghcr 发布镜像（pull 失败回落本地
 /// 构建 devkit/docker/Dockerfile.kernel）。
 fn toolchain_image() -> String {
-    std::env::var(forge::toolchain::IMAGE_ENV)
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| forge::DEFAULT_IMAGE.to_string())
+    forge::toolchain::resolve_image()
 }
 
 /// clone ref：CLI --ref > env KERNEL_REF > 缺省 master。
@@ -115,6 +112,9 @@ fn run_clone(
     println!("Kernel: cloned {url}@{ref_name} → volume {volume}（.clangd 已按 {} 配好）", arch.name());
     println!("Kernel: current → {volume} ({})", arch.name());
     println!("宿主可见路径（AI/编辑器 cwd）：{}", view.display());
+    println!(
+        "Kernel: devcontainer 已渲染 → .devcontainer/（VS Code 打开本仓库 →「Reopen in Container」进 /ksrc）"
+    );
     println!("next: virtuoso kernel defconfig && virtuoso kernel build");
     Ok(0)
 }
@@ -237,6 +237,9 @@ fn run_use(volume: &str, cli_arch: Option<&str>) -> anyhow::Result<i32> {
         },
     )?;
     println!("Kernel: current → {volume} ({})", arch.name());
+    println!(
+        "Kernel: devcontainer 已渲染 → .devcontainer/（VS Code 打开本仓库 →「Reopen in Container」进 /ksrc）"
+    );
     println!("next: virtuoso kernel path  # 宿主可见路径，指给 kernel_path（QEMU 消费）");
     Ok(0)
 }

@@ -1,10 +1,14 @@
-// VS Code Dev Container —— 打开内核源码 volume 为 workspace（源码编辑的
-// 唯一路径：clangd 在容器内索引，构建走集成终端）。
+// VS Code Dev Container —— 静态模板（缺省卷形态：workspaceMount 钉死
+// virtuoso-kernel）。`--as` 命名的多卷不进这里：`virtuoso kernel
+// use/clone` 会按 current 活动卷 + 钉死工具链镜像自动渲染 git 忽略的
+// `.devcontainer/devcontainer.json`（repo 根，VS Code 自动发现——打开
+// 仓库「Reopen in Container」即可；image 直用 ghcr 发布镜像、首进免本地
+// build）。customizations 与渲染模板保持同源，改编辑器配置两处都要动。
 //
 // 用法（macOS / Linux 通用）：
 //   1. virtuoso kernel clone <kernel-git-url>   （源码进 named volume）
-//   2. VS Code →「Dev Containers: Open Folder in Container」→ 选本 devkit/docker/ 目录
-//      （或命令面板 Reopen in Container）
+//   2a. 多卷/`--as` 命名卷：打开 repo 根 →「Reopen in Container」（吃渲染产物）
+//   2b. 缺省卷：Open Folder in Container → 选本 devkit/docker/ 目录
 //   3. workspace 即 /ksrc：clangd 在容器内索引，构建走集成终端
 //      virtuoso kernel build（或直接 make）
 //

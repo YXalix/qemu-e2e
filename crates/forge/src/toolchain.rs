@@ -15,6 +15,15 @@ use crate::{volume, Progress};
 /// 占用（启动内核镜像覆盖，config.rs）。
 pub const IMAGE_ENV: &str = "KERNEL_TOOLCHAIN_IMAGE";
 
+/// 工具链镜像解析：env `KERNEL_TOOLCHAIN_IMAGE` > ghcr 发布镜像。devcontainer
+/// 渲染与此同源（保证编辑容器与构建容器同镜像）。
+pub fn resolve_image() -> String {
+    std::env::var(IMAGE_ENV)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| crate::DEFAULT_IMAGE.to_string())
+}
+
 /// 工具链镜像是否在位（引擎权威）。
 pub fn image_present(image: &str) -> bool {
     Command::new("docker")

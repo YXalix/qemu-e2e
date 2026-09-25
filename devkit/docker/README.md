@@ -22,7 +22,7 @@ OrbStack（doctor 会守卫引擎端点）。
 | 文件 | 作用 |
 |---|---|
 | `Dockerfile.kernel` | 钉死工具链：ubuntu:24.04 + 内核构建依赖 + 三架构 gcc + clangd |
-| `devcontainer.json` | VS Code「Open Folder in Container」→ volume 为 workspace 的容器内编辑路径（源码编辑的标准入口） |
+| `devcontainer.json` | 静态模板（缺省卷形态）；`kernel use/clone` 另按 current 渲染 git 忽略的 `.devcontainer/devcontainer.json`（repo 根）—— VS Code「Reopen in Container」→ volume 为 workspace 的容器内编辑路径（源码编辑的标准入口） |
 | `.clangd` | clangd 配置模板（唯一事实来源）：`kernel clone` 时按目标架构渲染写进源码根 |
 
 ## 为什么源码在 named volume 里
@@ -40,7 +40,7 @@ OrbStack（doctor 会守卫引擎端点）。
 # 0) 依赖：brew install qemu e2fsprogs dtc zig + OrbStack（macOS）
 #    Linux: 发行版 docker + qemu
 # 1) 内核源码进 volume（+ 按架构渲染 .clangd + 写 current）
-virtuoso kernel clone https://gitee.com/openeuler/kernel.git --ref OLK-6.6
+virtuoso kernel clone https://gitcode.com/openeuler/kernel.git --ref OLK-6.6
 
 # 2) 配置 + 构建（arm64 容器 = 原生前端，其余交叉）
 virtuoso kernel defconfig openeuler_defconfig
@@ -89,12 +89,44 @@ kernel-virtuoso 两个 skill，AI 即具备驱动测试回路 / 分诊 / 写用�
 
 ## clangd / 浏览内核源码
 
-源码浏览/编辑统一走 **VS Code devcontainer**：`Dev Containers: Open Folder
-in Container…` → 选本 `devkit/docker/` 目录，workspace 即 `/ksrc`。clangd 在
-容器内跑，吃 `build` 末尾自动产出的 `/ksrc` 原始形态 `compile_commands.json`
-与源码根的 `.clangd`（clone 时按架构渲染）——跳转/补全/悬停开箱即用，
-无需任何改写步骤。改了 `.config` 或索引滞后时，在容器集成终端重跑
-`virtuoso kernel build`（或 `python3 scripts/clang-tools/gen_compile_commands.py`）。
+源码浏览/编辑统一走 **VS Code devcontainer**。`kernel use/clone` 写 current
+时自动渲染 git 忽略的 `.devcontainer/devcontainer.json`（repo 根）：
+workspaceMount 指向 current 卷，image 直用 ghcr 钉死工具链镜像——首进免本地
+build `Dockerfile.kernel`（`KERNEL_TOOLCHAIN_IMAGE` 渲染时已代入）：
+
+**打开 repo 根 → 命令面板「Dev Containers: Reopen in Container」**（VS Code
+自动发现 `.devcontainer/`，无需手动选隐藏目录），workspace 即 `/ksrc`
+（current 卷）。切卷 = `virtuoso kernel use <卷>` 后 Reopen/Rebuild Container。
+`devkit/docker/` 目录的静态模板挂缺省卷 `virtuoso-kernel`，仅在未用 `--as`
+命名时可用。落点必须叫 `.devcontainer/`——VS Code 的自动发现契约只扫打开
+工作区下的 `.devcontainer/`（或根级 devcontainer.json），放 `.virtuoso/`
+就只剩手动选隐藏目录一条路。
+
+clangd 在容器内跑，吃 `build` 末尾自动产出的 `/ksrc` 原始形态
+`compile_commands.json` 与源码根的 `.clangd`（clone 时按架构渲染）——跳转/
+补全/悬停开箱即用，无需任何改写步骤。改了 `.config` 或索引滞后时，在容器
+集成终端重跑 `virtuoso kernel build`（或
+`python3 scripts/clang-tools/gen_compile_commands.py`）。
+
+注意容器只在你显式打开 devcontainer 时常驻：`virtuoso kernel build` 等命令
+跑一次性容器（`--rm`），结束即退——「Attach to Running Container」列表里
+没有它们是正常现象，进容器走上面的 Reopen in Container。VS Code server 与
+扩展由扩展自动持久在 named volume `vscode`（挂 `/vscode`）——同版本 VS Code
+重开/重建容器不重装；别手动删这个卷。日志里每次开窗出现的「Downloading VS
+Code Server」多为例行落地：tarball 走宿主缓存（`serverCache`），真正重新
+下载只发生在 VS Code 升级（commit 变化）之后。
+
+**远端服务器（Remote-SSH）同一套流程**：先在服务器上 `virtuoso kernel
+clone/use`（渲染产物落在服务器侧 repo），本地 VS Code Remote-SSH 连上 →
+打开 repo 根 → 首次「Reopen in Container」时 Dev Containers 扩展自动装进
+远端 → 容器起在服务器上（Linux 分支：volume 本体 + KVM 同机可用）。本地
+macOS 与远端 Linux 命令面完全一致，差别只是 docker 引擎在哪台机器。
+
+**双容器共享卷的纪律**：构建容器（一次性）与 devcontainer（常驻）可同时
+挂同一卷，互不排他——但同一棵树**绝不允许两个 `make` 并行**（增量状态
+`.*.cmd`/`.o`/`Module.symvers` 无锁，会真损坏）；构建期间可以编辑源码，
+但构建结果别当真，改完增量重跑。AI/编辑器在宿主视图（ext4 直通，大小写
+保真）上直接改代码，`virtuoso kernel path` 输出即该路径。
 
 ## 镜像发布
 

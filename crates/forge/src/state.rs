@@ -2,7 +2,9 @@
 //!
 //! current 不进 `virtuoso.toml`（唯一配置面留给持久启动配置），用专门的
 //! 文件表示"当前是哪个卷"——机器本地会话状态，git 忽略；`kernel use/clone`
-//! 写入，`path/list` 与 doctor 读它。
+//! 写入，`path/list` 与 doctor 读它。写 current 的唯一入口 [`write`] 同步
+//! 渲染 `.devcontainer/devcontainer.json`（devcontainer 跟随活动卷，见
+//! `devcontainer` 模块）。
 
 use std::path::{Path, PathBuf};
 
@@ -40,10 +42,13 @@ pub fn read(project_root: &Path) -> anyhow::Result<Option<Current>> {
 }
 
 /// 写入（目录不存在则创建；父目录 `.virtuoso/` 已 git 忽略）。
+/// 同步渲染 `.devcontainer/devcontainer.json`——current 变更必须跟随，
+/// 放唯一写入口免得未来新增 writer 漏挂。
 pub fn write(project_root: &Path, current: &Current) -> anyhow::Result<()> {
     let p = path(project_root);
     std::fs::create_dir_all(p.parent().expect("状态文件必有父目录"))?;
     std::fs::write(&p, format!("{}\n", serde_json::to_string_pretty(current)?))?;
+    crate::devcontainer::render(project_root, current)?;
     Ok(())
 }
 

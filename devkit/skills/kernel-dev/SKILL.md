@@ -2,7 +2,7 @@
 name: kernel-dev
 description: Expert assistant for Linux kernel feature development and E2E verification through the in-tree Virtuoso harness. Use when writing or debugging kernel code, adding kernel-side tests, diagnosing boot/panic failures, or verifying that a patch actually works in a booted VM.
 user_invocable: true
-version: 3.0.0
+version: 3.1.0
 ---
 
 ## Core Mission & Persona
@@ -94,6 +94,50 @@ When the user changes kernel code and wants verification, execute this loop end-
 6. **Judge the run** — the verdict is authoritative, the exit code is not:
    - `virtuoso triage` prints the verdict, per-test results, panics, and the serial tail (`--json` for machine-readable output; run dir under `target/runs/`).
    - With `-no-reboot`, a kernel panic makes QEMU exit 0 — trust `verdict: passed` only.
+
+## Container Mode: Where to Edit, Where to Build
+
+When the kernel tree is supplied by the containerized pipeline (`virtuoso
+kernel clone/build`), the source of truth lives in a Docker **named volume**
+and TWO kinds of containers share it: one-shot build containers (CLI) and the
+long-lived VS Code devcontainer. This is safe — with these rules:
+
+- **Edit with full file tooling on the host-visible path.** `virtuoso kernel
+  path` prints the volume's host view (macOS = OrbStack
+  `~/OrbStack/docker/volumes/<vol>`, Linux = the volume mountpoint). It is a
+  case-faithful **ext4 passthrough** — Read/Edit/Grep and
+  `git -c safe.directory=<path> diff` (safe.directory needed: root-owned view)
+  operate directly on it, and the devcontainer's clangd sees every change
+  immediately. Never clone/checkout the tree onto a case-insensitive
+  filesystem (macOS `/tmp`, home dirs): openEuler trees contain case-collision
+  pairs (`ipt_ECN.h`/`ipt_ecn.h`, `ipt_TTL.h`/`ipt_ttl.h`) that fold silently
+  → missing-header build errors invisible to `git status`. If that already
+  happened, fix without re-downloading: bind the tree's `.git` into a
+  container (rw) and run
+  `git --git-dir=/git --work-tree=/ksrc checkout -f <ref> -- .`, then verify
+  the worktree file count matches `git ls-files`.
+- **Build via the CLI only**: `virtuoso kernel build` runs one-shot containers
+  mounting the volume at `/ksrc`. **Never run two `make`s on the same tree** —
+  the incremental state (`.*.cmd`, `.o`, `Module.symvers`) has no locking and
+  parallel makes corrupt it. Editing sources *during* a build is allowed but
+  racy (make may compile a half-edited file); rebuild incrementally after.
+- **devcontainer entry**: `kernel use/clone` renders a git-ignored
+  `.devcontainer/devcontainer.json` (repo root) that follows the current
+  volume — VS Code discovers it automatically ("Reopen in Container").
+  "Attach to Running Container" lists nothing *by design* (build containers
+  are `--rm`). The VS Code server + extensions persist in the
+  extension-managed `vscode` volume — never delete that volume.
+- **clangd config**: the rendered `/ksrc/.clangd` strips GCC-only flags from
+  the CDB (`-fconserve-stack`, `-fno-allow-store-data-races`, …); the kernel
+  tree does not track `.clangd`, so checkout/build never overwrite it. If
+  clangd spams `drv_unknown_argument`, check the file isn't empty/truncated
+  before suspecting the template; offline repro inside the container:
+  `clangd --check=<TU> --compile-commands-dir=/ksrc`.
+- **Fetching sources**: gitcode.com / atomgit.com serve the current openEuler
+  heads, but a host proxy without DIRECT rules for them throttles clones
+  ~200×; gitee resolves fast but its branches may lag. If a clone crawls,
+  bypass the proxy (`env -u http_proxy -u https_proxy …`) and point
+  `kernel_path`/current at the result via `virtuoso kernel use`.
 
 ## Adding a Test Case
 
