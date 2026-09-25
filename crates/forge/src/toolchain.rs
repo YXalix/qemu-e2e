@@ -59,9 +59,8 @@ pub fn ensure_image(image: &str, dockerfile_dir: &Path, progress: &mut Progress)
     Ok(())
 }
 
-/// 通用容器调用基座：volume 挂 /ksrc（workspace），`out` 挂 /out（export 用），
-/// 工作目录 /ksrc。
-fn base_cmd(volume: &str, image: &str, out: Option<&Path>, tty: bool) -> Command {
+/// 通用容器调用基座：volume 挂 /ksrc（workspace），工作目录 /ksrc。
+fn base_cmd(volume: &str, image: &str, tty: bool) -> Command {
     let mut cmd = Command::new("docker");
     cmd.args(["run", "--rm", "-i"]);
     if tty {
@@ -70,22 +69,13 @@ fn base_cmd(volume: &str, image: &str, out: Option<&Path>, tty: bool) -> Command
     cmd.arg("--entrypoint=")
         .arg("-v")
         .arg(format!("{volume}:/ksrc"));
-    if let Some(out) = out {
-        cmd.arg("-v").arg(format!("{}:/out", out.display()));
-    }
     cmd.arg("-w").arg("/ksrc").arg(image);
     cmd
 }
 
 /// 流式执行容器内脚本（stdio 继承，内核构建的长输出实时可见）。
-pub fn run_streaming(
-    volume: &str,
-    image: &str,
-    out: Option<&Path>,
-    envs: &[(&str, &str)],
-    script: &str,
-) -> anyhow::Result<()> {
-    let mut cmd = base_cmd(volume, image, out, false);
+pub fn run_streaming(volume: &str, image: &str, envs: &[(&str, &str)], script: &str) -> anyhow::Result<()> {
+    let mut cmd = base_cmd(volume, image, false);
     for (k, v) in envs {
         cmd.env(k, v);
     }
@@ -101,9 +91,9 @@ pub fn run_streaming(
     Ok(())
 }
 
-/// 交互式容器命令（menuconfig/shell：TTY + stdio 继承），返回退出码。
+/// 交互式容器命令（shell：TTY + stdio 继承），返回退出码。
 pub fn run_tty(volume: &str, image: &str, envs: &[(&str, &str)], argv: &[&str]) -> anyhow::Result<i32> {
-    let mut cmd = base_cmd(volume, image, None, true);
+    let mut cmd = base_cmd(volume, image, true);
     for (k, v) in envs {
         cmd.env(k, v);
     }
@@ -116,7 +106,7 @@ pub fn run_tty(volume: &str, image: &str, envs: &[(&str, &str)], argv: &[&str]) 
 
 /// 经 stdin 向容器内写文件（平台无关，不依赖宿主视图在位）。
 pub fn write_file(volume: &str, image: &str, dest: &str, content: &str) -> anyhow::Result<()> {
-    let mut child = base_cmd(volume, image, None, false)
+    let mut child = base_cmd(volume, image, false)
         .arg("sh")
         .arg("-c")
         .arg(format!("cat > {dest}"))
@@ -166,25 +156,17 @@ pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
-/// compile_commands.json 生成。脚本由内核树自带（从 .cmd 文件聚合，无需
-/// bear）：mainline/openEuler 均为 `scripts/clang-tools/gen_compile_commands.py`；
-/// 个别树可能放在 `scripts/compile_commands.py`，作回落。
+/// compile_commands.json 生成（/ksrc 原始形态，容器内 clangd/devcontainer
+/// 消费）。脚本由内核树自带（从 .cmd 文件聚合，无需 bear）：mainline/
+/// openEuler 均为 `scripts/clang-tools/gen_compile_commands.py`；个别树可能
+/// 放在 `scripts/compile_commands.py`，作回落。
 pub fn cdb_generate(volume: &str, image: &str) -> anyhow::Result<()> {
     let script = "if [ -f scripts/clang-tools/gen_compile_commands.py ]; then \
                       python3 scripts/clang-tools/gen_compile_commands.py; \
                   else \
                       python3 scripts/compile_commands.py; \
                   fi";
-    run_streaming(volume, image, None, &[], script)
-}
-
-/// 已有 CDB 原地改写为宿主路径形态（/ksrc → 宿主视图；宿主 clangd 直接消费）。
-pub fn cdb_host_form(volume: &str, image: &str, host_view: &Path) -> anyhow::Result<()> {
-    let script = format!(
-        "sed -i 's|/ksrc|{}|g' compile_commands.json",
-        shell_quote(&host_view.to_string_lossy())
-    );
-    run_streaming(volume, image, None, &[], &script)
+    run_streaming(volume, image, &[], script)
 }
 
 #[cfg(test)]

@@ -3,12 +3,13 @@
 //! 收编 `devkit/docker/kernel.sh`（薄壳退役，CI 发布的 Dockerfile.kernel
 //! 保留在原位）：源码权威存 named volume（容器侧 ext4：大小写敏感 + 构建
 //! 性能），宿主经平台视图直接读写——macOS = OrbStack 视图、Linux = volume
-//! 本体。`virtuoso kernel` 命令组投影到本 crate：clone/defconfig/menuconfig/
-//! build/cc*/export/shell + list/use（卷管理与 current 切换，活动卷状态落
-//! repo 根 `.virtuoso/kernel-current.json`）。
+//! 本体。`virtuoso kernel` 命令组投影到本 crate：clone/defconfig/build/
+//! shell + list/use（卷管理与 current 切换，活动卷状态落 repo 根
+//! `.virtuoso/kernel-current.json`）。源码编辑走 VS Code devcontainer
+//! （容器内 clangd 吃 build 产出的 /ksrc 原始形态 compile_commands.json）。
 //!
 //! 测试主循环在宿主原生跑：KERNEL_PATH 指 `virtuoso kernel path` 的输出
-//! （或 export 出的最小树）+ `virtuoso doctor / build / test`。
+//! + `virtuoso doctor / build / test`。
 
 pub mod clone;
 pub mod state;

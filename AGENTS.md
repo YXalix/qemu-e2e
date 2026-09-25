@@ -28,8 +28,8 @@ virtuoso fetch [--version v] [--arch a]
                             # 拉 preset 预编内核（mainline mini Image）→ target/kernel/preset
 virtuoso kernel clone <url> [--ref r] [--as vol] [--arch a]
                             # forge：内核源码进 named volume（+ .clangd 渲染 + 写 current）
-virtuoso kernel build       # forge：容器 make Image/modules + CDB 宿主路径形态
-                            #   （另有 defconfig/menuconfig/cc/ccr/ccfix/path/export/shell/list/use）
+virtuoso kernel build       # forge：容器 make Image/modules + CDB（/ksrc 原始形态）
+                            #   （另有 defconfig/path/shell/list/use；源码编辑走 devkit/docker devcontainer）
 virtuoso test --timeout 60  # 测试：launcher 启动 → judge 判定 → 工件落盘
 virtuoso test --replay-until-fail 5   # flaky 返场：首个非 passed 即停
 virtuoso matrix [--arch a]  # 多架构矩阵（缺省三架构，串行）
@@ -70,7 +70,7 @@ AI 的标准验证循环：`doctor → test → triage`。**判定以 triage 的
 | 测试用例 | `infra/testcases/` | 独立 workspace（`Cargo.toml` 在目录根）：`testfw`（std）框架 + 用例 crate（C 测试体在 crate 的 `c/`，经 build.rs+cc 编入同一二进制；C 侧宏在 `framework/include/testfw.h`，FFI 落回 testfw 计数）；musl 静态 ELF（零 rustflags，与 tools 同配方）；`/tests/` 自动发现 |
 | VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 tools.img 的 `/bin/`（VM 内挂 `/tools`，init-hooks 注入 PATH），不进 `/tests/` 不参与判定 |
 | skill | `devkit/skills/kernel-dev/`、`devkit/skills/kernel-virtuoso/` | `virtuoso skill install` 装入内核树（后者 = AI 数据接口集成） |
-| 内核开发容器 | `devkit/docker/` + `crates/forge/` | **双平台内核供给链**（`virtuoso kernel` 命令组，原 kernel.sh 薄壳已收编进 CLI）：Dockerfile.kernel（钉死工具链+clangd，CI 发 ghcr）+ devcontainer.json（可选容器内编辑）；源码权威在 named volume，宿主经 `virtuoso kernel path` 的平台视图直接读写——macOS=OrbStack 视图（engine_guard 守卫端点）、Linux=volume 本体；CDB 改写为宿主路径形态（.clangd 模板内嵌 forge）；多内核切换 = `kernel list/use`（current 状态文件 `.virtuoso/kernel-current.json`，git 忽略；KERNEL_VOLUME env 可临时覆盖） |
+| 内核开发容器 | `devkit/docker/` + `crates/forge/` | **双平台内核供给链**（`virtuoso kernel` 命令组，原 kernel.sh 薄壳已收编进 CLI）：Dockerfile.kernel（钉死工具链+clangd，CI 发 ghcr）+ devcontainer.json（源码编辑标准入口，容器内 clangd）；源码权威在 named volume，宿主经 `virtuoso kernel path` 的平台视图读构建产物——macOS=OrbStack 视图（engine_guard 守卫端点）、Linux=volume 本体；CDB 由 build 产出 /ksrc 原始形态（.clangd 模板唯一来源 devkit/docker/.clangd）；多内核切换 = `kernel list/use`（current 状态文件 `.virtuoso/kernel-current.json`，git 忽略；KERNEL_VOLUME env 可临时覆盖） |
 | 文档站 | `docs/`（含 `book.toml`） | **docs/ 是文档唯一事实来源**且文档站自包含其内（书根 = docs/，book.toml 的 src 指向自身）；`cli/docs.rs` 接线 `virtuoso docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
 
 ## 运行工件（AI 分诊数据源）

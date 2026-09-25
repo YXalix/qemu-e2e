@@ -1,5 +1,5 @@
-// VS Code Dev Container —— 打开内核源码 volume 为 workspace（可选的容器内
-// 编辑路径；主路径是宿主经 `virtuoso kernel path` 的宿主视图直接编辑）。
+// VS Code Dev Container —— 打开内核源码 volume 为 workspace（源码编辑的
+// 唯一路径：clangd 在容器内索引，构建走集成终端）。
 //
 // 用法（macOS / Linux 通用）：
 //   1. virtuoso kernel clone <kernel-git-url>   （源码进 named volume）
@@ -8,9 +8,8 @@
 //   3. workspace 即 /ksrc：clangd 在容器内索引，构建走集成终端
 //      virtuoso kernel build（或直接 make）
 //
-// 注意：`virtuoso kernel build`/`cc` 产出的 compile_commands.json 是宿主路径
-// 形态（宿主 clangd 消费）；容器内 clangd 需先 `virtuoso kernel ccr` 重生成
-// /ksrc 原始形态。
+// CDB：`virtuoso kernel build` 末尾自动产出 /ksrc 原始形态的
+// compile_commands.json，容器内 clangd 直接消费，无需任何改写步骤。
 //
 // 源码在 volume 里而不在 mac 目录：ext4 大小写敏感（内核构建的硬要求），
 // 且避免 APFS bind-mount 的性能损耗。编辑器体验等价（VS Code server 在

@@ -206,14 +206,7 @@ enum KernelAction {
         #[arg(long)]
         arch: Option<String>,
     },
-    /// 交互式改配置（menuconfig，TTY；.config 在 volume 内）
-    Menuconfig {
-        /// 覆盖目标架构
-        #[arg(long)]
-        arch: Option<String>,
-    },
-    /// make Image/bzImage + modules；CDB 生成并改写为宿主路径形态
-    /// （compile_commands.json，宿主 clangd 直接消费）
+    /// make Image/bzImage + modules；CDB 生成（/ksrc 原始形态，devcontainer 内 clangd 消费）
     Build {
         /// 并行作业数（缺省 = 宿主核数）
         #[arg(short = 'j', long)]
@@ -222,37 +215,11 @@ enum KernelAction {
         #[arg(long)]
         arch: Option<String>,
     },
-    /// 只重新生成 CDB（宿主路径形态，宿主 clangd 消费）
-    Cc {
-        /// 覆盖目标架构
-        #[arg(long)]
-        arch: Option<String>,
-    },
-    /// 只重新生成 CDB（容器 /ksrc 原始形态，devcontainer 内 clangd 消费）
-    Ccr {
-        /// 覆盖目标架构
-        #[arg(long)]
-        arch: Option<String>,
-    },
-    /// 现有 CDB 原地改写为宿主路径形态（增量构建后 / ccr 之后的反向操作）
-    Ccfix {
-        /// 覆盖目标架构
-        #[arg(long)]
-        arch: Option<String>,
-    },
-    /// 打印活动卷的宿主可见路径（AI/编辑器 cwd；kernel_path 指向它）
+    /// 打印活动卷的宿主可见路径（QEMU 消费 kernel_path；AI/编辑器 cwd）
     Path {
         /// 查询指定卷（缺省 = current）
         #[arg(long)]
         volume: Option<String>,
-    },
-    /// 最小树导出到 target/kernel/<dest>（无宿主视图引擎的回退路径）
-    Export {
-        /// 导出目录名（缺省 = 架构名）
-        dest: Option<String>,
-        /// 覆盖目标架构
-        #[arg(long)]
-        arch: Option<String>,
     },
     /// 容器内交互 bash
     Shell {

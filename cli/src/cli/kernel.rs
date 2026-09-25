@@ -1,9 +1,10 @@
 //! `virtuoso kernel`：容器化内核供给（forge 命令投影）。
 //!
-//! 本模块只做配置投影与进程接线：容器工具链工作流（clone/defconfig/
-//! menuconfig/build/cc*/export/shell）+ 卷管理与 current 切换（list/use），
-//! 逻辑在 forge。产出 = 宿主可见内核树（`virtuoso kernel path`），kernel_path
-//! 指向它即进入宿主原生测试主循环——verdict 管线不感知供给模式。
+//! 本模块只做配置投影与进程接线：容器工具链工作流（clone/defconfig/build/
+//! shell）+ 卷管理与 current 切换（list/use），逻辑在 forge。产出 = 宿主可见
+//! 内核树（`virtuoso kernel path`），kernel_path 指向它即进入宿主原生测试主
+//! 循环——verdict 管线不感知供给模式。源码编辑走 VS Code devcontainer（容器
+//! 内 clangd 吃 build 产出的 /ksrc 原始形态 compile_commands.json）。
 
 use std::path::PathBuf;
 
@@ -26,13 +27,8 @@ pub fn run_kernel(action: KernelAction) -> anyhow::Result<i32> {
         KernelAction::Defconfig { name, arch } => {
             run_defconfig(name.as_deref(), arch.as_deref())
         }
-        KernelAction::Menuconfig { arch } => run_menuconfig(arch.as_deref()),
         KernelAction::Build { jobs, arch } => run_build(jobs, arch.as_deref()),
-        KernelAction::Cc { arch } => run_cc(arch.as_deref()),
-        KernelAction::Ccr { arch } => run_ccr(arch.as_deref()),
-        KernelAction::Ccfix { arch } => run_ccfix(arch.as_deref()),
         KernelAction::Path { volume } => run_path(volume.as_deref()),
-        KernelAction::Export { dest, arch } => run_export(dest.as_deref(), arch.as_deref()),
         KernelAction::Shell { arch } => run_shell(arch.as_deref()),
         KernelAction::List => run_list(),
         KernelAction::Use { volume, arch } => run_use(&volume, arch.as_deref()),
@@ -132,23 +128,10 @@ fn run_defconfig(name: Option<&str>, cli_arch: Option<&str>) -> anyhow::Result<i
     forge::toolchain::run_streaming(
         &volume,
         &toolchain_image(),
-        None,
         &forge::toolchain::make_env(arch),
         &format!("make {}", forge::toolchain::shell_quote(target)),
     )?;
     Ok(0)
-}
-
-fn run_menuconfig(cli_arch: Option<&str>) -> anyhow::Result<i32> {
-    let cfg = Config::load()?;
-    let volume = current_volume(&cfg)?;
-    let arch = kernel_arch(&cfg, cli_arch)?;
-    forge::toolchain::run_tty(
-        &volume,
-        &toolchain_image(),
-        &forge::toolchain::make_env(arch),
-        &["make", "menuconfig"],
-    )
 }
 
 fn run_build(jobs: Option<usize>, cli_arch: Option<&str>) -> anyhow::Result<i32> {
@@ -164,47 +147,13 @@ fn run_build(jobs: Option<usize>, cli_arch: Option<&str>) -> anyhow::Result<i32>
     forge::toolchain::run_streaming(
         &volume,
         &toolchain_image(),
-        None,
         &forge::toolchain::make_env(arch),
         &format!("make -j{jobs} {image_target} modules"),
     )?;
     forge::toolchain::cdb_generate(&volume, &toolchain_image())?;
-    let view = forge::volume::host_view(&volume)?;
-    forge::toolchain::cdb_host_form(&volume, &toolchain_image(), &view)?;
     println!(
-        "Kernel: built {image_target} + modules；compile_commands.json 已按宿主路径改写（宿主 clangd 直接消费）"
+        "Kernel: built {image_target} + modules；compile_commands.json 已生成（/ksrc 原始形态，devcontainer 内 clangd 消费）"
     );
-    Ok(0)
-}
-
-fn run_cc(cli_arch: Option<&str>) -> anyhow::Result<i32> {
-    let cfg = Config::load()?;
-    let volume = current_volume(&cfg)?;
-    kernel_arch(&cfg, cli_arch)?; // 校验 arch 解析（CDB 渲染不依赖，但保持命令语义一致）
-    let image = toolchain_image();
-    forge::toolchain::cdb_generate(&volume, &image)?;
-    let view = forge::volume::host_view(&volume)?;
-    forge::toolchain::cdb_host_form(&volume, &image, &view)?;
-    println!("Kernel: compile_commands.json 已生成（宿主路径形态）");
-    Ok(0)
-}
-
-fn run_ccr(cli_arch: Option<&str>) -> anyhow::Result<i32> {
-    let cfg = Config::load()?;
-    let volume = current_volume(&cfg)?;
-    kernel_arch(&cfg, cli_arch)?;
-    forge::toolchain::cdb_generate(&volume, &toolchain_image())?;
-    println!("Kernel: compile_commands.json 已生成（/ksrc 原始形态，devcontainer 消费）");
-    Ok(0)
-}
-
-fn run_ccfix(cli_arch: Option<&str>) -> anyhow::Result<i32> {
-    let cfg = Config::load()?;
-    let volume = current_volume(&cfg)?;
-    kernel_arch(&cfg, cli_arch)?;
-    let view = forge::volume::host_view(&volume)?;
-    forge::toolchain::cdb_host_form(&volume, &toolchain_image(), &view)?;
-    println!("Kernel: compile_commands.json 已原地改写为宿主路径形态");
     Ok(0)
 }
 
@@ -218,48 +167,13 @@ fn run_path(volume_flag: Option<&str>) -> anyhow::Result<i32> {
     if !view.is_dir() {
         if std::env::consts::OS == "macos" {
             anyhow::bail!(
-                "{} 不可达——OrbStack 未安装或未运行（视图仅在 OrbStack 运行时存在）。\n  启动 OrbStack 后重试；或 `virtuoso kernel export` 走最小树回退（kernel_path 指 target/kernel/<arch>）。",
+                "{} 不可达——OrbStack 未安装或未运行（视图仅在 OrbStack 运行时存在）。\n  启动 OrbStack 后重试。",
                 view.display()
             );
         }
         anyhow::bail!("volume {volume} 不存在或不可达——先 `virtuoso kernel clone <git-url>`。");
     }
     println!("{}", view.display());
-    Ok(0)
-}
-
-fn run_export(dest: Option<&str>, cli_arch: Option<&str>) -> anyhow::Result<i32> {
-    let cfg = Config::load()?;
-    let volume = current_volume(&cfg)?;
-    let arch = kernel_arch(&cfg, cli_arch)?;
-    let out_dir = cfg.target_dir.join("kernel");
-    std::fs::create_dir_all(&out_dir)?;
-    let dest = dest.unwrap_or(arch.name());
-    let img = arch.kernel_img();
-    let img_dir = std::path::Path::new(img)
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or(".");
-    let q = forge::toolchain::shell_quote;
-    println!(
-        "Kernel: exporting minimal tree（volume {volume} → target/kernel/{dest}，arch {}）",
-        arch.name()
-    );
-    forge::toolchain::run_streaming(
-        &volume,
-        &toolchain_image(),
-        Some(&out_dir),
-        &forge::toolchain::make_env(arch),
-        &format!(
-            "make INSTALL_MOD_PATH=/tmp/mods modules_install >/dev/null && \
-             rm -rf {d} && mkdir -p {d}/{img_dir} {d} && \
-             cp Makefile .config {d}/ && cp {img} {d}/{img} && \
-             cp -a /tmp/mods/lib {d}/lib",
-            d = q(dest),
-        ),
-    )?;
-    println!("Kernel: exported minimal tree → target/kernel/{dest}");
-    println!("  kernel_path 指 target/kernel/{dest}（或 KERNEL_PATH env）即可跑 virtuoso 主循环");
     Ok(0)
 }
 
@@ -323,6 +237,6 @@ fn run_use(volume: &str, cli_arch: Option<&str>) -> anyhow::Result<i32> {
         },
     )?;
     println!("Kernel: current → {volume} ({})", arch.name());
-    println!("next: virtuoso kernel path  # 宿主可见路径，指给 kernel_path / AI cwd");
+    println!("next: virtuoso kernel path  # 宿主可见路径，指给 kernel_path（QEMU 消费）");
     Ok(0)
 }

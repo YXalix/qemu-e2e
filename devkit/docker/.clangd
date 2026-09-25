@@ -1,13 +1,15 @@
-# clangd 配置 —— kernel.sh init/build 时拷入内核源码根。
+# clangd 配置 —— 本文件是唯一模板：`virtuoso kernel clone` 时按目标架构
+# 渲染（--target 行替换）拷入内核源码根。
 #
-# 数据链：内核构建后 `python3 scripts/compile_commands.py`（内核自带，从
-# .cmd 文件聚合，无需 bear）在源码根产出 compile_commands.json；clangd 读它
-# 拿到每个翻译单元的真实编译命令。本文件做两件事：
+# 数据链：内核构建后 `virtuoso kernel build` 末尾跑内核自带的
+# gen_compile_commands.py（从 .cmd 文件聚合，无需 bear）在源码根产出
+# compile_commands.json；容器内 clangd（VS Code devcontainer）读它拿到每个
+# 翻译单元的真实编译命令。本文件做两件事：
 # 1. Remove：剥掉 GCC 专有 / clangd 不认识的 flag（否则每个 TU 都是一排
 #    unknown warning，索引仍然工作，但太吵）；
 # 2. Add：交叉目标（compile_commands 里已是交叉 gcc，--target 双保险）。
 #
-# 换目标架构：kernel.sh 以 sed 替换下方 --target 行（arm64 为缺省）。
+# 换目标架构：`virtuoso kernel clone --arch <a>` 按架构渲染（arm64 为缺省）。
 
 CompileFlags:
   Add:

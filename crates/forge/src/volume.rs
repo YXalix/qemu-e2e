@@ -3,8 +3,8 @@
 //! 源码权威存 named volume，宿主经平台视图直接读写：macOS 走 OrbStack 视图
 //! （Docker Desktop 的 volume 在 VM 虚拟盘里，宿主不可见）；Linux 上 volume
 //! 本体就在宿主文件系统，取引擎权威 Mountpoint（rootless 落 $HOME 下，免
-//! root）。两个平台该路径都是纯宿主路径——build/cc 产出的 compile_commands.json
-//! 据此改写，宿主 clangd 直接消费。
+//! root）。两个平台该路径都是纯宿主路径——测试主循环的 kernel_path（QEMU
+//! 消费内核镜像）指向它；源码编辑走容器内 devcontainer，不经宿主视图。
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -40,7 +40,7 @@ pub fn host_view(volume: &str) -> anyhow::Result<PathBuf> {
             Ok(PathBuf::from(mp))
         }
         os => anyhow::bail!(
-            "不支持的宿主平台 {os}（docker 内核供给支持 macOS/Linux；其他平台用 `virtuoso kernel export` 最小树回退）"
+            "不支持的宿主平台 {os}（docker 内核供给支持 macOS/Linux）"
         ),
     }
 }
