@@ -357,6 +357,41 @@ pub fn run_checks(
     }
 }
 
+/// docker 供给模式（forge 活动卷）检查：仅在状态文件存在（活动卷开启）时
+/// 由 doctor 投影附加——raw/preset 用户无状态文件，零打扰。消息前缀
+/// "Kernel docker" 在 doctor.rs 的 PREFIXES 注册归组。
+pub fn kernel_docker_checks(
+    volume: &str,
+    arch: &str,
+    engine_err: Option<&str>,
+    host_view: Option<&Path>,
+    image_present: bool,
+    image: &str,
+) -> Vec<Check> {
+    let mut checks = Vec::new();
+    match engine_err {
+        None => checks.push(pass("Kernel docker: engine ok")),
+        Some(e) => checks.push(fail(format!("Kernel docker: {e}"))),
+    }
+    match host_view.filter(|p| p.is_dir()) {
+        Some(p) => checks.push(pass(format!(
+            "Kernel docker: volume {volume} reachable ({}) [arch {arch}]",
+            p.display()
+        ))),
+        None => checks.push(fail(format!(
+            "Kernel docker: volume {volume} host view unreachable (start OrbStack / run `virtuoso kernel clone <git-url>`)"
+        ))),
+    }
+    if image_present {
+        checks.push(pass(format!("Kernel docker: toolchain image {image}")));
+    } else {
+        checks.push(info(
+            "Kernel docker: toolchain image not pulled yet (auto-pull on next `virtuoso kernel` command)",
+        ));
+    }
+    checks
+}
+
 fn kernel_version(kernel: &Path) -> Option<String> {
     let makefile = std::fs::read_to_string(kernel.join("Makefile")).ok()?;
     let mut parts = Vec::new();
@@ -372,6 +407,14 @@ fn kernel_version(kernel: &Path) -> Option<String> {
 }
 
 impl Report {
+    /// 追加检查并重算计数（doctor 附加 docker 供给组用）。
+    pub fn extend(&mut self, extra: Vec<Check>) {
+        self.checks.extend(extra);
+        self.critical_pass = self.checks.iter().filter(|c| c.level == Level::Pass).count() as u32;
+        self.critical_fail = self.checks.iter().filter(|c| c.level == Level::Fail).count() as u32;
+        self.warnings = self.checks.iter().filter(|c| c.level == Level::Warn).count() as u32;
+    }
+
     /// 渲染（tty 下着色）。
     pub fn render(&self) -> String {
         let tty = is_stdout_tty();

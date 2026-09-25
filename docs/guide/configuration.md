@@ -22,6 +22,18 @@
 | `qemu` | `QEMU` | QEMU 二进制覆盖（`QEMU=echo` 可打印 argv 对照） |
 | `qemu_opts` | — | 透传兜底参数数组（如 ivshmem） |
 
+## docker 内核供给的环境变量（无 toml 键）
+
+`virtuoso kernel` 命令组（[容器化内核开发环境](../../devkit/docker/README.md)）
+不占 `virtuoso.toml` 键，只走环境变量（优先级同上：env > 状态文件 > 内置缺省）：
+
+| 环境变量 | 说明 |
+|---|---|
+| `KERNEL_VOLUME` | 活动卷覆盖（压过 current 状态文件 `.virtuoso/kernel-current.json`） |
+| `KERNEL_ARCH` | 目标架构覆盖（缺省 = 顶层 `arch`） |
+| `KERNEL_REF` | `kernel clone` 缺省 ref（缺省 master） |
+| `KERNEL_TOOLCHAIN_IMAGE` | 工具链镜像覆盖（缺省 ghcr.io/yxalix/virtuoso-kernel:latest；与 `KERNEL_IMAGE` 无关） |
+
 ## `[components.*]` 组件段
 
 每个组件段的公共字段（`enabled` / `require` / `stage`）与逐组件的专属键见

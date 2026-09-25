@@ -199,6 +199,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "common",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "guardian"
 version = "0.1.0"
 dependencies = [
@@ -476,6 +486,7 @@ dependencies = [
  "clap",
  "common",
  "ctrlc",
+ "forge",
  "guardian",
  "judge",
  "launcher",

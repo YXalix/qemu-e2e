@@ -16,6 +16,7 @@ guardian = { path = "../crates/guardian" }
 launcher = { path = "../crates/launcher" }
 builder = { path = "../crates/builder" }
 tracker = { path = "../crates/tracker" }
+forge = { path = "../crates/forge" }
 
 [dependencies.serde]
 version = "1"

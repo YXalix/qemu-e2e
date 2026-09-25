@@ -38,24 +38,25 @@ make modules -j"$(nproc)"        # 只要有任何模块是 =m
 
 装置默认放在内核树内（自动探测）；放别处时在 `virtuoso.toml` 设 `kernel_path`。
 
-### macOS 上的内核供给（devkit/docker/ 内核开发环境）
+### macOS 上的内核供给（容器化内核开发环境）
 
-macOS 本机编不了 Linux 内核，用容器钉死工具链：源码进 named volume
-（容器侧 ext4，规避 APFS 大小写不敏感坑），宿主经 OrbStack 视图直接
-读写（Linux 上同一套命令，volume 本体就在宿主文件系统）：
+macOS 本机编不了 Linux 内核，用 `virtuoso kernel`（容器钉死工具链）：源码
+进 named volume（容器侧 ext4，规避 APFS 大小写不敏感坑），宿主经 OrbStack
+视图直接读写（Linux 上同一套命令，volume 本体就在宿主文件系统）：
 
 ```bash
-devkit/docker/kernel.sh clone https://gitcode.com/openeuler/kernel.git --ref OLK-6.6-dev
-devkit/docker/kernel.sh defconfig openeuler_defconfig
-devkit/docker/kernel.sh build          # Image + modules + clangd 索引数据
-devkit/docker/kernel.sh path           # → volume 的宿主可见路径
+virtuoso kernel clone https://gitcode.com/openeuler/kernel.git --ref OLK-6.6
+virtuoso kernel defconfig openeuler_defconfig
+virtuoso kernel build          # Image + modules + clangd 索引数据
+virtuoso kernel path           # → volume 的宿主可见路径
 ```
 
-`virtuoso.toml` 里 `kernel_path` 指 **`kernel.sh path` 的输出**（纯宿主
+`virtuoso.toml` 里 `kernel_path` 指 **`virtuoso kernel path` 的输出**（纯宿主
 路径，virtuoso 直接读 Image 与 .ko，无需导出），即可跑宿主主循环；AI 与
-编辑器也以该目录为工作目录（git/clangd 全原生，构建走 `kernel.sh build`）。
-volume 无宿主视图时（Docker Desktop）用 `kernel.sh export` 导出最小树后
-指 `target/kernel/arm64`。多内核切换 = 换 `KERNEL_VOLUME` 卷名。
+编辑器也以该目录为工作目录（git/clangd 全原生，构建走 `virtuoso kernel
+build`）。volume 无宿主视图时（Docker Desktop）用 `virtuoso kernel export`
+导出最小树后指 `target/kernel/arm64`。多内核切换见 `virtuoso kernel list`
+/ `use`（current 状态文件 `.virtuoso/kernel-current.json`）。
 详见 [devkit/docker/README.md](../devkit/docker/README.md)。
 
 内核树也可在任何 Linux 机器上构建后 rsync 过来——virtuoso 只要求

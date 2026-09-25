@@ -1,9 +1,9 @@
 //! Virtuoso — kernel E2E 虚拟化测试装置的 CLI 入口。
 //!
-//! 本 crate 只保留 clap 定义与子命令分发：命令实现在 `cli`（verify/build/vm），
-//! 运行工件与呈现命令在 `runs`（rundir/render），类型化配置在
-//! `config`。领域逻辑全部在库 crate（common/builder/launcher/judge/guardian/
-//! tracker）。
+//! 本 crate 只保留 clap 定义与子命令分发：命令实现在 `cli`（kernel/fetch/
+//! build/vm/doctor），运行工件与呈现命令在 `runs`（rundir/render），类型化
+//! 配置在 `config`。领域逻辑全部在库 crate（common/builder/launcher/judge/
+//! guardian/tracker/forge）。
 //!
 //! 设计文档：docs/architecture/overview.md
 
@@ -55,6 +55,13 @@ enum Command {
         /// 只拉指定架构（缺省三架构全量）
         #[arg(long)]
         arch: Option<String>,
+    },
+    /// 容器化内核供给（forge）：named volume 源码 + 钉死工具链镜像。
+    /// 卷管理与 current 切换（状态文件 .virtuoso/kernel-current.json）；
+    /// 产出 = 宿主可见内核树（kernel_path 消费），verdict 管线不感知模式
+    Kernel {
+        #[command(subcommand)]
+        action: KernelAction,
     },
     /// 交互式启动 QEMU，落入 BusyBox shell（--gdb 挂起等 GDB 连接 :1234）
     Shell {
@@ -173,6 +180,96 @@ enum SkillAction {
     Install,
     /// 从内核树移除 kernel-dev skill
     Uninstall,
+}
+
+#[derive(Subcommand)]
+enum KernelAction {
+    /// 克隆内核源码进 named volume（建卷 + .clangd 渲染 + 写 current）
+    Clone {
+        /// 内核 git 仓库 URL
+        url: String,
+        /// clone 的分支/tag（缺省 master；KERNEL_REF 可临时覆盖）
+        #[arg(long = "ref")]
+        ref_name: Option<String>,
+        /// 目标卷名（缺省 virtuoso-kernel；KERNEL_VOLUME 可临时覆盖）
+        #[arg(long = "as")]
+        as_volume: Option<String>,
+        /// 覆盖目标架构（缺省 = 顶层 arch；KERNEL_ARCH 可临时覆盖）
+        #[arg(long)]
+        arch: Option<String>,
+    },
+    /// make <name>（.config 落 volume）
+    Defconfig {
+        /// make 目标（缺省 defconfig；如 arm64_defconfig / oe_core_defconfig）
+        name: Option<String>,
+        /// 覆盖目标架构（缺省 = current 记录 / 顶层 arch）
+        #[arg(long)]
+        arch: Option<String>,
+    },
+    /// 交互式改配置（menuconfig，TTY；.config 在 volume 内）
+    Menuconfig {
+        /// 覆盖目标架构
+        #[arg(long)]
+        arch: Option<String>,
+    },
+    /// make Image/bzImage + modules；CDB 生成并改写为宿主路径形态
+    /// （compile_commands.json，宿主 clangd 直接消费）
+    Build {
+        /// 并行作业数（缺省 = 宿主核数）
+        #[arg(short = 'j', long)]
+        jobs: Option<usize>,
+        /// 覆盖目标架构
+        #[arg(long)]
+        arch: Option<String>,
+    },
+    /// 只重新生成 CDB（宿主路径形态，宿主 clangd 消费）
+    Cc {
+        /// 覆盖目标架构
+        #[arg(long)]
+        arch: Option<String>,
+    },
+    /// 只重新生成 CDB（容器 /ksrc 原始形态，devcontainer 内 clangd 消费）
+    Ccr {
+        /// 覆盖目标架构
+        #[arg(long)]
+        arch: Option<String>,
+    },
+    /// 现有 CDB 原地改写为宿主路径形态（增量构建后 / ccr 之后的反向操作）
+    Ccfix {
+        /// 覆盖目标架构
+        #[arg(long)]
+        arch: Option<String>,
+    },
+    /// 打印活动卷的宿主可见路径（AI/编辑器 cwd；kernel_path 指向它）
+    Path {
+        /// 查询指定卷（缺省 = current）
+        #[arg(long)]
+        volume: Option<String>,
+    },
+    /// 最小树导出到 target/kernel/<dest>（无宿主视图引擎的回退路径）
+    Export {
+        /// 导出目录名（缺省 = 架构名）
+        dest: Option<String>,
+        /// 覆盖目标架构
+        #[arg(long)]
+        arch: Option<String>,
+    },
+    /// 容器内交互 bash
+    Shell {
+        /// 覆盖目标架构
+        #[arg(long)]
+        arch: Option<String>,
+    },
+    /// 列出卷：内容状态（empty/cloned/configured）+ current 标记
+    List,
+    /// 切换 current（写 .virtuoso/kernel-current.json；切回免重编）
+    Use {
+        /// 卷名
+        volume: String,
+        /// 覆盖记录的架构（缺省 = 当前解析的目标架构）
+        #[arg(long)]
+        arch: Option<String>,
+    },
 }
 
 fn main() {

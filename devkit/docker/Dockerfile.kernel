@@ -1,14 +1,14 @@
 # virtuoso 内核构建器 —— Firecracker build-docker 式的钉死工具链。
 #
-# 设计约束（docker/README.md 有完整用法）：
+# 设计约束（devkit/docker/README.md 有完整用法）：
 # - 只承担「macOS 上做不到的事」：编 Linux 内核 + clangd 索引环境；
 #   测试资产构建与 QEMU 运行留在宿主原生（macOS 走 HVF，容器内没有）。
 # - 容器在 Apple Silicon 上原生 linux/arm64 运行（Docker Desktop /
 #   OrbStack / colima 皆可，无需嵌套虚拟化），arm64 内核 = 容器内原生前端；
-#   x86_64 / riscv64 = 容器内交叉（CROSS_COMPILE 见 kernel.sh）。
+#   x86_64 / riscv64 = 容器内交叉（CROSS_COMPILE 见 forge::toolchain::make_env）。
 # - 内核源码放 named volume（ext4 大小写敏感，规避 APFS 大小写不敏感坑）。
 # - CI（kernel-builder.yml）发布到 ghcr.io/yxalix/virtuoso-kernel；
-#   kernel.sh 拉不动镜像时会回落到本文件本地构建。
+#   `virtuoso kernel`（forge）拉不动镜像时会回落到本文件本地构建。
 
 FROM ubuntu:24.04
 

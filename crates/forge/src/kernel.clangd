@@ -1,0 +1,43 @@
+# clangd 配置 —— `virtuoso kernel clone` 时渲染拷入内核源码根（模板内嵌
+# forge crate，--target 行按目标架构替换）。
+#
+# 数据链：内核构建后 `python3 scripts/clang-tools/gen_compile_commands.py`
+# （内核自带，从 .cmd 文件聚合，无需 bear）在源码根产出
+# compile_commands.json；clangd 读它拿到每个翻译单元的真实编译命令。本文件
+# 做两件事：
+# 1. Remove：剥掉 GCC 专有 / clangd 不认识的 flag（否则每个 TU 都是一排
+#    unknown warning，索引仍然工作，但太吵）；
+# 2. Add：交叉目标（compile_commands 里已是交叉 gcc，--target 双保险）。
+#
+# 换目标架构：`virtuoso kernel clone --arch <a>` 按架构渲染（arm64 为缺省）。
+
+CompileFlags:
+  Add:
+    - --target=aarch64-linux-gnu
+    - -fno-spell-checking
+  Remove:
+    # GCC-only 优化/诊断 flag（clang 接受前缀形式但会告警）
+    - -W*
+    - -Wa,*
+    - -fconserve-stack
+    - -fno-ipa-sra
+    - -fno-var-tracking*
+    - -fno-delete-null-pointer-checks
+    - -fno-allow-store-data-races
+    - -fno-reorder-blocks-and-partition
+    - -fno-stack-protector*
+    - -mrecord-mcount
+    - -mno-red-zone
+    - -mpreferred-stack-boundary*
+    - -mabi*
+    - -mfpu*
+    - -mfloat-abi*
+    # 交叉链接期 flag，索引不消费
+    - --param*
+    - -falign-*
+
+Diagnostics:
+  ClangTidy:
+    Remove: "*"
+  UnusedIncludes: None
+  MissingIncludes: None

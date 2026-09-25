@@ -5,7 +5,7 @@ name: kernel-builder
 # 触发：devkit/docker/ 目录变更推 main，或手动 dispatch。
 # 产物：ghcr.io/yxalix/virtuoso-kernel:latest（linux/arm64 + linux/amd64）
 # —— arm64 基座在 Apple Silicon 容器原生跑 arm64 内核构建；amd64 基座
-# 照顾 x86 Linux 宿主。kernel.sh 拉不动时回落本地构建，故镜像纯为提速。
+# 照顾 x86 Linux 宿主。virtuoso（forge）拉不动时回落本地构建，故镜像纯为提速。
 
 on:
   push:

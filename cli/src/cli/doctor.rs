@@ -64,6 +64,33 @@ fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
     ))
 }
 
+/// docker 供给模式附加检查（forge 活动卷）：状态文件存在 = 活动卷开启，
+/// 才投影 forge 检查——raw/preset 用户无状态文件，零打扰。
+fn docker_report(cfg: &Config, report: &mut Report) {
+    let Ok(Some(current)) = forge::state::read(&cfg.project_root) else {
+        return;
+    };
+    let volume = std::env::var("KERNEL_VOLUME")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or(current.volume);
+    let engine_err = forge::volume::engine_guard().err().map(|e| e.to_string());
+    let host_view = forge::volume::host_view(&volume).ok();
+    let image = std::env::var(forge::toolchain::IMAGE_ENV)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| forge::DEFAULT_IMAGE.to_string());
+    let image_present = forge::toolchain::image_present(&image);
+    report.extend(builder::verify::kernel_docker_checks(
+        &volume,
+        &current.arch,
+        engine_err.as_deref(),
+        host_view.as_deref(),
+        image_present,
+        &image,
+    ));
+}
+
 // ---------------------------------------------------------------- 引擎消息 → 组件分组
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +136,7 @@ const PREFIXES: &[(&str, Group)] = &[
     ("Cross-compile", Group::Toolchain),
     ("Kernel modules", Group::Modules),
     ("Kernel preset", Group::Kernel),
+    ("Kernel docker", Group::Kernel),
     ("Kernel source", Group::Kernel),
     ("Kernel image", Group::Kernel),
     ("KERNEL_PATH", Group::Kernel),
@@ -168,6 +196,24 @@ fn short_detail(msg: &str) -> String {
     }
     if msg.starts_with("Kernel modules") && rest.starts_with("preset") {
         return "modules built-in".into();
+    }
+    // docker 供给组：engine 行无信息量跳过；volume/image 压成短语
+    if msg.starts_with("Kernel docker: engine") {
+        return String::new();
+    }
+    if msg.starts_with("Kernel docker: volume") {
+        let v = rest
+            .split_whitespace()
+            .nth(1) // rest 以 "volume <名> …" 开头，取卷名
+            .unwrap_or("");
+        return format!("docker volume {v}");
+    }
+    if msg.starts_with("Kernel docker: toolchain image") {
+        return if rest.contains("not pulled") {
+            "toolchain image (not pulled)".into()
+        } else {
+            "toolchain image".into()
+        };
     }
     if msg.starts_with("Host tools") {
         return "host tools".into();
@@ -312,7 +358,8 @@ fn render(groups: &[GroupOut], tty: bool) -> String {
 pub fn run_doctor(arch_override: Option<&str>, json: bool, verbose: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let arch = resolve_arch(&cfg, arch_override)?;
-    let report = engine_report(&cfg, arch)?;
+    let mut report = engine_report(&cfg, arch)?;
+    docker_report(&cfg, &mut report);
 
     // --verbose：全量呈现（类型化配置诊断 + 完整检查清单），文本态专属
     if verbose && !json {
@@ -417,6 +464,16 @@ mod tests {
             ("Kernel source: /k (v6.6)", Group::Kernel, "/k (v6.6)"),
             ("Kernel image: Image (42M)", Group::Kernel, "Image (42M)"),
             (
+                "Kernel docker: engine ok",
+                Group::Kernel,
+                "engine ok",
+            ),
+            (
+                "Kernel docker: volume ksrc-oe66 reachable (/v) [arch arm64]",
+                Group::Kernel,
+                "volume ksrc-oe66 reachable (/v) [arch arm64]",
+            ),
+            (
                 "QEMU binary: qemu-system-aarch64",
                 Group::Qemu,
                 "qemu-system-aarch64",
@@ -465,6 +522,19 @@ mod tests {
         assert_eq!(short_detail("Kernel image: Image (42M)"), "Image (42M)");
         assert_eq!(short_detail("qemu-img: available"), "");
         assert_eq!(short_detail("KERNEL_PATH: /k"), "");
+        assert_eq!(short_detail("Kernel docker: engine ok"), "");
+        assert_eq!(
+            short_detail("Kernel docker: volume ksrc-oe66 reachable (/v) [arch arm64]"),
+            "docker volume ksrc-oe66"
+        );
+        assert_eq!(
+            short_detail("Kernel docker: toolchain image ghcr.io/x/virtuoso-kernel:latest"),
+            "toolchain image"
+        );
+        assert_eq!(
+            short_detail("Kernel docker: toolchain image not pulled yet (auto-pull …)"),
+            "toolchain image (not pulled)"
+        );
         assert_eq!(
             short_detail("Kernel modules: none required"),
             "none required"

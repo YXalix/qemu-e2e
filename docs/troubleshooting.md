@@ -100,9 +100,9 @@ ELF）：`brew install zig`，或自带工具链 `CC=<cross-gcc>` +
 **Solution**: 交叉 guest 只能 TCG（HVF 仅同构 arm64）。放大
 `timeout_secs`，或回到 Linux 宿主跑全矩阵（`virtuoso matrix`）。
 
-**Symptom**: `kernel.sh` 报 git clone 后构建大小写冲突 / 内核树行为诡异
-**Solution**: 内核源码必须在大小写敏感文件系统——`kernel.sh` 的 named volume
-（ext4）正确；自行 bind-mount APFS 目录会踩坑，别这么做。
+**Symptom**: `virtuoso kernel build` 报 git clone 后构建大小写冲突 / 内核树行为诡异
+**Solution**: 内核源码必须在大小写敏感文件系统——`virtuoso kernel` 的 named
+volume（ext4）正确；自行 bind-mount APFS 目录会踩坑，别这么做。
 
 ## 工件占满磁盘
 

@@ -72,7 +72,7 @@ When the user changes kernel code and wants verification, execute this loop end-
 
 2. **Build the kernel** (in the kernel tree root, not `virtuoso/`)
    ```bash
-   make -j"$(nproc)"    # macOS: use devkit/docker/kernel.sh (containerized; host-visible tree via `kernel.sh path`)
+   make -j"$(nproc)"    # macOS: use `virtuoso kernel build` (containerized; host-visible tree via `virtuoso kernel path`)
    make modules -j"$(nproc)"     # only if any required module is =m
    ```
    The kernel image lands at the arch-specific path `virtuoso doctor --verbose` already validated:

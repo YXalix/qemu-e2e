@@ -2,6 +2,7 @@
 //!
 //! - doctor  → `cli::doctor`（体检唯一入口：一屏呈现 + --verbose 全量；引擎投影 engine_report 同文件）
 //! - build   → `cli::build`（build / clean / skill）
+//! - kernel  → `cli::kernel`（容器化内核供给：clone/defconfig/build/cc*/卷管理；逻辑在 forge）
 //! - vm      → `cli::vm`（shell / test / matrix：启动、看门狗、判定接线）
 //! - docs    → `cli::docs`（mdBook 文档构建 / 本地预览）
 //! - 呈现命令 → `runs::render`（triage / runs / cluster / suggest / replay）
@@ -13,6 +14,7 @@ mod diagnostics;
 mod docs;
 mod doctor;
 mod fetch;
+mod kernel;
 mod probe;
 mod vm;
 
@@ -41,6 +43,7 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
             fetch::run_fetch(version.as_deref(), arch.as_deref())
         }
         CliCommand::Build { busybox_only } => build::run_build(busybox_only),
+        CliCommand::Kernel { action } => kernel::run_kernel(action),
         CliCommand::Shell { kvm, tcg, gdb } => vm::run_shell(kvm, tcg, gdb),
         CliCommand::Test {
             timeout,

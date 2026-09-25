@@ -25,3 +25,6 @@ infra/tools/target/
 
 # ZCode session-local data
 .zcode/
+
+# 本机会话状态（virtuoso kernel current 活动卷指针等）
+.virtuoso/

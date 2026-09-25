@@ -40,6 +40,16 @@ kernel_path = "/root/kernel"
 # infra/kernel/pin。
 # kernel_preset = "mainline"
 
+# docker 模式（容器化内核供给，devkit/docker/ 工具链镜像）：内核源码存 named
+# volume，`virtuoso kernel clone/defconfig/build` 进树干活，`virtuoso kernel
+# path` 打印宿主可见路径（指到上面 kernel_path 即闭环）。不占 toml 键——
+# 临时覆盖走环境变量：
+#   KERNEL_VOLUME            活动卷覆盖（current 状态文件 .virtuoso/kernel-current.json 之上）
+#   KERNEL_ARCH              目标架构覆盖（缺省 = 顶层 arch）
+#   KERNEL_REF               clone 缺省 ref（缺省 master）
+#   KERNEL_TOOLCHAIN_IMAGE   工具链镜像（缺省 ghcr.io/yxalix/virtuoso-kernel:latest；
+#                            注意 KERNEL_IMAGE 已被 kernel_image 占用，与此无关）
+
 # QEMU 二进制覆盖（等价旧 QEMU= 语义）
 # qemu = "qemu-system-aarch64"
 
