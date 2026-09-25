@@ -1,8 +1,8 @@
 // VS Code Dev Container —— 打开内核源码 volume 为 workspace。
 //
 // 用法（macOS / Linux 通用）：
-//   1. ./docker/kernel.sh clone <kernel-git-url>   （源码进 named volume）
-//   2. VS Code →「Dev Containers: Open Folder in Container」→ 选本 docker/ 目录
+//   1. ./devkit/docker/kernel.sh clone <kernel-git-url>   （源码进 named volume）
+//   2. VS Code →「Dev Containers: Open Folder in Container」→ 选本 devkit/docker/ 目录
 //      （或命令面板 Reopen in Container）
 //   3. workspace 即 /ksrc：clangd 在容器内索引，构建走集成终端
 //      ./kernel.sh build（或直接 make）

@@ -7,7 +7,7 @@
 - 新增前置条件 → 同步 `crates/builder/src/verify.rs`（doctor 的分组呈现
   自动跟随，见 `cli/src/cli/doctor.rs`）。
 - harness 暴露新行为 → 配一个对应测试用例。
-- 用户可见行为变化 → 更新本文档站（`docs/`）与 `skills/kernel-dev/SKILL.md`。
+- 用户可见行为变化 → 更新本文档站（`docs/`）与 `devkit/skills/kernel-dev/SKILL.md`。
 - 冻结项不许动：标记协议 v1、test 退出码语义、`QemuInvocation::argv` 基线
   （详见[冻结契约](architecture/contracts.md) 与 AGENTS.md「冻结的不变量」）。
 - 文档只改 `docs/`（文档唯一事实来源，别处引用不复制内容）；push main 自动

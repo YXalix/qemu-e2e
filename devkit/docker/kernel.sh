@@ -16,7 +16,7 @@
 #   KERNEL_VOLUME   volume 名（缺省 virtuoso-kernel）
 #   KERNEL_ARCH     arm64 | x86_64 | riscv64（缺省 arm64）
 #   KERNEL_IMAGE    镜像（缺省 ghcr.io/yxalix/virtuoso-kernel:latest；
-#                   拉取失败自动回落本地构建 docker/Dockerfile.kernel）
+#                   拉取失败自动回落本地构建 devkit/docker/Dockerfile.kernel）
 #   KERNEL_REF      clone 缺省 ref（缺省 master）
 #
 # 测试主循环在宿主原生跑：export 出的树 + `virtuoso doctor / build / test`。

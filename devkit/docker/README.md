@@ -1,4 +1,4 @@
-# docker/ —— 容器化内核开发环境
+# devkit/docker/ —— 容器化内核开发环境
 
 **容器只做宿主做不到的事**（编 Linux 内核 + clangd 索引环境）；测试资产
 构建（busybox / 用例 workspace）与 QEMU 运行留在宿主原生——macOS 上
@@ -26,14 +26,14 @@ neovim 党 `kernel.sh shell` 进容器，用容器内 clangd。
 ```bash
 # 0) 依赖：brew install qemu e2fsprogs dtc cmake zig + Docker Desktop/OrbStack
 # 1) 内核源码进 volume（+ 按架构配好 .clangd）
-docker/kernel.sh clone https://gitee.com/openeuler/kernel.git --ref OLK-6.6-dev
+devkit/docker/kernel.sh clone https://gitee.com/openeuler/kernel.git --ref OLK-6.6-dev
 
 # 2) 配置 + 构建（arm64 在 arm64 容器内 = 原生速度）
-docker/kernel.sh defconfig openeuler_defconfig
-docker/kernel.sh build            # Image + modules + compile_commands.json
+devkit/docker/kernel.sh defconfig openeuler_defconfig
+devkit/docker/kernel.sh build            # Image + modules + compile_commands.json
 
 # 3) 导出最小树（Makefile/.config/Image/**/*.ko → target/kernel/arm64/）
-docker/kernel.sh export
+devkit/docker/kernel.sh export
 
 # 4) virtuoso 主循环（宿主原生，HVF）
 virtuoso.toml 里 kernel_path = "target/kernel/arm64"
@@ -46,22 +46,22 @@ virtuoso doctor && virtuoso build && virtuoso test
 `scripts/compile_commands.py` 生成，无需 bear）：
 
 - **VS Code**：命令面板 → `Dev Containers: Open Folder in Container…`
-  → 选本 `docker/` 目录。workspace 即 `/ksrc`（volume），clangd 扩展自动
+  → 选本 `devkit/docker/` 目录。workspace 即 `/ksrc`（volume），clangd 扩展自动
   装，跳转/补全/悬停全量可用。
-- **neovim / 其它 LSP 客户端**：`docker/kernel.sh shell` 进容器，起
+- **neovim / 其它 LSP 客户端**：`devkit/docker/kernel.sh shell` 进容器，起
   clangd（stdio 模式）经自己的 remote-LSP 通道接出。
 
-改了 `.config` 或增量构建后索引滞后时：`docker/kernel.sh cc` 重生成。
+改了 `.config` 或增量构建后索引滞后时：`devkit/docker/kernel.sh cc` 重生成。
 
 ## 镜像发布
 
-`kernel-builder.yml` 在 `docker/` 变更推 main 时构建并发布
+`kernel-builder.yml` 在 `devkit/docker/` 变更推 main 时构建并发布
 `ghcr.io/yxalix/virtuoso-kernel`（linux/arm64 + linux/amd64）。
 `kernel.sh` 拉不动镜像时自动回落本地构建。
 
 ## 换目标架构
 
 ```bash
-KERNEL_ARCH=riscv64 docker/kernel.sh clone <url>
-KERNEL_ARCH=riscv64 docker/kernel.sh build && KERNEL_ARCH=riscv64 docker/kernel.sh export
+KERNEL_ARCH=riscv64 devkit/docker/kernel.sh clone <url>
+KERNEL_ARCH=riscv64 devkit/docker/kernel.sh build && KERNEL_ARCH=riscv64 devkit/docker/kernel.sh export
 ```
