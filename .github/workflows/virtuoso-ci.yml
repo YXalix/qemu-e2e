@@ -74,8 +74,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Virtuoso Verify
-        run: cargo xtask verify
+      - name: Virtuoso Doctor
+        run: cargo xtask doctor --verbose
 
       - name: Execute E2E Suite
         run: cargo xtask test --timeout 600
@@ -127,11 +127,11 @@ jobs:
           KERNEL_PRESET: mainline
         run: cargo xtask fetch
 
-      - name: Virtuoso Verify
+      - name: Virtuoso Doctor
         if: steps.fetch.outcome == 'success'
         env:
           KERNEL_PRESET: mainline
-        run: cargo xtask verify
+        run: cargo xtask doctor --verbose
 
       - name: Build test assets
         if: steps.fetch.outcome == 'success'

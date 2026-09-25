@@ -42,7 +42,7 @@ kernel_preset = "mainline"
 virtuoso fetch                # 三架构全量（约百 MB 级）
 virtuoso fetch --arch arm64   # 只拉一架构
 virtuoso fetch --version 6.12.8
-virtuoso verify               # 源码树检查自动降级为 preset 语义
+virtuoso doctor --verbose     # 源码树检查自动降级为 preset 语义
 virtuoso test --timeout 300   # 恒 TCG（托管 runner 无 KVM 同款路径）
 ```
 
@@ -52,7 +52,7 @@ preset 激活时的语义变化（与源码树路径的差异全在这里）：
 |---|---|---|
 | 内核镜像 | 树内 `arch/<a>/boot/<Image>` | `target/kernel/preset/Image-<arch>` |
 | 模块供给 | 树内 `.ko` 拷入 rootfs（缺则构建报错） | 全 `=y` 内建，`.ko` 查找整体跳过 |
-| verify 检查 | KERNEL_PATH / Kernel source FAIL 门 | 单一 Info 行（`Kernel preset: mainline …`） |
+| doctor 检查 | KERNEL_PATH / Kernel source FAIL 门 | 单一 Info 行（`Kernel preset: mainline …`） |
 | init 引导日志 | insmod openEuler `=m` 模块 | 模块清单为空占位，零 insmod 噪音 |
 | `suggest` 内核 diff | 对内核树 `git diff` | 需显式 `--diff`（无树可 diff） |
 

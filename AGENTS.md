@@ -20,9 +20,8 @@ tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools �
 别名等价且改源码即重编——开发循环（改完 crates 后跑）用别名，免装免陈旧。
 
 ```bash
-virtuoso doctor             # 一屏体检：verify 同引擎的简化呈现（✓/✗ 组件行；--json）
-virtuoso verify             # 前置检查 + 类型化配置诊断（doctor 报 ✗ 时看全量）
-virtuoso build              # builder：重建 initrd.img / rootfs.img / tools.img
+virtuoso doctor             # 环境体检（✓/✗ 组件行；--verbose 全量诊断；--json）
+virtuoso build              # builder：重建 initrd.img / rootfs.img / tools.img（--busybox-only 仅备 BusyBox）
 virtuoso fetch [--version v] [--arch a]
                             # 拉 preset 预编内核（mainline mini Image）→ target/kernel/preset
 virtuoso test --timeout 60  # 测试：launcher 启动 → judge 判定 → 工件落盘
@@ -33,8 +32,8 @@ virtuoso runs [--json]      # 历史运行列表
 virtuoso cluster [--json]   # 跨 run 失败指纹聚类 + flaky 清单 + 首现 run（tracker）
 virtuoso suggest [--diff f] # 补丁↔测试映射：git diff → 最小测试集（tracker）
 virtuoso replay --log <f>   # 任意串口日志的离线标记协议断言
-virtuoso shell [--kvm]      # 交互式 VM
-virtuoso debug              # GDB stub :1234 挂起启动
+virtuoso shell [--kvm|--tcg] [--gdb]
+                            # 交互式 VM；--gdb = 挂起等 GDB :1234（恒 TCG）
 virtuoso probe --cmd 'uname -a' [--cmd-file f] [--json]
                                # AI 交互通道：virtio-serial agent 命令批（结构化事件流）
 virtuoso skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核树
@@ -42,15 +41,16 @@ virtuoso docs [--serve]     # mdBook 文档构建到 target/book / 本地预览
 ```
 
 AI 的标准验证循环：`doctor → test → triage`。**判定以 triage 的 verdict 为准**，
-退出码只是接口契约；`verdict: passed` 才算通过。doctor 与 verify 共用
-builder::verify 检查引擎（新增前置条件只动引擎，两侧呈现自动跟随）。
+退出码只是接口契约；`verdict: passed` 才算通过。doctor 是体检唯一入口（一屏
+呈现 + `--verbose` 全量），与 builder::verify 检查引擎同源（新增前置条件只动
+引擎，呈现自动跟随）。
 
 ## Code Map
 
 | 领域 | 入口 | 说明 |
 |---|---|---|
 | CLI 入口 | `xtask/src/main.rs` | 规范 bin 名 `virtuoso`（工作区别名 cargo xtask / cargo v）：clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
-| CLI 命令组 | `xtask/src/cli/` | `verify.rs`（前置检查；`engine_report` 投影与 doctor 共用）/ `doctor.rs`（一屏体检：引擎检查按前缀分组呈现）/ `build.rs`（build/busybox/clean/skill）/ `vm.rs`（shell/debug/test/matrix；accel 解析：macOS 同构缺省 HVF、`--tcg` 强制、Linux 恒 TCG）/ `probe.rs`（AI 交互通道）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
+| CLI 命令组 | `xtask/src/cli/` | `doctor.rs`（体检唯一入口：一屏分组呈现 + `--verbose` 全量；`engine_report` 引擎投影同文件）/ `build.rs`（build/clean/skill；`--busybox-only` 仅备 BusyBox）/ `vm.rs`（shell/test/matrix；accel 解析：macOS 同构缺省 HVF、`--tcg` 强制、Linux 恒 TCG；shell `--gdb` 挂起等 GDB）/ `probe.rs`（AI 交互通道）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
 | 类型化配置 | `xtask/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `cli/diagnostics.rs` |
 | 运行工件与分诊 | `xtask/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
 | 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `platform.rs`（**`HostOs` = QEMU 平台分支唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |

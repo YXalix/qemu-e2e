@@ -1,4 +1,4 @@
-//! 配置诊断呈现（`virtuoso verify` 的前置输出）。
+//! 配置诊断呈现（`virtuoso doctor --verbose` 的全量输出）。
 //! 从 config 层拆出：config 只管解析与取值，本模块负责打印。
 
 use launcher::{Arch, NumaTopology};

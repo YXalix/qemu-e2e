@@ -69,7 +69,7 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 重新发布：Actions 页手动 `workflow_dispatch`（默认 1.36.1），或推 `busybox-v*` tag。
 发布是幂等的：同名 asset 先删后传，release 已存在则复用。
 
-### 2.2 BusyBox 二进制的本地供给链（builder::busybox，`virtuoso busybox`）
+### 2.2 BusyBox 二进制的本地供给链（builder::busybox，`virtuoso build --busybox-only`）
 
 按序尝试，命中即缓存到 `target/build/busybox/bin/busybox-<arch>`：
 

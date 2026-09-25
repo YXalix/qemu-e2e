@@ -67,15 +67,15 @@ The builder generates the rootfs module list from the enabled components'
 When the user changes kernel code and wants verification, execute this loop end-to-end. **Do not skip the verify step** — it catches missing modules, missing kernel images, and toolchain gaps before you waste a build cycle.
 
 1. **Verify prerequisites** — `virtuoso doctor` (run inside the harness dir)
-   - One-screen ✓/✗ health check sharing the same check engine as `verify` (Config / Toolchain / Kernel / QEMU / Modules / Artifacts).
-   - On ✗ (or when you need typed config diagnostics), run `virtuoso verify` for the full checklist; fix the reported gap before proceeding.
+   - One-screen ✓/✗ health check over Config / Toolchain / Kernel / QEMU / Modules / Artifacts.
+   - On ✗ (or when you need typed config diagnostics), run `virtuoso doctor --verbose` for the full checklist; fix the reported gap before proceeding.
 
 2. **Build the kernel** (in the kernel tree root, not `virtuoso/`)
    ```bash
    make -j"$(nproc)"    # macOS: use docker/kernel.sh (containerized, case-sensitive volume)
    make modules -j"$(nproc)"     # only if any required module is =m
    ```
-   The kernel image lands at the arch-specific path `verify` already validated:
+   The kernel image lands at the arch-specific path `virtuoso doctor --verbose` already validated:
    - arm64 → `arch/arm64/boot/Image`
    - x86_64 → `arch/x86/boot/bzImage`
    - riscv64 → `arch/riscv/boot/Image`
@@ -193,7 +193,7 @@ mount + PATH injection) — customize via `infra/init`, not the hook file.
 |---|---|---|
 | Interactive shell in VM | `virtuoso shell` | Drops to BusyBox shell after init; `Ctrl-A x` to exit |
 | Native-speed run | `virtuoso shell --kvm` / default on Apple Silicon | KVM (Linux) / HVF (macOS) only when host arch == target arch; `--tcg` forces pure emulation |
-| Source-level kernel debug | `virtuoso debug` | Halts at boot waiting for GDB on `:1234` |
+| Source-level kernel debug | `virtuoso shell --gdb` | Halts at boot waiting for GDB on `:1234` (always TCG) |
 | GDB attach | `gdb-multiarch vmlinux -ex 'target remote :1234'` | Run from kernel tree root; needs `vmlinux` (built with `CONFIG_DEBUG_INFO=y`) |
 | Multi-arch sweep | `virtuoso matrix [--arch a]` | Serial three-arch matrix (default all) |
 | VM-internal probe (AI) | `virtuoso probe --cmd '…'` | virtio-serial agent channel; structured event stream |
@@ -203,12 +203,12 @@ mount + PATH injection) — customize via `infra/init`, not the hook file.
 
 When a test run fails, walk this list before reporting back to the user:
 
-1. **`verdict: timeout` (exit 124)** — increase `timeout_secs`; if it still hangs, suspect kernel deadlock/livelock or a test infinite loop. Use `virtuoso debug` + GDB and `bt` on the offending CPU.
+1. **`verdict: timeout` (exit 124)** — increase `timeout_secs`; if it still hangs, suspect kernel deadlock/livelock or a test infinite loop. Use `virtuoso shell --gdb` + GDB and `bt` on the offending CPU.
 2. **`verdict: panic` / `Kernel panic` / `Oops` / `BUG:` in serial output** — copy the full stack trace plus the failing instruction; map it to source via `scripts/decode_stacktrace.sh` or `addr2line` against `vmlinux`. Do not "fix" the test until the kernel issue is understood.
 3. **`verdict: incomplete` (exit 0)** — the marker protocol never completed; treat as a failure (this catches the panic-exits-0 false pass).
 4. **Module fails to load (`insmod ...: -1 ...`)** — check `require` ordering in `virtuoso.toml`, missing exported symbols, or a tainted/CONFIG mismatch.
 5. **Test binary missing from `/tests/`** — verify the case crate is listed in `members` of `infra/testcases/Cargo.toml`; each member builds one musl-static binary that the builder copies into the rootfs, where `init` auto-discovers `/tests/*`.
-6. **`verdict: build_failed` / `Kernel image not found`** — wrong `arch`, kernel not built, or a missing `.ko`; `virtuoso verify` catches all of these with typed diagnostics (`virtuoso doctor` is the one-screen summary).
+6. **`verdict: build_failed` / `Kernel image not found`** — wrong `arch`, kernel not built, or a missing `.ko`; `virtuoso doctor --verbose` catches all of these with typed diagnostics (`virtuoso doctor` is the one-screen summary).
 
 Never paper over a failure by adding `|| true` or removing assertions. If the user pushes to skip a real failure, push back: regressions caught in the harness are exactly the ones that don't reach mainline review.
 

@@ -1,4 +1,4 @@
-//! VM 会话命令：shell / debug / test / matrix。
+//! VM 会话命令：shell / test / matrix。
 //! 启动 DSL 在 launcher；收割与看门狗在 guardian；判定在 judge。
 //! 本模块做接线：构建（builder）→ 启动（launcher）→ 超时收割（guardian）→
 //! 判定与工件（judge + runs）。
@@ -30,23 +30,30 @@ pub(crate) fn resolve_accel(kvm: bool, tcg: bool, arch: Arch) -> anyhow::Result<
     })
 }
 
-pub fn run_shell(kvm: bool, tcg: bool) -> anyhow::Result<i32> {
+pub fn run_shell(kvm: bool, tcg: bool, gdb: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let arch = resolve_arch(&cfg, None)?;
-    run_vm_session(resolve_accel(kvm, tcg, arch)?, false)
+    if gdb && kvm {
+        anyhow::bail!("--gdb 与 --kvm 互斥（GDB 单步调试走 TCG 纯模拟）");
+    }
+    // --gdb：挂起等 GDB 连接，恒 TCG（单步可靠）；其余走平台 accel 规则
+    let accel = if gdb {
+        Accel::Tcg
+    } else {
+        resolve_accel(kvm, tcg, arch)?
+    };
+    run_vm_session(accel, gdb)
 }
 
-pub fn run_debug() -> anyhow::Result<i32> {
-    println!("Starting QEMU with GDB stub on port 1234...");
-    run_vm_session(Accel::Tcg, true)
-}
-
-/// 交互式会话（shell / debug）：stdio 继承，不产运行工件。
+/// 交互式会话（shell，含 --gdb 调试挂起）：stdio 继承，不产运行工件。
 fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let arch = resolve_arch(&cfg, None)?;
     let topo = resolve_topology(&cfg)?;
     let kernel = kernel_image_path(&cfg, arch)?;
+    if gdb_stub {
+        println!("Starting QEMU with GDB stub on port 1234...");
+    }
     match accel {
         Accel::Kvm => println!("Starting QEMU with KVM acceleration..."),
         Accel::Hvf => println!("Starting QEMU with HVF acceleration..."),

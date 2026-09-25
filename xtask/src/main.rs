@@ -28,23 +28,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// 前置检查：类型化配置诊断 + 构建环境检查
-    Verify {
-        /// 覆盖目标架构（透传为 ARCH 环境变量）
-        #[arg(long)]
-        arch: Option<String>,
-    },
-    /// 一屏环境体检：verify 的 flutter-doctor 风格简化呈现（✓/✗/! 组件行）
+    /// 一屏环境体检（✓/✗/! 组件行；--verbose 全量清单 + 类型化配置诊断）
     Doctor {
         /// 覆盖目标架构（透传为 ARCH 环境变量）
         #[arg(long)]
         arch: Option<String>,
+        /// 全量输出：类型化配置诊断 + 完整检查清单
+        #[arg(long)]
+        verbose: bool,
         /// 机器可读 JSON 输出
         #[arg(long)]
         json: bool,
     },
     /// 构建 initrd：C 用例 + modules.conf + BusyBox
-    Build,
+    Build {
+        /// 只确保当前架构的静态 BusyBox（release 下载优先，源码兜底）
+        #[arg(long = "busybox-only")]
+        busybox_only: bool,
+    },
     /// 拉取 preset 预编内核（mainline mini Image，全 =y 零模块）到
     /// target/kernel/preset —— kernel_preset = "mainline" 的开箱供给
     Fetch {
@@ -55,7 +56,7 @@ enum Command {
         #[arg(long)]
         arch: Option<String>,
     },
-    /// 交互式启动 QEMU，落入 BusyBox shell
+    /// 交互式启动 QEMU，落入 BusyBox shell（--gdb 挂起等 GDB 连接 :1234）
     Shell {
         /// KVM 加速（Linux；仅宿主与目标同构时可用）
         #[arg(long)]
@@ -63,9 +64,10 @@ enum Command {
         /// 强制 TCG 纯模拟（macOS 缺省 HVF 时使用）
         #[arg(long)]
         tcg: bool,
+        /// 挂起等待 GDB 连接 :1234（恒 TCG 纯模拟）
+        #[arg(long)]
+        gdb: bool,
     },
-    /// 调试启动：挂起等待 GDB 连接 :1234
-    Debug,
     /// CI 模式：重建 initrd → 超时运行 → 标记协议判定退出码。
     /// --replay-until-fail N：对可疑 flaky 场景自动返场最多 N 次，出现首个
     /// 非 passed verdict 即停（tracker 返场语义）。
@@ -83,9 +85,6 @@ enum Command {
         #[arg(long)]
         tcg: bool,
     },
-    /// 确保 ARCH 对应的静态 BusyBox：release 下载优先，源码兜底
-    #[command(name = "busybox")]
-    BusyBox,
     /// 清理生成物
     Clean,
     /// AI skill 管理（装入 / 移出内核树）

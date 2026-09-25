@@ -1,4 +1,4 @@
-//! 构建与资产管理命令：build / busybox / disk / clean / skill。
+//! 构建与资产管理命令：build / clean / skill。
 //! 实际构建逻辑在 builder，本模块只做配置投影与进程接线。
 
 use std::path::Path;
@@ -7,8 +7,16 @@ use super::{preset_kind, resolve_arch};
 use crate::config::Config;
 use crate::SkillAction;
 
-pub fn run_build() -> anyhow::Result<i32> {
+pub fn run_build(busybox_only: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
+    if busybox_only {
+        // 仅备当前架构静态 BusyBox（四层供给链，builder 接管）
+        let arch = resolve_arch(&cfg, None)?;
+        let supply = cfg.busybox_supply();
+        let mut progress = builder::Progress::stdout();
+        builder::busybox::ensure(&cfg.build_dir, arch, &supply, &mut progress)?;
+        return Ok(0);
+    }
     build_pair_for(&cfg, None, &[]).map(|_| 0)
 }
 
@@ -72,16 +80,6 @@ pub fn run_clean() -> anyhow::Result<i32> {
     if testcases_target.is_dir() {
         std::fs::remove_dir_all(&testcases_target)?;
     }
-    Ok(0)
-}
-
-/// 确保当前 ARCH 的静态 BusyBox（四层供给链，builder 接管）。
-pub fn run_busybox() -> anyhow::Result<i32> {
-    let cfg = Config::load()?;
-    let arch = resolve_arch(&cfg, None)?;
-    let supply = cfg.busybox_supply();
-    let mut progress = builder::Progress::stdout();
-    builder::busybox::ensure(&cfg.build_dir, arch, &supply, &mut progress)?;
     Ok(0)
 }
 

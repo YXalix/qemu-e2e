@@ -9,7 +9,7 @@ QEMU 里跑真实测试程序，用一条命令回答
 ## 最短路径
 
 ```bash
-virtuoso doctor             # 一屏环境体检（简化版 verify，✓/✗ 组件行）
+virtuoso doctor             # 一屏环境体检（✓/✗ 组件行；--verbose 全量）
 virtuoso test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
 virtuoso triage             # 以 verdict 为准的判定报告
 ```

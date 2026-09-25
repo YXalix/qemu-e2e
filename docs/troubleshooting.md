@@ -11,7 +11,7 @@ AI/人共用的故障速查。先跑 `virtuoso triage`（或 `virtuoso triage --
 **Solution**:
 1. 看 `serial.log` 尾部：停在哪条打印之后，就是嫌疑点。
 2. `verdict.json` 的 `panics` 有内容？→ 转 "panic" 条目（panic 被超时掩盖的形态）。
-3. 需要现场调试：`virtuoso debug` + `gdb-multiarch vmlinux -ex 'target remote :1234'`，
+3. 需要现场调试：`virtuoso shell --gdb` + `gdb-multiarch vmlinux -ex 'target remote :1234'`，
    挂起后发送断点、看 `bt`；或 `virtuoso shell` 手动执行 `/tests/*` 复现。
 
 ## panic（verdict: panic）
@@ -38,7 +38,7 @@ AI/人共用的故障速查。先跑 `virtuoso triage`（或 `virtuoso triage --
 ## insmod 失败 / 模块缺失
 
 **Symptom**: `serial.log` 有 `insmod: can't insert 'xxx.ko'`，或构建期
-`Module xxx.ko not found`，或 verify 阶段 Kernel modules 报 missing。
+`Module xxx.ko not found`，或 doctor 阶段 Kernel modules 报 missing。
 **Solution**:
 - rootfs 的 `modules.conf` 由启用组件的 require 并集生成（`virtuoso.toml`
   `[components.*]`）——加模块改组件的 `require`，不要手写 conf；条目顺序即
@@ -46,7 +46,7 @@ AI/人共用的故障速查。先跑 `virtuoso triage`（或 `virtuoso triage --
 - `modules-boot.conf`（initramfs，virtio+ext4 引导关键）仍是手写冻结基础集；
   组件需要引导早期加载时用 `stage = "boot"` 追加。
 - 内核重编后 `.ko` 路径变化：`make modules INSTALL_MOD_PATH=...` 或确认
-  `virtuoso verify` 报告的模块路径。
+  `virtuoso doctor --verbose` 报告的模块路径。
 
 ## 测试二进制没出现在 /tests/
 
@@ -57,7 +57,7 @@ clean && virtuoso build` 重建；查 `target/runs/<id>/build.log` 的编译告�
 
 ## kernel image not found / QEMU not found
 
-**Solution**: `virtuoso verify` 的前置诊断会给出 MISSING 项与建议
+**Solution**: `virtuoso doctor --verbose` 的前置诊断会给出 MISSING 项与建议
 （`KERNEL_PATH`、`ARCH`、`QEMU=` 覆盖）。交叉架构时确认装了对应
 `qemu-system-<arch>`。
 
@@ -74,7 +74,7 @@ serial.log（`verdict: unknown`）。
 
 ## BusyBox 下载/构建失败
 
-**Solution**: `virtuoso busybox` 走四级供应链（本地缓存 → release → 直链 →
+**Solution**: `virtuoso build --busybox-only` 走四级供应链（本地缓存 → release → 直链 →
 源码构建）。离线环境提前把对应架构的 busybox 放进 `target/build/busybox/bin/`；
 release 资产校验 ELF magic，损坏会自动回退源码构建。源码兜底仅 Linux 宿主；
 applet 符号链接由名单驱动（`infra/busybox/applets-<version>.txt`），自定义

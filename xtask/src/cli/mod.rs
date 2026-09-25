@@ -1,9 +1,8 @@
 //! CLI 编排：子命令分发与各命令组的接线。
 //!
-//! - verify  → `cli::verify`（前置检查；引擎投影供 doctor 共用）
-//! - doctor  → `cli::doctor`（verify 的 flutter-doctor 风格一屏简化呈现）
-//! - build   → `cli::build`（build / busybox / clean / skill）
-//! - vm      → `cli::vm`（shell / debug / test / matrix：启动、看门狗、判定接线）
+//! - doctor  → `cli::doctor`（体检唯一入口：一屏呈现 + --verbose 全量；引擎投影 engine_report 同文件）
+//! - build   → `cli::build`（build / clean / skill）
+//! - vm      → `cli::vm`（shell / test / matrix：启动、看门狗、判定接线）
 //! - docs    → `cli::docs`（mdBook 文档构建 / 本地预览）
 //! - 呈现命令 → `runs::render`（triage / runs / cluster / suggest / replay）
 //!
@@ -15,7 +14,6 @@ mod docs;
 mod doctor;
 mod fetch;
 mod probe;
-mod verify;
 mod vm;
 
 use std::path::{Path, PathBuf};
@@ -34,21 +32,22 @@ pub(crate) fn code_of(status: std::process::ExitStatus) -> i32 {
 
 pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
     match cmd {
-        CliCommand::Verify { arch } => verify::run_verify(arch.as_deref()),
-        CliCommand::Doctor { arch, json } => doctor::run_doctor(arch.as_deref(), json),
+        CliCommand::Doctor {
+            arch,
+            json,
+            verbose,
+        } => doctor::run_doctor(arch.as_deref(), json, verbose),
         CliCommand::Fetch { version, arch } => {
             fetch::run_fetch(version.as_deref(), arch.as_deref())
         }
-        CliCommand::Build => build::run_build(),
-        CliCommand::Shell { kvm, tcg } => vm::run_shell(kvm, tcg),
-        CliCommand::Debug => vm::run_debug(),
+        CliCommand::Build { busybox_only } => build::run_build(busybox_only),
+        CliCommand::Shell { kvm, tcg, gdb } => vm::run_shell(kvm, tcg, gdb),
         CliCommand::Test {
             timeout,
             arch,
             replay_until_fail,
             tcg,
         } => vm::run_test(timeout, arch.as_deref(), replay_until_fail, tcg),
-        CliCommand::BusyBox => build::run_busybox(),
         CliCommand::Clean => build::run_clean(),
         CliCommand::Skill { action } => build::run_skill(action),
         CliCommand::Matrix { arch } => vm::run_matrix(arch.as_deref()),

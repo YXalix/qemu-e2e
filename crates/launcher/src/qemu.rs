@@ -364,7 +364,7 @@ impl QemuInvocation {
         }
         let child = cmd.spawn().with_context(|| {
             format!(
-                "{} not found; run `virtuoso verify` for install hints",
+                "{} not found; run `virtuoso doctor --verbose` for install hints",
                 self.qemu_bin()
             )
         })?;

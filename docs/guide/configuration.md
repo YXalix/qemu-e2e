@@ -6,7 +6,7 @@
 - **优先级**：同名标量键以**进程环境变量**为准（env 覆盖 toml，CI / 命令行
   临时改参不动文件）；持久配置只写 toml。
 - **严格解析**：未知键 / 非法类型解析期报错，不静默忽略。
-- 诊断呈现：`virtuoso verify`（全量）或 `virtuoso doctor`（一屏）。
+- 诊断呈现：`virtuoso doctor`（一屏）或 `virtuoso doctor --verbose`（全量清单 + 类型化配置诊断）。
 
 ## 全局键
 

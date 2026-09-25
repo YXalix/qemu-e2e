@@ -1,15 +1,68 @@
-//! `virtuoso doctor`：flutter doctor 风格的一屏环境体检（简化版 verify）。
-//! 检查引擎复用 builder::verify::run_checks（语义单一来源，输入投影见
-//! cli/verify 的 engine_report），本模块只做分组呈现：引擎检查按消息前缀
-//! 归并为组件行，✓/✗/! 一眼可读；全量清单与类型化配置诊断仍是
-//! `virtuoso verify`。退出码与 verify
-//! 一致：critical 未过 → 1。
+//! `virtuoso doctor`：环境体检唯一入口。检查引擎复用
+//! builder::verify::run_checks（语义单一来源，引擎输入投影 engine_report
+//! 在本文件），两种呈现：缺省 = flutter-doctor 风格一屏（引擎检查按消息
+//! 前缀归并为组件行，✓/✗/! 一眼可读）；`--verbose` = 类型化配置诊断 +
+//! 完整检查清单。退出码：critical 未过 → 1。
+
+use common::fsutil::which;
+use launcher::Arch;
 
 use builder::verify::{Level, Report};
 
-use super::resolve_arch;
-use super::verify::engine_report;
+use super::{preset_kind, resolve_arch};
 use crate::config::Config;
+
+// ---------------------------------------------------------------- 引擎输入投影
+
+/// 检查引擎输入投影（保证检查语义单一来源——新增前置条件只动
+/// builder::verify::run_checks，doctor 的两种呈现自动跟随）。
+fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
+    let host_arch = Arch::parse(std::env::consts::ARCH);
+    let kernel_path = cfg.kernel_path().ok().map(|(kp, _)| kp);
+    let preset = preset_kind(cfg)?;
+    let preset_active = preset.is_some();
+
+    // preset 激活：内核镜像 = fetch 缓存（离线呈现钉定版本，未钉定留空）；
+    // 源码树 .ko 查找整体跳过（预编内核全 =y 内建，无怪癖前置）
+    let kernel_img = if preset_active {
+        Some(super::preset_dir(cfg).join(builder::preset::image_name(arch)))
+    } else {
+        kernel_path.as_ref().map(|p| p.join(arch.kernel_img()))
+    };
+    let modules = if preset_active {
+        Vec::new()
+    } else {
+        let plan = cfg.component_plan();
+        let module_lines: Vec<String> = plan.all().cloned().collect();
+        builder::verify::module_presence(&module_lines, kernel_path.as_deref(), &cfg.infra_dir)
+    };
+    let preset_version = if preset_active {
+        builder::preset::pin_version(&cfg.infra_dir).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    Ok(builder::verify::run_checks(
+        cfg.toml.is_some(),
+        kernel_path.as_deref(),
+        arch,
+        common::HostOs::current(),
+        host_arch.is_some_and(|h| h != arch),
+        kernel_img.as_deref(),
+        which(arch.qemu_bin()).then_some(arch.qemu_bin()),
+        cfg.qemu_override().as_deref(),
+        &modules,
+        cfg.build_dir
+            .join("busybox/bin")
+            .join(format!("busybox-{}", arch.name()))
+            .is_file(),
+        cfg.artifacts_dir.join("tools.img").is_file(),
+        Some(&cfg.artifacts_dir.join("initrd.img")),
+        cfg.vfio().is_some(),
+        cfg.pmem_size().is_some(),
+        preset.as_deref().map(|_| preset_version.as_str()),
+    ))
+}
 
 // ---------------------------------------------------------------- 引擎消息 → 组件分组
 
@@ -256,10 +309,24 @@ fn render(groups: &[GroupOut], tty: bool) -> String {
 
 // ---------------------------------------------------------------- 入口
 
-pub fn run_doctor(arch_override: Option<&str>, json: bool) -> anyhow::Result<i32> {
+pub fn run_doctor(arch_override: Option<&str>, json: bool, verbose: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let arch = resolve_arch(&cfg, arch_override)?;
     let report = engine_report(&cfg, arch)?;
+
+    // --verbose：全量呈现（类型化配置诊断 + 完整检查清单），文本态专属
+    if verbose && !json {
+        super::diagnostics::print_diagnostics(&cfg, arch_override);
+        print!("{}", report.render());
+        println!();
+        if report.critical_fail > 0 {
+            println!("  Fix the issues above, then re-run: virtuoso doctor --verbose");
+        } else {
+            println!("  Ready. Run: virtuoso test --timeout 30");
+        }
+        return Ok(i32::from(report.critical_fail > 0));
+    }
+
     let groups = group_checks(&report);
 
     let fail_total = report.critical_fail;
@@ -290,7 +357,7 @@ pub fn run_doctor(arch_override: Option<&str>, json: bool) -> anyhow::Result<i32
         print!("{}", render(&groups, tty));
         if fail_total > 0 {
             println!(
-                "\n  {} {fail_total} critical, {} warnings — full checklist: virtuoso verify",
+                "\n  {} {fail_total} critical, {} warnings — full checklist: virtuoso doctor --verbose",
                 (if tty { "\x1b[0;31m✗\x1b[0m" } else { "✗" }),
                 report.warnings
             );

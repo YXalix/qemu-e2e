@@ -17,7 +17,7 @@ CLI 入口。
 
 ```bash
 cargo install --path xtask    # 规范二进制 virtuoso 装入 PATH；工作区内 cargo xtask / cargo v 别名等价
-virtuoso doctor             # 一屏环境体检（简化版 verify，✓/✗ 组件行）
+virtuoso doctor             # 一屏环境体检（✓/✗ 组件行；--verbose 全量）
 virtuoso test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
 virtuoso triage             # 分诊报告（判定以 verdict 为准）
 ```
@@ -26,10 +26,9 @@ virtuoso triage             # 分诊报告（判定以 verdict 为准）
 
 | 命令 | 作用 |
 |---|---|
-| `virtuoso doctor` | 一屏环境体检（简化版 verify，`--json` 机器可读） |
+| `virtuoso doctor` | 一屏环境体检（`--verbose` 全量诊断，`--json` 机器可读） |
 | `virtuoso build` | 重建 initrd.img / rootfs.img / tools.img |
-| `virtuoso shell [--kvm]` | 交互式 VM（BusyBox shell） |
-| `virtuoso debug` | GDB stub `:1234` 挂起启动 |
+| `virtuoso shell [--kvm] [--gdb]` | 交互式 VM（BusyBox shell）；`--gdb` GDB stub `:1234` 挂起启动 |
 | `virtuoso matrix [--arch a]` | 多架构矩阵（x86_64 / arm64 / riscv64） |
 | `virtuoso probe --cmd '…'` | AI 交互通道（virtio-serial agent 命令批） |
 | `virtuoso cluster` / `suggest` | 跨 run 失败聚类 / 补丁→最小测试集 |

@@ -16,7 +16,7 @@ virtuoso shell --kvm      # 原生加速（宿主 = 目标架构时）
 `CONFIG_GDB_SCRIPTS=y`）。
 
 ```bash
-virtuoso debug            # 终端 1：挂起启动，监听 :1234
+virtuoso shell --gdb      # 终端 1：挂起启动，监听 :1234
 cd "$KERNEL_PATH" && \    # 终端 2：
 gdb-multiarch vmlinux -ex 'target remote :1234'
 ```

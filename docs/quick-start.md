@@ -82,8 +82,8 @@ cargo install --path xtask    # 规范二进制 virtuoso 装入 PATH（一次）
 virtuoso doctor               # 一屏体检：✓/✗/! 组件行，最快确认接线
 ```
 
-`doctor` 报 ✗ 时用 `virtuoso verify` 看全量清单与类型化配置诊断（两者共用
-同一检查引擎，只是呈现繁简之别，同参 `--arch`）。
+`doctor` 报 ✗ 时加 `--verbose` 看全量清单与类型化配置诊断（同一检查引擎，
+只是呈现繁简之别，同参 `--arch`）。
 
 ## 4. 首跑与判定
 

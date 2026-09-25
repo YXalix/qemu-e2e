@@ -17,8 +17,8 @@
 **终端呈现同样按流分离**（test / probe / matrix）：运行中终端只回显 guest
 串口（即 `serial.log` 的内容）；QEMU 自身输出不刷屏，只落 `qemu-stderr.log`，
 失败或超时收尾时回显其末尾至多 40 行（QEMU 早夭、参数被拒的现场就在这几行
-里），成功保持安静。`virtuoso shell` / `debug` 是交互式会话，stdio 天然合流，
-QEMU 输出仍实时可见。
+里），成功保持安静。`virtuoso shell`（含 `--gdb` 调试挂起）是交互式会话，
+stdio 天然合流，QEMU 输出仍实时可见。
 
 ## Verdict 语义
 
