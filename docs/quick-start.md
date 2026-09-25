@@ -40,19 +40,23 @@ make modules -j"$(nproc)"        # 只要有任何模块是 =m
 
 ### macOS 上的内核供给（devkit/docker/ 内核开发环境）
 
-macOS 本机编不了 Linux 内核，用容器钉死工具链（Firecracker build-docker
-式；源码放 named volume，规避 APFS 大小写不敏感坑）：
+macOS 本机编不了 Linux 内核，用容器钉死工具链：源码进 named volume
+（容器侧 ext4，规避 APFS 大小写不敏感坑），宿主经 OrbStack 视图直接
+读写（Linux 上同一套命令，volume 本体就在宿主文件系统）：
 
 ```bash
 devkit/docker/kernel.sh clone https://gitcode.com/openeuler/kernel.git --ref OLK-6.6-dev
 devkit/docker/kernel.sh defconfig openeuler_defconfig
 devkit/docker/kernel.sh build          # Image + modules + clangd 索引数据
-devkit/docker/kernel.sh export         # 最小树 → target/kernel/arm64/
+devkit/docker/kernel.sh path           # → volume 的宿主可见路径
 ```
 
-然后在 `virtuoso.toml` 设 `kernel_path = "target/kernel/arm64"`。VS Code
-经 devcontainer 打开内核源码 volume 即得 clangd 全量跳转/补全（构建一次
-后自动有 compile_commands.json），详见 [devkit/docker/README.md](../devkit/docker/README.md)。
+`virtuoso.toml` 里 `kernel_path` 指 **`kernel.sh path` 的输出**（纯宿主
+路径，virtuoso 直接读 Image 与 .ko，无需导出），即可跑宿主主循环；AI 与
+编辑器也以该目录为工作目录（git/clangd 全原生，构建走 `kernel.sh build`）。
+volume 无宿主视图时（Docker Desktop）用 `kernel.sh export` 导出最小树后
+指 `target/kernel/arm64`。多内核切换 = 换 `KERNEL_VOLUME` 卷名。
+详见 [devkit/docker/README.md](../devkit/docker/README.md)。
 
 内核树也可在任何 Linux 机器上构建后 rsync 过来——virtuoso 只要求
 `KERNEL_PATH` 指向「Makefile + arch/<a>/boot/<Image> + \*.ko」的树。

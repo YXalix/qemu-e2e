@@ -9,7 +9,7 @@ init-initramfs、modules-boot.conf（冻结基础集）、testcases/、tools/、
 busybox/applets-*.txt（applet 名单冻结数据）、kernel/（preset 内核
 fragment/pin/构建脚本）），git 跟踪
 （rootfs 的 modules.conf 由组件 require 并集生成）；`devkit/` 收纳内核开发外围工具
-（`devkit/docker/` 容器化内核开发环境 = macOS 内核供给 + clangd、`devkit/skills/`
+（`devkit/docker/` 容器化内核开发环境 = 双平台内核供给 + clangd、`devkit/skills/`
 AI skill 源，见 Code Map）；构建产物与缓存一律落
 `target/`（数据面，git 忽略）：`target/artifacts/`（initrd.img / rootfs.img /
 tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools 暂存目录）
@@ -65,7 +65,7 @@ AI 的标准验证循环：`doctor → test → triage`。**判定以 triage 的
 | 测试用例 | `infra/testcases/` | 独立 workspace（`Cargo.toml` 在目录根）：`testfw`（std）框架 + 用例 crate（C 测试体在 crate 的 `c/`，经 build.rs+cc 编入同一二进制；C 侧宏在 `framework/include/testfw.h`，FFI 落回 testfw 计数）；musl 静态 ELF（零 rustflags，与 tools 同配方）；`/tests/` 自动发现 |
 | VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 tools.img 的 `/bin/`（VM 内挂 `/tools`，init-hooks 注入 PATH），不进 `/tests/` 不参与判定 |
 | skill | `devkit/skills/kernel-dev/`、`devkit/skills/kernel-virtuoso/` | `virtuoso skill install` 装入内核树（后者 = AI 数据接口集成） |
-| 内核开发容器 | `devkit/docker/` | **macOS 内核供给**：Dockerfile.kernel（钉死工具链+clangd）+ kernel.sh 薄壳（clone/build/export 进 named volume，规避 APFS 大小写坑）+ devcontainer.json（VS Code 打开 volume 即 clangd 全量索引）；镜像由 `.github/workflows/kernel-builder.yml` 发 ghcr |
+| 内核开发容器 | `devkit/docker/` | **双平台内核供给链**：Dockerfile.kernel（钉死工具链+clangd）+ kernel.sh 薄壳（clone/build/cc/path/export；源码权威在 named volume，宿主经 `kernel.sh path` 的平台视图直接读写——macOS=OrbStack 视图、Linux=volume 本体；CDB 改写为宿主路径形态）+ devcontainer.json（可选容器内编辑）；多内核切换=换 KERNEL_VOLUME 卷名；镜像由 `.github/workflows/kernel-builder.yml` 发 ghcr |
 | 文档站 | `docs/`（含 `book.toml`） | **docs/ 是文档唯一事实来源**且文档站自包含其内（书根 = docs/，book.toml 的 src 指向自身）；`cli/docs.rs` 接线 `virtuoso docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
 
 ## 运行工件（AI 分诊数据源）
