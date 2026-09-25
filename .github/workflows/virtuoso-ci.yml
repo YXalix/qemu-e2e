@@ -64,7 +64,7 @@ jobs:
   # 内核 E2E（boot + 标记协议断言）需要内核树与 KVM/TCG 资源，
   # 放在自建 runner（openEuler 宿主，virtuoso.toml 指向内核树）上手动触发。
   # runner 前置：zig（C 测试体编译器，verify 硬闸门）、内核树、KVM。
-  # runner 上以 systemd 服务或 tmux 会话常驻 virtuoso（或工作区别名 cargo xtask）均可；
+  # runner 上以 systemd 服务或 tmux 会话常驻 virtuoso 均可；
   # 产物 target/runs/ 会由 triage 消化，失败时把 runs 目录整体上传。
   kernel-e2e:
     name: E2E (self-hosted, manual)
@@ -74,15 +74,18 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Install Virtuoso
+        run: cargo install --path cli
+
       - name: Virtuoso Doctor
-        run: cargo xtask doctor --verbose
+        run: virtuoso doctor --verbose
 
       - name: Execute E2E Suite
-        run: cargo xtask test --timeout 600
+        run: virtuoso test --timeout 600
 
       - name: Triage
         if: always()
-        run: cargo xtask triage || true
+        run: virtuoso triage || true
 
       - name: Upload Run Artifacts
         if: always()
@@ -120,34 +123,37 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-system-arm qemu-system-x86 qemu-system-misc
 
+      - name: Install Virtuoso
+        run: cargo install --path cli
+
       - name: Fetch preset kernel
         id: fetch
         continue-on-error: true
         env:
           KERNEL_PRESET: mainline
-        run: cargo xtask fetch
+        run: virtuoso fetch
 
       - name: Virtuoso Doctor
         if: steps.fetch.outcome == 'success'
         env:
           KERNEL_PRESET: mainline
-        run: cargo xtask doctor --verbose
+        run: virtuoso doctor --verbose
 
       - name: Build test assets
         if: steps.fetch.outcome == 'success'
         env:
           KERNEL_PRESET: mainline
-        run: cargo xtask build
+        run: virtuoso build
 
       - name: Execute E2E (TCG)
         if: steps.fetch.outcome == 'success'
         env:
           KERNEL_PRESET: mainline
-        run: cargo xtask test --timeout 300
+        run: virtuoso test --timeout 300
 
       - name: Triage
         if: always()
-        run: cargo xtask triage || true
+        run: virtuoso triage || true
 
       - name: Upload Run Artifacts
         if: failure()

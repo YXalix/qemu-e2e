@@ -33,7 +33,7 @@ virtuoso triage             # 以 verdict 为准的判定报告
 
 Rust workspace 是唯一行为权威：`common`（基础层）→ `builder`（构建）→
 `launcher`（启动 DSL）→ `judge`（判定）→
-`guardian`（进程治理）→ `tracker`（跨 run 聚类），入口 CLI 是 `virtuoso`（xtask crate）。
+`guardian`（进程治理）→ `tracker`（跨 run 聚类），入口 CLI 是 `virtuoso`（cli crate）。
 每次运行落盘 `target/runs/<id>-<arch>/`，
 `verdict.json` 是判定的唯一事实（exit code 不是——`-no-reboot` 下内核
 panic 会让 QEMU 以 exit 0 退出）。

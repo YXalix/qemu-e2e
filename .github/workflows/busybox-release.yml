@@ -155,7 +155,7 @@ jobs:
           if [ -z "$REL" ] || echo "$REL" | grep -q '"Not Found"'; then
             curl -fsSL -X POST -H "$AUTH" -H "Accept: application/vnd.github+json" \
               "${API}/releases" \
-              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static + rootfs)\",\"body\":\"BusyBox ${VERSION} for the Virtuoso kernel-testing harness (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\\n\\nEach arch ships: bare static busybox and a generic BusyBox rootfs (rootfs-*.cpio.gz, interactive shell on console, no test content). Clone the Virtuoso repo and run 'virtuoso build' (after 'cargo install --path xtask') to assemble the two-stage boot pair (initramfs + ext4 rootfs).\"}" \
+              -d "{\"tag_name\":\"busybox-v${VERSION}\",\"name\":\"BusyBox ${VERSION} (static + rootfs)\",\"body\":\"BusyBox ${VERSION} for the Virtuoso kernel-testing harness (defconfig + CONFIG_STATIC=y, built in ubuntu:22.04).\\n\\nEach arch ships: bare static busybox and a generic BusyBox rootfs (rootfs-*.cpio.gz, interactive shell on console, no test content). Clone the Virtuoso repo and run 'virtuoso build' (after 'cargo install --path cli') to assemble the two-stage boot pair (initramfs + ext4 rootfs).\"}" \
               > /tmp/rel.json
           else
             echo "$REL" > /tmp/rel.json

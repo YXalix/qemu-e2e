@@ -77,7 +77,7 @@ enabled = true
 # memory_per_node = "1G"
 
 # [components.pmem]
-# 持久内存（DT 途径，arm64/riscv64）：设备树注入 pmem-region 节点（xtask 用
+# 持久内存（DT 途径，arm64/riscv64）：设备树注入 pmem-region 节点（cli 用
 # dumpdtb+fdtput 生成补丁 DTB，经 -dtb 传入），cmdline 追加 mem=<总内存−size>
 # 把 pmem 区从内核线性内存排除（等价 x86 memmap= 语义），主内存后端换宿主
 # 文件（share=on）—— pmem 区即文件 backed，guest 写入持久落盘。guest 内

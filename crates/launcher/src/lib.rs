@@ -4,7 +4,7 @@
 //! 多 virtio-blk 数据盘、vfio-pci 透传），argv 冻结在原 `infra/run-qemu.sh`
 //! （已删除的 shell 基线）上，由 qemu.rs 的 `argv_*` 单测把守；
 //! `QEMU=echo virtuoso shell` 可打印 argv 人工对照。架构矩阵定义在
-//! common::Arch —— builder（交叉前缀）与 xtask 共同复用。
+//! common::Arch —— builder（交叉前缀）与 cli 共同复用。
 
 pub mod numa;
 pub mod qemu;
@@ -36,7 +36,7 @@ impl DataDisk {
 ///   从内核线性内存模型中排除（等价 x86 `memmap=nn!ss` 语义）；
 /// - `ram_backend`：主内存后端文件（memory-backend-file share=on），挖出的
 ///   pmem 区即宿主文件 backed —— guest 写入持久落盘、跨 run 保留；
-/// - `dtb`：补丁后的设备树（xtask 生成：dumpdtb + fdtput，根节点注入
+/// - `dtb`：补丁后的设备树（cli 生成：dumpdtb + fdtput，根节点注入
 ///   pmem-region），经 `-dtb` 传入替换 QEMU 生成版。
 ///
 /// guest 侧 of_pmem 注册 label-less nd_region → 免 ndctl 自动出现

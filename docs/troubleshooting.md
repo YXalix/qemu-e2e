@@ -106,5 +106,5 @@ ELF）：`brew install zig`，或自带工具链 `CC=<cross-gcc>` +
 
 ## 工件占满磁盘
 
-**Solution**: 每次运行保留最近 20 次（`xtask/src/runs/rundir.rs` 的 `RUNS_KEEP`），
+**Solution**: 每次运行保留最近 20 次（`cli/src/runs/rundir.rs` 的 `RUNS_KEEP`），
 `target/runs/` 在 `/target` 下随 `cargo clean` 一并清除；单次工件通常 < 1 MiB。

@@ -9,7 +9,7 @@
 console / machine / 交叉前缀）、`which` 与 ELF 探测、内存量解析、UTC 时间、
 人类可读大小。所有 crate 只依赖 common，不互相倒挂。
 
-## xtask/src/config.rs — 类型化配置
+## cli/src/config.rs — 类型化配置
 
 `virtuoso.toml` 是唯一配置面：全局键 + `[components.*]` 组件段 +
 `[busybox]` 版本段。标量键优先级：进程环境变量 > `virtuoso.toml`
@@ -85,7 +85,7 @@ test_end / assert / summary / marker / panic / oops / run_end）、
 ## guardian — 进程治理
 
 * **`ProcessGroupGuard`（RAII）**：QEMU 进程组收割，Drop / 超时 / Ctrl-C 三路径统一 KILL；pgid=0 惰性登记防自杀。
-* **`registry`**：活动进程组全局注册表 + Ctrl-C 守护（`install_ctrlc_guard`，xtask 入口装载）+ 墙钟看门狗。`Supervised` 是"登记 + 收割守卫"组合句柄，与 launcher 的 `spawn_supervised` 消除 spawn 样板。
+* **`registry`**：活动进程组全局注册表 + Ctrl-C 守护（`install_ctrlc_guard`，cli 入口装载）+ 墙钟看门狗。`Supervised` 是"登记 + 收割守卫"组合句柄，与 launcher 的 `spawn_supervised` 消除 spawn 样板。
 
 `virtuoso test` 中途被 Ctrl-C 打断时：收割 QEMU 进程组 → 落盘已产出的 run 工件 → 以 130 退出，宿主机不残留虚拟化进程。
 

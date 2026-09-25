@@ -2,7 +2,7 @@
 //!
 //! serde 字段序即落盘键序；构造（`VerdictReport::build`）与回读
 //! （serde 反序列化）共用同一结构体，键名/取值是编译期保证。
-//! IO（落盘、目录管理）在 xtask 的 runs 层，本模块只管语义。
+//! IO（落盘、目录管理）在 cli 的 runs 层，本模块只管语义。
 
 use std::path::Path;
 

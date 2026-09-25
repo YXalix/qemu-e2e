@@ -2,7 +2,7 @@
 //!
 //! 职责：对**最小化运行摘要**（`RunSummary`）做失败指纹聚类、flaky 识别与
 //! 补丁↔测试映射。本 crate 只承载语义；IO 与呈现（runs 目录扫描、报告打印）
-//! 在 xtask 的 runs 层 —— verdict.json schema 由 `judge::report::VerdictReport`
+//! 在 cli 的 runs 层 —— verdict.json schema 由 `judge::report::VerdictReport`
 //! 单点定义，`RunSummary` 从它 `From` 投影而来。
 //!
 //! 输入刻意收敛为 `RunSummary`（而非 verdict.json 全文），使聚类规则与

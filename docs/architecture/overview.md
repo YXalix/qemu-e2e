@@ -23,10 +23,10 @@
 * **通用词** — 国际通用、好记好念，内核测试领域无同名项目。
 
 crate 以角色名词命名（common / builder / launcher / judge / guardian / tracker /
-xtask），名字与职责一一对应：可以直接说"让 builder 重建 initrd"、"judge 在等
+cli），名字与职责一一对应：可以直接说"让 builder 重建 initrd"、"judge 在等
 TEST_COMPLETE"。
 
-入口 crate 保留 xtask 这个 workspace 任务器传统名（工作区别名 `cargo xtask` / `cargo v`），对外的规范二进制名是 virtuoso——指挥家本人：`cargo install --path xtask` 后，PATH 上的就是它。全部命令见 [CLI 参考](../cli-reference.md)。
+入口 crate 是 cli，包名即规范二进制名 virtuoso——指挥家本人：`cargo install --path cli` 后，PATH 上的就是它。全部命令见 [CLI 参考](../cli-reference.md)。
 
 ## 架构图
 
@@ -82,9 +82,8 @@ TEST_COMPLETE"。
 ```text
 virtuoso/
 ├── Cargo.toml                  # Root Workspace
-├── .cargo/config.toml          # virtuoso 别名
 ├── virtuoso.toml               # 唯一配置面（模板：活动行 = 缺省常规启动配置）
-├── xtask/
+├── cli/
 │   └── src/
 │       ├── main.rs             # clap 子命令定义
 │       ├── config.rs           # 类型化配置（virtuoso.toml 唯一配置面）

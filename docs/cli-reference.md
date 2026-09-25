@@ -1,7 +1,6 @@
 # CLI 参考
 
-`virtuoso` 是唯一 CLI 入口（`cargo install --path xtask` 装入 PATH；工作区内
-`cargo xtask` / `cargo v` 别名等价且改源码即重编）。
+`virtuoso` 是唯一 CLI 入口（`cargo install --path cli` 装入 PATH）。
 
 ## 命令一览
 
@@ -20,8 +19,8 @@
 | `replay --log f [--json]` | judge | 任意串口日志的离线标记协议断言（不启动 QEMU） |
 | `cluster [--json]` | tracker | 跨 run 失败指纹聚类 + flaky 清单 + 首现 run |
 | `suggest [--diff f] [--json]` | tracker | git diff 子系统路径 → 推荐最小测试集 |
-| `skill install \| uninstall` | xtask | AI skill 装入 / 移出内核树 |
-| `docs [--serve] [--open]` | xtask | mdBook 文档构建到 target/book / 本地预览 |
+| `skill install \| uninstall` | cli | AI skill 装入 / 移出内核树 |
+| `docs [--serve] [--open]` | cli | mdBook 文档构建到 target/book / 本地预览 |
 
 ## 通用行为
 

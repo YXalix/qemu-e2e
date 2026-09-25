@@ -1,5 +1,5 @@
 [package]
-name = "xtask"
+name = "virtuoso"
 version.workspace = true
 edition.workspace = true
 publish = false
@@ -21,8 +21,4 @@ tracker = { path = "../crates/tracker" }
 version = "1"
 features = ["derive"]
 
-# 规范二进制名：cargo install --path xtask 后 PATH 上是 virtuoso；
-# workspace 内仍可用 cargo xtask / cargo v 别名（.cargo/config.toml）。
-[[bin]]
-name = "virtuoso"
-path = "src/main.rs"
+# bin 名 = 包名 virtuoso（src/main.rs 自动识别）；cargo install --path cli 装入 PATH。
