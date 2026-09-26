@@ -232,13 +232,20 @@ pub(crate) fn module_presence(
     kernel_path: Option<&Path>,
     fallback_dir: &Path,
 ) -> Vec<(String, bool)> {
-    module_lines
+    let names: Vec<&str> = module_lines
         .iter()
         .map(|line| modconf::module_name(line))
         .filter(|m| !m.is_empty())
+        .collect();
+    let kos = kernel_path
+        .filter(|_| !names.is_empty())
+        .map(modconf::collect_kos);
+    names
+        .into_iter()
         .map(|m| {
-            let found = kernel_path
-                .map(|kp| modconf::find_ko(kp, fallback_dir, m).is_some())
+            let found = kos
+                .as_ref()
+                .map(|map| map.contains_key(m) || modconf::infra_ko(fallback_dir, m).is_some())
                 .unwrap_or(false);
             (m.to_string(), found)
         })
