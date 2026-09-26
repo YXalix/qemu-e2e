@@ -117,13 +117,15 @@ pub fn run_test(
     Ok(last_code)
 }
 
-/// `--only` 名单合法性：测例名是文件 basename——非空、无逗号/空白
-/// （逗号是 init 侧的名单分隔符，空白会拆坏 cmdline token）。
+/// `--only` 名单合法性：条目是测例名（平铺 basename 或 `组名/用例名`）或
+/// 组选择（尾斜杠 `组名/`）——非空、无逗号/空白（逗号是 init 侧的名单
+/// 分隔符，空白会拆坏 cmdline token）。
 fn validate_only(only: &[String]) -> anyhow::Result<()> {
     for name in only {
         if name.trim().is_empty() || name.contains(|c: char| c.is_whitespace() || c == ',') {
             anyhow::bail!(
-                "invalid --only entry {name:?}: test names are file basenames (no commas/whitespace)"
+                "invalid --only entry {name:?}: expected a test name (basename or \
+                 group/case) or a group selection (group/); no commas/whitespace"
             );
         }
     }

@@ -70,7 +70,8 @@ tag。发布是幂等的：同名 asset 先删后传，release 已存在则复�
 2. busybox 树      → 二进制 + 名单驱动 applet 符号链接 + 骨架目录 + passwd/group
 3. initramfs 树    → busybox 树 + pivot init + boot 模块集
                      → cpio newc + gzip（mtime 恒 0 + 路径排序 → 产物确定性可复现）
-4. rootfs 树       → busybox 树 + 测试 init + 测试模块清单 + /tests/*（musl 静态）+ init-hooks.sh
+4. rootfs 树       → busybox 树 + 测试 init + 测试模块清单 + /tests/*（musl 静态，含测试组子目录）
+                     + init-hooks.sh + rootfs.d 增量并入（只增不覆盖）
                      → ext4（自动尺寸）
 5. tools.img 树    → tools workspace 的 musl 静态产物 → ext4（卷标 tools）
 ```
@@ -94,5 +95,6 @@ tag。发布是幂等的：同名 asset 先删后传，release 已存在则复�
 | `infra/init` / `infra/init-initramfs` | 两阶段 PID 1（见[两段式引导](boot.md)） |
 | `infra/modules-boot.conf` | boot 冻结基础模块集 → initramfs |
 | `infra/testcases/`、`infra/tools/` | 用例与工具 workspace |
+| `rootfs.d/` | 用户 drop-in（增量并入 rootfs，只增不覆盖；git 忽略，缺省可无） |
 | `target/artifacts/*.img` | 构建产物（git 忽略） |
 | `.github/workflows/busybox-release.yml` | release 生成（含冻结 init） |

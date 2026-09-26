@@ -88,7 +88,8 @@ enum Command {
         /// Force TCG emulation (macOS defaults to HVF; Linux already defaults to TCG)
         #[arg(long)]
         tcg: bool,
-        /// Run only the named test binaries (comma-separated, repeatable);
+        /// Run only the named tests (comma-separated, repeatable): flat
+        /// basename, group/case, or group/ (whole group);
         /// empty = run all of /tests. Passed to init as virtuoso.only=
         #[arg(long = "only", value_delimiter = ',')]
         only: Vec<String>,

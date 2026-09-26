@@ -13,6 +13,7 @@ QEMU 启动跑 `/tests/` → 串口标记协议判定 → verdict.json 落盘。
 `judge` 判定 / `forge` 容器化内核供给；`arch`（Arch 矩阵 + HostOs）与
 `util`（顶层工具集）为原 common 摊平）；
 `infra/` 是 VM 内源资产（init、testcases、tools、busybox 名单——多为冻结数据）；
+仓库根 `rootfs.d/` 是用户 drop-in（构建期增量并入 rootfs，只增不覆盖；git 忽略，勿提交）；
 `devkit/` 是内核开发容器与 AI skill 源；构建产物与运行工件落 `target/`（git 忽略）。
 
 ## 快速命令（复制即用）

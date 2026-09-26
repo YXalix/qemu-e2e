@@ -25,6 +25,8 @@ pub(crate) struct CargoInstall<'a> {
     pub label: &'a str,
     /// 逐二进制进度行前缀（"  Tool:" / "  Test:"）。
     pub item_prefix: &'a str,
+    /// 二进制名 → 安装子目录（测试组）。None 或未命中 = 平铺进 dest（tools）。
+    pub groups: Option<&'a std::collections::HashMap<String, String>>,
 }
 
 impl CargoInstall<'_> {
@@ -87,10 +89,19 @@ impl CargoInstall<'_> {
                     .context("release-dir entry has no file name")?
                     .to_string_lossy()
                     .to_string();
-                std::fs::copy(&bin, self.dest.join(&name))
+                let group = self.groups.and_then(|g| g.get(&name));
+                let dest_dir = match group {
+                    Some(g) => self.dest.join(g),
+                    None => self.dest.to_path_buf(),
+                };
+                std::fs::create_dir_all(&dest_dir)?;
+                std::fs::copy(&bin, dest_dir.join(&name))
                     .with_context(|| format!("copy {} failed", bin.display()))?;
-                crate::util::set_executable(&self.dest.join(&name))?;
-                progress.line(&format!("{} {name}", self.item_prefix));
+                crate::util::set_executable(&dest_dir.join(&name))?;
+                match group {
+                    Some(g) => progress.line(&format!("{} {g}/{name}", self.item_prefix)),
+                    None => progress.line(&format!("{} {name}", self.item_prefix)),
+                }
                 installed += 1;
             }
         }

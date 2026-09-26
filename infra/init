@@ -115,7 +115,8 @@ print_status() {
 }
 
 # Test selection (from `virtuoso test --only`): the launcher appends
-# `virtuoso.only=<name,...>` to the kernel cmdline; init filters /tests/*.
+# `virtuoso.only=<entry,...>` to the kernel cmdline; init filters /tests/*.
+# Entries: flat test name, "group/case", or "group/" (whole group).
 # Absent or empty = run everything. Marker protocol v1 is untouched:
 # selected binaries emit the full marker set, unselected ones stay silent.
 ONLY=""
@@ -128,16 +129,47 @@ parse_only() {
     done
 }
 
-# selected <name>: true when the name passes the filter (comma-separated list).
+# selected <name>: true when the name passes the filter (comma-separated
+# list). Exact token = one test; trailing-slash token = whole group
+# ("smoke/" selects every "smoke/<case>").
 selected() {
     [ -z "$ONLY" ] && return 0
-    case ",$ONLY," in
-        *",$1,"*) return 0 ;;
-        *) return 1 ;;
-    esac
+    local tok
+    # shellcheck disable=SC2086
+    for tok in $(printf '%s' "$ONLY" | tr ',' ' '); do
+        case "$tok" in
+            */)
+                case "$1" in
+                    "$tok"*) return 0 ;;
+                esac
+                ;;
+            *)
+                [ "$1" = "$tok" ] && return 0
+                ;;
+        esac
+    done
+    return 1
 }
 
-# Run all tests in /tests directory
+# run_one <name> <exe>: execute one test binary and emit the marker
+# protocol v1 lines for it (name token may contain "/" for grouped tests).
+run_one() {
+    local name="$1" exe="$2"
+    test_count=$((test_count + 1))
+    echo ""
+    echo "--- Running: $name ---"
+    if "$exe"; then
+        echo "PASSED: $name"
+        pass_count=$((pass_count + 1))
+    else
+        echo "FAILED: $name"
+        test_failed=1
+    fi
+}
+
+# Run all tests in /tests directory. Flat executables are the default
+# group (name = basename); one-level subdirectories are test groups
+# (name = "group/case", group dirs are NOT recursed further).
 run_auto_tests() {
     parse_only
     echo ""
@@ -147,26 +179,23 @@ run_auto_tests() {
     [ -n "$ONLY" ] && echo "Filter: $ONLY"
     echo ""
 
-    local test_failed=0
-    local test_count=0
-    local pass_count=0
+    test_failed=0
+    test_count=0
+    pass_count=0
 
-    for test_exe in "$TESTS_DIR"/*; do
-        if [ -f "$test_exe" ] && [ -x "$test_exe" ]; then
-            test_name=$(basename "$test_exe")
-            if ! selected "$test_name"; then
-                continue
-            fi
-            test_count=$((test_count + 1))
-            echo ""
-            echo "--- Running: $test_name ---"
-            if "$test_exe"; then
-                echo "PASSED: $test_name"
-                pass_count=$((pass_count + 1))
-            else
-                echo "FAILED: $test_name"
-                test_failed=1
-            fi
+    for entry in "$TESTS_DIR"/*; do
+        if [ -d "$entry" ]; then
+            group=$(basename "$entry")
+            for exe in "$entry"/*; do
+                [ -f "$exe" ] && [ -x "$exe" ] || continue
+                test_name="$group/$(basename "$exe")"
+                selected "$test_name" || continue
+                run_one "$test_name" "$exe"
+            done
+        elif [ -f "$entry" ] && [ -x "$entry" ]; then
+            test_name=$(basename "$entry")
+            selected "$test_name" || continue
+            run_one "$test_name" "$entry"
         fi
     done
 

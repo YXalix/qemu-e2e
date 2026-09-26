@@ -29,6 +29,9 @@ infra/tools/target/
 
 # 本机会话状态（virtuoso kernel current 活动卷指针等）
 .virtuoso/
+
+# 用户 drop-in（构建期增量并入 rootfs，只增不覆盖；内容本地自管，随用随建）
+/rootfs.d/
 # devcontainer 渲染产物（virtuoso kernel use/clone 按 current 活动卷渲染；
 # 落 .devcontainer/ 是 VS Code 自动发现契约的要求）
 .devcontainer/

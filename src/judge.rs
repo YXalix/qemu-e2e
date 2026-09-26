@@ -535,6 +535,25 @@ mod tests {
     }
 
     #[test]
+    fn grouped_names_with_slashes_pair_correctly() {
+        // 测试组：名字 token = "group/case"。名字是不透明字符串——
+        // Running/PASSED/FAILED 靠全等配对，斜杠不参与任何切分。
+        let log = "--- Running: smoke/t1 ---\n  [PASS] a\nPASSED: smoke/t1\n\
+                   --- Running: smoke/t2 ---\nFAILED: smoke/t2\n\
+                   --- Running: t3 ---\nPASSED: t3\n\
+                   Test Results: 2/3 passed\nTEST_COMPLETE: SOME TESTS FAILED\n";
+        let a = parse(log);
+        assert_eq!(a.tests.len(), 3);
+        assert_eq!(a.tests[0].name, "smoke/t1");
+        assert_eq!(a.tests[0].status, TestStatus::Pass);
+        assert_eq!(a.tests[1].name, "smoke/t2");
+        assert_eq!(a.tests[1].status, TestStatus::Fail);
+        assert_eq!(a.tests[2].name, "t3");
+        assert_eq!(a.summary, Some((2, 3)));
+        assert_eq!(judge(1, false, &a), Verdict::Failed);
+    }
+
+    #[test]
     fn panic_with_exit_zero_is_false_pass_detected() {
         // -no-reboot：panic 触发 reset → QEMU exit 0，无 TEST_COMPLETE
         let log = "--- Running: t1 ---\n  [PASS] step\n\

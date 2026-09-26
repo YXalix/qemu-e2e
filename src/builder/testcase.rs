@@ -26,6 +26,7 @@ pub(crate) fn install_rust(
     cross: &CrossSetup,
     progress: &mut Progress,
 ) -> anyhow::Result<()> {
+    let groups = group_map(rust_dir);
     let job = crate::builder::cargo_install::CargoInstall {
         rust_dir,
         dest: dest_tests,
@@ -33,11 +34,57 @@ pub(crate) fn install_rust(
         cross,
         label: "rust testcases",
         item_prefix: "  Test:",
+        groups: Some(&groups),
     };
     // 返回 0 = workspace 缺失或显式 WARN 降级（cargo/musl target 缺失），不算错；
     // 构建成功但零产物由 CargoInstall::run 内部 bail。
     job.run(progress)?;
     Ok(())
+}
+
+/// 测试组映射：扫描 workspace 成员 crate 的 manifest，读
+/// `package.metadata.virtuoso.group`（包名 + 自定义 `[[bin]]` 名 → 组）。
+/// 无声明的 crate 平铺进 `/tests/`；非目录条目与坏 manifest 忽略。
+pub(crate) fn group_map(rust_dir: &Path) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let Ok(entries) = std::fs::read_dir(rust_dir) else {
+        return map;
+    };
+    for entry in entries.flatten() {
+        let manifest = entry.path().join("Cargo.toml");
+        let Ok(text) = std::fs::read_to_string(&manifest) else {
+            continue;
+        };
+        let Ok(v) = text.parse::<toml::Table>() else {
+            continue;
+        };
+        let Some(group) = v
+            .get("package")
+            .and_then(|p| p.get("metadata"))
+            .and_then(|m| m.get("virtuoso"))
+            .and_then(|x| x.get("group"))
+            .and_then(|g| g.as_str())
+        else {
+            continue;
+        };
+        let mut names: Vec<String> = v
+            .get("package")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .map(|s| vec![s.to_string()])
+            .unwrap_or_default();
+        if let Some(bins) = v.get("bin").and_then(|b| b.as_array()) {
+            for bin in bins {
+                if let Some(n) = bin.get("name").and_then(|x| x.as_str()) {
+                    names.push(n.to_string());
+                }
+            }
+        }
+        for name in names {
+            map.insert(name, group.to_string());
+        }
+    }
+    map
 }
 
 /// `target/release/` 下的测试二进制判定：可执行文件、排除 `.d`/`.rlib`/`.so` 等副产物。
@@ -89,6 +136,29 @@ mod tests {
             rust_test_binary(&script).is_none(),
             "build script 必须被过滤"
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn group_map_reads_metadata_and_bin_names() {
+        let dir = std::env::temp_dir().join(format!("builder-gmap-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("test-net")).unwrap();
+        std::fs::create_dir_all(dir.join("test-plain")).unwrap();
+        std::fs::create_dir_all(dir.join("target")).unwrap();
+        std::fs::write(
+            dir.join("test-net/Cargo.toml"),
+            "[package]\nname = \"test-net\"\n\n[[bin]]\nname = \"net-bin\"\n\n[package.metadata.virtuoso]\ngroup = \"smoke\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("test-plain/Cargo.toml"),
+            "[package]\nname = \"test-plain\"\n",
+        )
+        .unwrap();
+        let map = group_map(&dir);
+        assert_eq!(map.get("test-net").map(String::as_str), Some("smoke"));
+        assert_eq!(map.get("net-bin").map(String::as_str), Some("smoke"));
+        assert!(!map.contains_key("test-plain"), "无声明 → 平铺，不进映射");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

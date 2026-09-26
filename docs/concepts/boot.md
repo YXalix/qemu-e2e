@@ -34,7 +34,7 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 | | initramfs（阶段 1） | rootfs（阶段 2） |
 |---|---|---|
 | 唯一使命 | 让 `root=` 可挂载 | 跑测试 / 提供交互环境 |
-| 内容 | busybox + **boot 模块** + pivot init | busybox + **测试模块** + 测试 init + /tests |
+| 内容 | busybox + **boot 模块** + pivot init | busybox + **测试模块** + 测试 init + /tests（组子目录） + rootfs.d 增量 |
 | 生命周期 | switch_root 后内存释放 | 持久 ext4，可 loop mount 随意改 |
 | 变更频率 | 换内核/换 boot 模块时 | 加测试、改测试流程时 |
 
@@ -102,6 +102,11 @@ initrd.img 无谓变化。
 
 **加测试用例** → 见[编写测试用例](../usage/writing-tests.md)；
 改测试流程 → 改 `infra/init`。验证：`virtuoso build && virtuoso test --timeout 30`。
+
+**加文件进 rootfs**（测试数据、脚本用例、环境文件）
+→ 放仓库根 `rootfs.d/`，构建时整树增量并入 rootfs。**只增不覆盖**：
+与组装产物同路径 = 构建期报错；`rootfs.d/tests/<组>/run-x.sh` 就是脚本
+用例（按退出码判定）。详见[编写测试用例](../usage/writing-tests.md)。
 
 **VM 内环境定制**（如预分配大页）
 → 通用定制点写 `init-hooks.sh` 片段（builder 注入 rootfs `/init-hooks.sh`，

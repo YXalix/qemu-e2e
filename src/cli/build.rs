@@ -54,6 +54,7 @@ pub(crate) fn build_pair_for(
             boot_extra: plan.boot_extra,
             runtime: plan.runtime,
         },
+        &cfg.project_root.join("rootfs.d"),
         &mut progress,
     )
 }

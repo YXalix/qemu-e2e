@@ -62,6 +62,7 @@ pub(crate) fn build_boot_pair(
     supply: &busybox::Supply,
     hooks: &[InitHook],
     modules: &modconf::Modules,
+    rootfs_d_dir: &Path,
     progress: &mut Progress,
 ) -> anyhow::Result<()> {
     // 与脚本一致的先决检查
@@ -159,6 +160,7 @@ pub(crate) fn build_boot_pair(
         hooks.push(InitHook::shell("tools-disk", TOOLS_DISK_HOOK));
     }
     write_hooks(&rootfs_dir, &hooks)?;
+    apply_rootfs_d(&rootfs_dir, rootfs_d_dir, progress)?;
     image::make_ext4(&rootfs_dir, &artifacts_dir.join("rootfs.img"), "rootfs")?;
 
     progress.line("");
@@ -230,4 +232,129 @@ fn write_hooks(rootfs_dir: &Path, hooks: &[InitHook]) -> anyhow::Result<()> {
     }
     std::fs::write(rootfs_dir.join("init-hooks.sh"), body)?;
     Ok(())
+}
+
+/// rootfs.d 增量并入：仓库根 `rootfs.d/` 树映射到 rootfs 根（用户内容作为
+/// 源随每次构建进入 rootfs——只增不覆盖）。目录级并集（同名目录自由合并），
+/// 文件级必须新增：任何与组装产物同路径的文件都是构建期错误，没有覆盖
+/// 语义。缺省（无此目录）静默跳过。返回并入的文件数。
+pub(crate) fn apply_rootfs_d(
+    rootfs_dir: &Path,
+    rootfs_d_dir: &Path,
+    progress: &mut Progress,
+) -> anyhow::Result<usize> {
+    if !rootfs_d_dir.is_dir() {
+        return Ok(0);
+    }
+    let mut count = 0usize;
+    merge_tree(rootfs_dir, rootfs_d_dir, rootfs_d_dir, &mut count)?;
+    progress.line(&format!("rootfs.d: {count} file(s) added"));
+    Ok(count)
+}
+
+fn merge_tree(
+    dest_root: &Path,
+    base: &Path,
+    dir: &Path,
+    count: &mut usize,
+) -> anyhow::Result<()> {
+    for entry in std::fs::read_dir(dir)?.flatten() {
+        let src = entry.path();
+        let rel = src.strip_prefix(base).context("rootfs.d: strip prefix failed")?;
+        let dst = dest_root.join(rel);
+        let rel_display = rel.display();
+        if src.is_dir() {
+            if dst.exists() && !dst.is_dir() {
+                anyhow::bail!(
+                    "rootfs.d: directory {rel_display} collides with a file in the assembled rootfs"
+                );
+            }
+            std::fs::create_dir_all(&dst)?;
+            merge_tree(dest_root, base, &src, count)?;
+        } else if dst.exists() {
+            anyhow::bail!(
+                "rootfs.d: {rel_display} already exists in the assembled rootfs \
+                 (additions only — builder-assembled paths cannot be shadowed)"
+            );
+        } else {
+            std::fs::copy(&src, &dst).with_context(|| format!("copy {} failed", src.display()))?;
+            *count += 1;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("builder-rd-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn mkfile(path: &std::path::Path, body: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn rootfs_d_merges_dirs_and_adds_files() {
+        let staging = tmp("merge-staging");
+        let add = tmp("merge-add");
+        mkfile(&staging.join("etc/passwd"), "base");
+        mkfile(&staging.join("tests/test-example"), "bin");
+        mkfile(&add.join("tests/selfcheck/run.sh"), "#!/bin/sh\nexit 0");
+        mkfile(&add.join("etc/motd"), "hello");
+        mkfile(&add.join("root/profile"), "export FOO=1");
+        let mut progress = Progress::stdout();
+        let n = apply_rootfs_d(&staging, &add, &mut progress).unwrap();
+        assert_eq!(n, 3);
+        assert_eq!(
+            std::fs::read_to_string(staging.join("tests/selfcheck/run.sh")).unwrap(),
+            "#!/bin/sh\nexit 0"
+        );
+        assert_eq!(std::fs::read_to_string(staging.join("etc/motd")).unwrap(), "hello");
+        // 同名目录合并不破坏既有文件
+        assert_eq!(std::fs::read_to_string(staging.join("etc/passwd")).unwrap(), "base");
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&add);
+    }
+
+    #[test]
+    fn rootfs_d_file_collision_bails() {
+        let staging = tmp("coll-staging");
+        let add = tmp("coll-add");
+        mkfile(&staging.join("etc/passwd"), "base");
+        mkfile(&add.join("etc/passwd"), "shadow");
+        let mut progress = Progress::stdout();
+        assert!(apply_rootfs_d(&staging, &add, &mut progress).is_err());
+        // 失败即停：既有文件未被覆盖
+        assert_eq!(std::fs::read_to_string(staging.join("etc/passwd")).unwrap(), "base");
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&add);
+    }
+
+    #[test]
+    fn rootfs_d_dir_over_file_bails() {
+        let staging = tmp("dircoll-staging");
+        let add = tmp("dircoll-add");
+        mkfile(&staging.join("thing"), "file");
+        std::fs::create_dir_all(add.join("thing")).unwrap();
+        let mut progress = Progress::stdout();
+        assert!(apply_rootfs_d(&staging, &add, &mut progress).is_err());
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_dir_all(&add);
+    }
+
+    #[test]
+    fn rootfs_d_missing_is_noop() {
+        let staging = tmp("noop-staging");
+        let mut progress = Progress::stdout();
+        let n = apply_rootfs_d(&staging, &staging.join("nonexistent"), &mut progress).unwrap();
+        assert_eq!(n, 0);
+        let _ = std::fs::remove_dir_all(&staging);
+    }
 }

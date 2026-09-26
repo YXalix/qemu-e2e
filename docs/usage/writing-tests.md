@@ -1,7 +1,7 @@
 # 编写测试用例
 
-`init` 自动发现 rootfs `/tests/` 下的所有二进制，**新增用例零接线**。
-两条硬规则：
+`init` 自动发现 rootfs `/tests/` 下的所有可执行文件（含一层测试组子目录），
+**新增用例零接线**。两条硬规则：
 
 - 测试必须**静态链接**（VM 内无动态加载器；musl 目标 crt-static 是
   rustc 缺省，workspace 配方已冻结，写用例不用管）；
@@ -96,13 +96,43 @@ builder 把 `[tests].require` 并入组件并集生成 rootfs
 VM 能力类的模块（直通、NUMA、pmem 等）仍走[组件机制](../concepts/components.md)。
 迭代中的模块优先 `=m` 而非 `=y`，免内核重建。
 
+## 测试组
+
+`/tests/` 下一级子目录即测试组：组内用例的名字 token 是 `组名/用例名`
+（串口与 verdict 里显示为 `--- Running: smoke/test-net ---`），平铺二进制
+仍是缺省组。组只是**文件布局维度**，标记协议 v1 文本零变化。
+
+把用例声明进组——写在用例 crate 自己的 `Cargo.toml`（声明跟着用例走，
+没有中心清单）：
+
+```toml
+[package.metadata.virtuoso]
+group = "smoke"
+```
+
+- 无声明的 crate 平铺 `/tests/`（向后兼容）；
+- 组内执行顺序 = 字典序，组间 = 目录名字典序；
+- 汇总行 `Test Results: N/M` 恒为全局口径。
+
+## 向 rootfs 添加文件（rootfs.d）
+
+仓库根 `rootfs.d/` 是用户 drop-in 目录（git 忽略，随用随建）：构建时整树
+**增量并入** rootfs（目录级并集），适合测试数据、预置脚本、环境文件。
+**只增不覆盖**——任何与 builder 组装产物同路径的文件都是构建期错误，
+框架文件（init、模块清单、busybox 树）不可能被遮蔽。缺省无此目录 = 无操作。
+
+放一个脚本用例就是加测试：`rootfs.d/tests/<组>/run-foo.sh`（可执行位），
+init 按退出码判 PASSED/FAILED，与编译用例同协议同判定。
+
 ## 只跑部分用例（迭代加速）
 
 ```bash
-virtuoso test --only test-myfeature          # 单个
+virtuoso test --only test-myfeature          # 单个（平铺）
+virtuoso test --only smoke/test-net          # 单个（组内）
+virtuoso test --only smoke/                  # 整组（尾斜杠）
 virtuoso test --only test-a,test-b           # 逗号分隔
 ```
 
-`--only` 经 kernel cmdline 传给 init，只跑名单内的 `/tests` 二进制；标记
+`--only` 经 kernel cmdline 传给 init，只跑名单内条目；标记
 协议 v1 不变（选中的照常吐全套标记）。名单零命中（拼错名字）会直接判失败
 ——不会出现 0/0 假绿。

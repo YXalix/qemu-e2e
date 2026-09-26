@@ -9,3 +9,8 @@ coda-scaffold = { path = "../coda-scaffold" }
 
 [dependencies]
 coda = { path = "../coda" }
+
+# 测试组（可选）：声明后二进制装进 /tests/<group>/（init 里名字 = group/case，
+# `virtuoso test --only <group>/` 整组选择）；缺省平铺 /tests/。
+# [package.metadata.virtuoso]
+# group = "smoke"

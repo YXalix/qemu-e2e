@@ -32,6 +32,7 @@ pub(crate) fn install(
         cross,
         label: "VM tools",
         item_prefix: "  Tool:",
+        groups: None,
     };
     // 返回 0 = workspace 缺失或显式 WARN 降级（cargo/musl target 缺失）；
     // 构建成功但零产物由 CargoInstall::run 内部 bail。

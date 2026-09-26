@@ -6,9 +6,10 @@ members = ["coda", "coda-scaffold", "test-*"]
 # 独立 workspace：测试用例固件不进入 virtuoso 主 workspace 的依赖图
 # （根 Cargo.toml 有对应 exclude）。由 builder::testcase::install_rust 以
 # `cargo build --release --target <musl triple>` 编译，产物拷入 rootfs 的
-# /tests/（init 自动发现）。每个 test-* member = 一个用例二进制；C 测试体
-# 放在用例 crate 的 c/ 下，由该 crate 的一行 build.rs（coda-scaffold）编入同一
-# 二进制；coda = 测试框架，coda-scaffold = build.rs 共享脚手架。
+# /tests/（init 自动发现；crate 声明 package.metadata.virtuoso.group 时装进
+# /tests/<group>/ 子目录 = 测试组）。每个 test-* member = 一个用例二进制；
+# C 测试体放在用例 crate 的 c/ 下，由该 crate 的一行 build.rs（coda-scaffold）
+# 编入同一二进制；coda = 测试框架，coda-scaffold = build.rs 共享脚手架。
 
 [profile.release]
 panic = "abort"

@@ -12,7 +12,7 @@
 | `kernel list` / `kernel use <volume>` | 卷管理：列卷（状态 + current 标记）/ 切 current（状态文件 `.virtuoso/kernel-current.json`） |
 | `clean` | 清理生成镜像与暂存目录 |
 | `shell [--kvm] [--tcg] [--gdb]` | 交互式 VM（BusyBox shell）；`--kvm` 仅 Linux，`--tcg` 强制纯模拟（macOS 缺省 HVF 时用），`--gdb` 挂起启动 + GDB stub `:1234`（恒 TCG） |
-| `test [--timeout N] [--arch a] [--replay-until-fail N] [--tcg] [--only a,b]` | 构建 → 启动 → 判定 → 工件落盘；返场模式首个非 passed 即停；macOS 同构缺省 HVF；`--only` 只跑名单内 /tests 二进制（逗号分隔/可重复，零命中判失败） |
+| `test [--timeout N] [--arch a] [--replay-until-fail N] [--tcg] [--only a,b]` | 构建 → 启动 → 判定 → 工件落盘；返场模式首个非 passed 即停；macOS 同构缺省 HVF；`--only` 只跑名单内条目（平铺名 / `组/用例` / 尾斜杠 `组/` 整组；逗号分隔/可重复，零命中判失败） |
 | `probe --cmd/--cmd-file [--json] [--timeout N]` | AI 交互通道：virtio-serial agent 命令批，结构化事件流 |
 | `skill install \| uninstall` | AI skill 装入 / 移出内核树 |
 
