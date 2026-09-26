@@ -56,6 +56,7 @@ pub fn run_probe(
         topo,
         accel: launcher::Accel::Tcg,
         auto_test: false,
+        only_tests: Vec::new(),
         agent_socket: Some(sock_path.clone()),
     })?;
     println!("[LAUNCH] {}", inv.command_line()?);

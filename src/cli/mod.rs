@@ -43,7 +43,8 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
             arch,
             replay_until_fail,
             tcg,
-        } => vm::run_test(timeout, arch.as_deref(), replay_until_fail, tcg),
+            only,
+        } => vm::run_test(timeout, arch.as_deref(), replay_until_fail, tcg, &only),
         CliCommand::Clean => build::run_clean(),
         CliCommand::Skill { action } => build::run_skill(action),
         CliCommand::Probe {
@@ -122,6 +123,8 @@ pub(crate) struct LaunchPlan<'a> {
     pub accel: launcher::Accel,
     /// test 路径 = cfg.auto_test()；shell/probe 无自动测试语义（false）。
     pub auto_test: bool,
+    /// 测例选择（`virtuoso test --only`；空 = 全跑）。shell/probe 恒空。
+    pub only_tests: Vec<String>,
     /// agent 通道 socket（None = 无通道）。probe 恒开（绕过组件开关）。
     pub agent_socket: Option<std::path::PathBuf>,
 }
@@ -148,6 +151,7 @@ pub(crate) fn build_invocation(plan: &LaunchPlan) -> anyhow::Result<launcher::Qe
     .virtio_disks(tools_disk_opt(cfg))
     .qemu_override(cfg.qemu_override().as_deref())
     .auto_test(plan.auto_test)
+    .test_only(&plan.only_tests)
     .extra_opts(&extra);
     if let Some(sock) = &plan.agent_socket {
         inv = inv.agent_serial(sock);

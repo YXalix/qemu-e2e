@@ -32,7 +32,7 @@ kernel/                              # kernel source root
         ├── init                     # PID 1 inside VM: mount → insmod modules.conf → run /tests/*
         ├── init-initramfs           # stage-1 PID 1: mount root= → switch_root
         ├── modules-boot.conf        # frozen boot-critical module set → initramfs
-        ├── testcases/               # test-case workspace: testfw (std) + case crates; C bodies via build.rs cc, musl-static
+        ├── testcases/               # test-case workspace: coda (std) + coda-build + test-* crates; C bodies via coda-build, musl-static
         └── tools/                   # VM-side tools (musl-static; agent = virtuoso-agent)
 ```
 
@@ -141,32 +141,34 @@ long-lived VS Code devcontainer. This is safe — with these rules:
 
 ## Adding a Test Case
 
-Test cases live in one cargo workspace, `infra/testcases/`: **testfw
-(std Rust) is the framework and entry point; C test bodies are compiled into
-the same static binary by the crate's `build.rs` (cc crate)**. Both sides
-speak the same serial marker protocol and share the same counters (C macros
-land in testfw via FFI). `init` auto-discovers every binary in `/tests/` —
-new tests need no wiring.
+Test cases live in one cargo workspace, `infra/testcases/`: **coda
+(std Rust) is the framework and the single entry point; C test bodies are
+compiled into the same static binary by the crate's one-line `build.rs`
+(coda-build)**. Both sides speak the same serial marker protocol and share
+the same counters (C macros land in coda via FFI). `init` auto-discovers
+every binary in `/tests/` — new tests need no wiring.
 
-1. **Copy** `infra/testcases/test-example/` to `test-<name>/` and add it
-   to `members` in `infra/testcases/Cargo.toml`. The crate name is the
-   binary name (it appears as `--- Running: test-<name> ---` on serial).
+1. **Copy** `infra/testcases/test-example/` to `test-<name>/` and rename the
+   package in its `Cargo.toml` (workspace `members` is a `test-*` glob — no
+   workspace edit needed). The crate name is the binary name (it appears as
+   `--- Running: test-<name> ---` on serial).
 
 2. **Rust tests** — register in `TESTS` (`src/main.rs`); assert with
-   `testfw::check!` or `pass!/fail!/skip!`:
+   `coda::check!` or `pass!/fail!/skip!`; `main` is a single call to
+   `coda::run_and_exit(TESTS)` (banner, panic hook, C section and exit code
+   all live there):
    ```rust
    fn my_feature() -> bool {
        // exercise kernel via syscalls, /proc, /sys, /dev, ioctls (std available)
-       testfw::check!(/* expected condition */, "the thing happened")
+       coda::check!(/* expected condition */, "the thing happened")
    }
    ```
 
 3. **C tests** — put `.c` files under `c/` (build.rs compiles them in);
-   assert with `PASS/FAIL/SKIP/INFO` from `testfw.h` and call them from
-   `run_c_tests` (keep the name in sync with the `extern "C"` block in
-   `main.rs`):
+   assert with `PASS/FAIL/SKIP/INFO` from `coda.h` and call them from
+   `run_c_tests` (an empty `c/` gets a no-op stub — no link error):
    ```c
-   #include "testfw.h"
+   #include "coda.h"
 
    static void test_my_feature(void)
    {
@@ -185,6 +187,8 @@ new tests need no wiring.
    dynamic loader.
 
 4. **Rebuild and run** — `virtuoso build && virtuoso test --timeout 30`.
+   Iterating on one case: `virtuoso test --only test-<name>` (zero matches
+   fails loudly — no green 0/0).
 
 ### Test design rules
 
@@ -195,19 +199,25 @@ new tests need no wiring.
 
 ## Declaring Kernel Modules
 
-Module supply is **generated from the components** in `virtuoso.toml` — do not
+Module supply is **generated from config** in `virtuoso.toml` — do not
 hand-edit module lists:
 
 - `infra/modules-boot.conf` is the frozen boot base set (virtio + ext4 and
   deps), insmodded before the root pivot. Components that need a module that
   early add `stage = "boot"`; those entries are appended after the base set.
-- Everything else comes from enabled components' `require` and is generated
-  into the rootfs `/lib/modules/modules.conf`, insmodded by init after the
-  pivot:
+- Everything else comes from enabled components' `require` **plus the
+  `[tests]` section** (modules needed by the test suite — the natural home
+  for modules under test), generated into the rootfs
+  `/lib/modules/modules.conf`, insmodded by init after the pivot:
 
   ```toml
-  [components.mydev]
+  # VM-capability components (fixed set: tools_disk/agent/vfio/numa/pmem)
+  [components.vfio]
   enabled = true
+  require = ["vfio", "vfio_pci"]
+
+  # Modules your test cases exercise (runtime stage, always)
+  [tests]
   require = ["nvme-core", "nvme", "my_driver param1=1 param2=foo"]
   ```
 

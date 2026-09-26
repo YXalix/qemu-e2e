@@ -67,6 +67,7 @@ fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
         topo: topo.clone(),
         accel,
         auto_test: false,
+        only_tests: Vec::new(),
         agent_socket: open_agent_socket(&cfg, &cfg.target_dir, "agent-shell"),
     })?;
 
@@ -81,12 +82,15 @@ fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
 /// judge 判定 → 运行工件。退出码 0=通过、124=超时、其余=失败。
 /// `replay_until_fail > 1` 时返场重试：首个非 passed verdict 即停。
 /// accel 缺省走平台规则（macOS 同构 HVF，Linux 恒 TCG）；`--tcg` 强制纯模拟。
+/// `only` 非空时 cmdline 追加 virtuoso.only=，init 只跑名单内的 /tests 二进制。
 pub fn run_test(
     cli_timeout: Option<u64>,
     cli_arch: Option<&str>,
     replay_until_fail: Option<u32>,
     tcg: bool,
+    only: &[String],
 ) -> anyhow::Result<i32> {
+    validate_only(only)?;
     let cfg = Config::load()?;
     let timeout_secs = resolve_timeout(&cfg, cli_timeout)?;
     let rounds = replay_until_fail.unwrap_or(1).max(1);
@@ -96,7 +100,7 @@ pub fn run_test(
             println!("[REPLAY] round {round}/{rounds}");
         }
         let accel = if tcg { Some(Accel::Tcg) } else { None };
-        let (code, _) = test_once(&cfg, cli_arch, timeout_secs, accel)?;
+        let (code, _) = test_once(&cfg, cli_arch, timeout_secs, accel, only)?;
         last_code = code;
         if last_code != 0 {
             if rounds > 1 {
@@ -109,6 +113,19 @@ pub fn run_test(
         println!("[REPLAY] {rounds}/{rounds} rounds passed — no flaky observed");
     }
     Ok(last_code)
+}
+
+/// `--only` 名单合法性：测例名是文件 basename——非空、无逗号/空白
+/// （逗号是 init 侧的名单分隔符，空白会拆坏 cmdline token）。
+fn validate_only(only: &[String]) -> anyhow::Result<()> {
+    for name in only {
+        if name.trim().is_empty() || name.contains(|c: char| c.is_whitespace() || c == ',') {
+            anyhow::bail!(
+                "invalid --only entry {name:?}: test names are file basenames (no commas/whitespace)"
+            );
+        }
+    }
+    Ok(())
 }
 
 fn resolve_timeout(cfg: &Config, cli_timeout: Option<u64>) -> anyhow::Result<u64> {
@@ -128,6 +145,7 @@ fn test_once(
     cli_arch: Option<&str>,
     timeout_secs: u64,
     accel_override: Option<Accel>,
+    only: &[String],
 ) -> anyhow::Result<(i32, String)> {
     let arch = resolve_arch(cfg, cli_arch)?;
     let accel = match accel_override {
@@ -164,6 +182,7 @@ fn test_once(
         topo: topo.clone(),
         accel,
         auto_test: cfg.auto_test(),
+        only_tests: only.to_vec(),
         agent_socket: open_agent_socket(cfg, &run.path, "agent"),
     })?;
     println!("[LAUNCH] {}", inv.command_line()?);
@@ -223,6 +242,11 @@ fn test_once(
     };
     let verdict = runs::finalize_run(&run, &meta)?;
     runs::prune(&cfg.project_root, runs::RUNS_KEEP);
+
+    // 退出码对账（冻结契约 0=通过）：QEMU 正常关机恒 exit 0，guest 内失败
+    // 只体现在 verdict（标记协议）——非 passed 折成 1；超时 124 / 中断 130
+    // 原样保留。verdict.json 里的 exit_code 仍是 QEMU 原始码（审计事实）。
+    let code = if code == 0 && verdict != "passed" { 1 } else { code };
 
     match code {
         0 => println!("Test completed successfully!"),

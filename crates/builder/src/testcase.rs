@@ -79,7 +79,7 @@ mod tests {
         };
         let bin = mk("test-example", 0o755);
         let dep = mk("test-example.d", 0o644);
-        let rlib = mk("libtestfw.rlib", 0o644);
+        let rlib = mk("libcoda.rlib", 0o644);
         let script = mk("build_script_build-xxxx", 0o755);
 
         assert!(rust_test_binary(&bin).is_some());

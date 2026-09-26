@@ -1,0 +1,8 @@
+[package]
+name = "coda-build"
+version = "0.1.0"
+edition = "2021"
+description = "coda 配套 build-dep：用例 build.rs 的共享实现（CC 探测、c/*.c 编入、空桩、per-crate compile_commands.json）——每个用例的 build.rs 只有一行"
+
+[dependencies]
+cc = "1"

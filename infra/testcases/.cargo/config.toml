@@ -6,4 +6,4 @@
 # 反而会污染 IDE 侧的 host check（rust-analyzer / clangd）。
 #
 # 此文件保留作契约说明锚点；历史上曾挂 no_std 的
-# -nostdlib/-nostartfiles/link-self-contained=no，testfw 转 std 后作废。
+# -nostdlib/-nostartfiles/link-self-contained=no，框架转 std 后作废。

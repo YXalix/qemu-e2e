@@ -38,6 +38,12 @@
 每个组件段的公共字段（`enabled` / `require` / `stage`）与逐组件的专属键见
 [组件机制](../components/overview.md)。
 
+## `[tests]` 段
+
+| 键 | 说明 |
+|---|---|
+| `require` | 测例套件的内核模块依赖（`"<module> [key=val ...]"`，恒 runtime 阶段；同名模块组件条目优先，只补差集）。给内核特性写测例时被测模块（`=m`）声明的自然归属 |
+
 ## `[busybox]` 段
 
 | 键 | 说明 |

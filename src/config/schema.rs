@@ -72,6 +72,7 @@ pub struct VirtuosoToml {
     pub(crate) qemu_opts: Option<Vec<String>>,
     pub(crate) components: Option<ComponentsSection>,
     pub(crate) busybox: Option<BusyboxSection>,
+    pub(crate) tests: Option<TestsSection>,
 }
 
 #[derive(serde::Deserialize)]
@@ -223,6 +224,16 @@ pub(crate) struct BusyboxSection {
     pub(crate) release_repo: Option<StrVal>,
     pub(crate) dl_url: Option<StrVal>,
     pub(crate) force_source_build: Option<bool>,
+}
+
+/// `[tests]` 段：测例套件的 KO 依赖——给内核特性写测例时，被测模块
+/// （`=m` 形态）声明的自然归属，不必挂到无关组件上。条目格式与组件
+/// `require` 一致（conf 行），恒 runtime 阶段（测例都在 pivot 后跑）；
+/// 并入计划时排在五个组件之后 = 同名模块组件条目优先，这里只补差集。
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TestsSection {
+    pub(crate) require: Option<Vec<String>>,
 }
 
 pub(crate) fn parse_toml(path: &Path) -> anyhow::Result<VirtuosoToml> {
@@ -379,6 +390,18 @@ require = ["libnvdimm", "nfit", "nd_pmem"]
     #[test]
     fn pmem_unknown_key_rejected() {
         assert!(parse("[components.pmem]\nenabled = true\nsizes = \"1G\"\n").is_err());
+    }
+
+    #[test]
+    fn tests_section_parses_and_rejects_unknown_keys() {
+        let cfg = parse("[tests]\nrequire = [\"overlay\", \"kvm\"]\n").unwrap();
+        assert_eq!(
+            cfg.tests.as_ref().unwrap().require.clone().unwrap(),
+            vec!["overlay", "kvm"]
+        );
+        // 测例套件没有开关语义（auto_test 是全局键）：enabled 必须报错
+        assert!(parse("[tests]\nenabled = true\n").is_err());
+        assert!(parse("[tests]\nstage = \"boot\"\n").is_err());
     }
 
     #[test]

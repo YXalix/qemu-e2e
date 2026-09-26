@@ -14,7 +14,8 @@ launcher 负责生成对应的 QEMU 参数。
 | [`numa`](numa.md) | 多节点拓扑（每节点一个 socket） | 关闭 | `nodes`、`memory_per_node` |
 | [`pmem`](pmem.md) | 持久内存（DT 途径 → `/dev/pmem0` + DAX） | 关闭 | `size`、`require` |
 
-`[busybox]` 是全局段（非组件），见[配置参考](../guide/configuration.md)。
+`[busybox]` 是全局段（非组件），`[tests]` 是测例套件段（收用例需要的
+模块依赖），见[配置参考](../guide/configuration.md)。
 
 ## 公共字段
 
@@ -39,10 +40,12 @@ require = ["virtio_console"]
 - `infra/modules-boot.conf`（**冻结基础集**：virtio + ext4 及依赖）进 initramfs，
   由 `init-initramfs` 在 pivot 前 insmod；
 - 组件条目 `stage = "boot"` 追加到基础集之后；
-- 其余来自启用组件的 `require` **并集**，builder 写入 rootfs
-  `/lib/modules/modules.conf`，测试 init 在 pivot 后加载。
+- 其余来自启用组件的 `require` **并集**（外加 `[tests]` 段的测例模块依赖，
+  排在最后），builder 写入 rootfs `/lib/modules/modules.conf`，测试 init 在
+  pivot 后加载。
 
-并集规则：schema 固定顺序 tools_disk→agent→vfio→numa→pmem，按首 token 去重保首个。
+并集规则：schema 固定顺序 tools_disk→agent→vfio→numa→pmem→`[tests]`，
+按首 token 去重保首个。
 
 规则与陷阱：
 

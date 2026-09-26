@@ -34,6 +34,10 @@ pub struct QemuInvocation {
     pub topo: NumaTopology,
     /// kernel cmdline 的 auto_test 开关
     pub auto_test: bool,
+    /// 测例选择（`virtuoso test --only`）：非空时 cmdline 追加
+    /// `virtuoso.only=<a,b>`，init 的 auto-test 只跑名单内的 /tests 二进制。
+    /// 空缺省 argv 与冻结基线逐字一致。
+    pub test_only: Vec<String>,
     /// `-s -S`：挂起等待 GDB 连接 :1234
     pub gdb_stub: bool,
     /// AI agent 通道：virtio-serial 端口，宿主侧 unix socket（chardev）。
@@ -71,6 +75,7 @@ impl QemuInvocation {
                 memory_per_node: "1G".into(),
             },
             auto_test: false,
+            test_only: Vec::new(),
             gdb_stub: false,
             agent_serial: None,
             pmem: None,
@@ -116,6 +121,12 @@ impl QemuInvocation {
         self
     }
 
+    /// 测例选择（空 = 全跑；调用方负责名字合法性：非空、无逗号/空白）。
+    pub fn test_only(mut self, names: &[String]) -> Self {
+        self.test_only = names.to_vec();
+        self
+    }
+
     pub fn gdb_stub(mut self, on: bool) -> Self {
         self.gdb_stub = on;
         self
@@ -146,7 +157,8 @@ impl QemuInvocation {
     }
 
     /// 内核 cmdline（run-qemu.sh 冻结文本；pmem 组件追加 mem= 把 pmem 区
-    /// 从内核线性内存模型中排除，等价 x86 memmap= 语义）。
+    /// 从内核线性内存模型中排除，等价 x86 memmap= 语义；--only 追加
+    /// virtuoso.only= 供 init 过滤 /tests）。
     pub fn cmdline(&self) -> String {
         let mut cmd = format!(
             "console={} root=/dev/vda rw init=/init loglevel=8",
@@ -154,6 +166,9 @@ impl QemuInvocation {
         );
         if self.auto_test {
             cmd.push_str(" auto_test");
+        }
+        if !self.test_only.is_empty() {
+            cmd.push_str(&format!(" virtuoso.only={}", self.test_only.join(",")));
         }
         if let Some(pmem) = &self.pmem {
             cmd.push_str(&format!(" mem={}", pmem.mem_limit));
@@ -179,6 +194,24 @@ mod tests {
         assert_eq!(
             inv.cmdline(),
             "console=ttyS0 root=/dev/vda rw init=/init loglevel=8"
+        );
+    }
+
+    #[test]
+    fn cmdline_test_only_appends_selection_and_empty_keeps_baseline() {
+        let base = QemuInvocation::new(Arch::Arm64, "k", "i", "r");
+        // 空缺省 = 冻结基线逐字一致（不变量 3）
+        assert_eq!(
+            base.cmdline(),
+            "console=ttyAMA0 root=/dev/vda rw init=/init loglevel=8"
+        );
+        let sel = base
+            .clone()
+            .auto_test(true)
+            .test_only(&["test-a".to_string(), "test-b".to_string()]);
+        assert_eq!(
+            sel.cmdline(),
+            "console=ttyAMA0 root=/dev/vda rw init=/init loglevel=8 auto_test virtuoso.only=test-a,test-b"
         );
     }
 

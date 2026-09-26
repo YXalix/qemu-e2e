@@ -1,13 +1,18 @@
-//! testfw — Virtuoso 测试框架（std + musl 静态链接）。
+//! coda — Virtuoso 测试框架（std + musl 静态链接）。
 //!
-//! 与 C 侧 `testfw.h` 的 `PASS/FAIL/SKIP/INFO` 宏语义一一对齐：标记协议
-//! v1（冻结文本，设计文档附录 A）对 C/Rust 用例一视同仁——同一串口协议，
-//! 同一套判定。Rust 入口（`run_and_exit`）与 C 测试体（经 FFI 导出的
-//! `testfw_pass` 等函数）共享同一套计数器与打印路径，冻结文本单一来源。
+//! 名字取自乐章的结尾段：测例是整场构建的终章判定。与 C 侧 `coda.h` 的
+//! `PASS/FAIL/SKIP/INFO` 宏语义一一对齐：标记协议 v1（冻结文本，设计文档
+//! 附录 A）对 C/Rust 用例一视同仁——同一串口协议，同一套判定。Rust 入口
+//! （`run_and_exit`）与 C 测试体（经 FFI 导出的 `coda_pass` 等函数）共享
+//! 同一套计数器与打印路径，冻结文本单一来源。
 //!
 //! 静态链接约束：musl 目标 crt-static 是 rustc 默认行为（与 tools workspace
 //! 同配方），产物为纯静态 ELF——VM 内无动态加载器，**不可放松**。
 //! 输出走 std stdout（console 为 tty，按行 flush），退出走 `process::exit`。
+//!
+//! `run_and_exit` 无条件引用 C 段入口 `run_c_tests`——符号由 coda-build
+//! 保证（`c/` 有源码编入真身，为空编入空桩），用例 crate 无需自己声明
+//! `extern "C"`。
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -20,6 +25,12 @@ pub type TestCase = (&'static str, fn() -> bool);
 static PASSED: AtomicU32 = AtomicU32::new(0);
 static FAILED: AtomicU32 = AtomicU32::new(0);
 static SKIPPED: AtomicU32 = AtomicU32::new(0);
+
+// C 测试段入口（用例 crate 的 `c/*.c` 定义；无 C 源时 coda-build 编入
+// 空桩兜住符号）。
+extern "C" {
+    fn run_c_tests();
+}
 
 // ---------------------------------------------------------------- 串口输出
 
@@ -93,38 +104,53 @@ macro_rules! ffi_emit {
     };
 }
 
-ffi_emit!(testfw_pass, "PASS", PASSED);
-ffi_emit!(testfw_fail, "FAIL", FAILED);
-ffi_emit!(testfw_skip, "SKIP", SKIPPED);
+ffi_emit!(coda_pass, "PASS", PASSED);
+ffi_emit!(coda_fail, "FAIL", FAILED);
+ffi_emit!(coda_skip, "SKIP", SKIPPED);
 
 /// `INFO` 行（只打印不计数，与 C 宏语义一致）。
 #[no_mangle]
-pub extern "C" fn testfw_info(msg: *const c_char) {
+pub extern "C" fn coda_info(msg: *const c_char) {
     emit("INFO", format_args!("{}", c_msg(msg)));
 }
 
-/// 计数器只读快照（C 侧 `testfw_count_*` 的落点，`unsigned` = u32）。
+/// 计数器只读快照（C 侧 `coda_count_*` 的落点，`unsigned` = u32）。
 #[no_mangle]
-pub extern "C" fn testfw_count_passed() -> u32 {
+pub extern "C" fn coda_count_passed() -> u32 {
     PASSED.load(Ordering::Relaxed)
 }
 
 #[no_mangle]
-pub extern "C" fn testfw_count_failed() -> u32 {
+pub extern "C" fn coda_count_failed() -> u32 {
     FAILED.load(Ordering::Relaxed)
 }
 
 #[no_mangle]
-pub extern "C" fn testfw_count_skipped() -> u32 {
+pub extern "C" fn coda_count_skipped() -> u32 {
     SKIPPED.load(Ordering::Relaxed)
 }
 
 // ---------------------------------------------------------------- 运行器
 
-/// 共享 main 等价物：逐个执行 Rust 侧测试后按计数据退出。
-/// `Test Results` / `TEST_COMPLETE` 由 init 汇编（协议 v1 分工）；
-/// C 测试体由用例 main 在调用本函数前先执行（见 test-example）。
+/// 共享 main 等价物：panic hook + banner → C 测试段 → Rust 测试段 → 按
+/// 计数据退出。用例 main 只需要调这一个函数。
+/// `Test Results` / `TEST_COMPLETE` 由 init 汇编（协议 v1 分工）。
 pub fn run_and_exit(tests: &[TestCase]) -> ! {
+    install_panic_hook();
+    println!("=== Virtuoso E2E Tests ===");
+    let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if !kernel.is_empty() {
+        println!("Kernel: {kernel}");
+    }
+
+    // 先跑 C 段（计数落入本框架），再跑 Rust 段；退出码由总计数决定
+    unsafe { run_c_tests() };
+    let (passed, failed, skipped) = counters();
+    info!("C section: passed={passed} failed={failed} skipped={skipped}");
+
     for (name, f) in tests {
         info!("Test: {name}");
         let before = FAILED.load(Ordering::Relaxed);
@@ -154,6 +180,7 @@ pub fn counters() -> (u32, u32, u32) {
 
 /// panic 处理：打印 [FAIL] 后 abort（非零退出）。profile 为
 /// `panic = "abort"`，hook 先于 abort 执行——panic 即用例失败，不假通过。
+/// `run_and_exit` 已自动安装，仅独立使用时才需要手动调。
 pub fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         let payload = info

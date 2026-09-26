@@ -56,6 +56,8 @@ impl Config {
 
     /// 组件计划：启用组件的 require 并集（按 schema 固定顺序
     /// tools_disk → agent → vfio → numa → pmem，去重保首个），按 stage 分区。
+    /// `[tests]` 段的 require 最后并入（恒 runtime；同名模块组件条目优先，
+    /// 测例只补差集）。
     pub fn component_plan(&self) -> super::ComponentPlan {
         let mut plan = super::ComponentPlan::default();
         if let Some(c) = self.comp(|c| c.tools_disk.as_ref()) {
@@ -72,6 +74,9 @@ impl Config {
         }
         if let Some(c) = self.comp(|c| c.pmem.as_ref()) {
             push_enabled(&mut plan, c);
+        }
+        if let Some(t) = self.toml.as_ref().and_then(|t| t.tests.as_ref()) {
+            plan.push(None, &t.require);
         }
         plan
     }

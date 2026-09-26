@@ -1,7 +1,0 @@
-[package]
-name = "testfw"
-version = "0.1.0"
-edition = "2021"
-description = "Virtuoso 测试框架：标记协议 v1 的宏与运行器（std + musl 静态；C 测试体经 FFI 共用同一计数/打印路径）"
-
-[dependencies]

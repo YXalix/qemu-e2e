@@ -6,7 +6,7 @@
     // 覆盖用户级 clangd.arguments（workspace 优先）：不许带
     // --compile-commands-dir——它把 CDB 查找钉死在单一路径、关掉沿源文件
     // 祖先目录的自动搜索，而用例 CDB 在 infra/testcases/<crate>/ 下，
-    // 仓库根根本没有，报 'testfw.h' file not found。
+    // 仓库根根本没有，报 'coda.h' file not found。
     "clangd.arguments": [
         "--background-index",
         "--completion-style=detailed",

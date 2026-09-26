@@ -52,13 +52,17 @@ virtuoso test --replay-until-fail N    # 最多 N 轮，首个非 passed 即停
 ### 3. 测试脚手架生成
 
 **新用例 = 一个 crate**：复制 `infra/testcases/test-example/` 为
-`test-<name>/`，加入 workspace `members`。Rust 测试在 `TESTS` 注册
-`("名称", 函数)`，断言用 `testfw::check!`；C 测试体放 crate 的 `c/` 下
-（build.rs 经 cc 编入同一二进制），断言用 `testfw.h` 的
+`test-<name>/`，改 crate `Cargo.toml` 的 `name`（workspace members 走
+`test-*` glob，无需编辑 workspace 文件）。Rust 测试在 `TESTS` 注册
+`("名称", 函数)`，断言用 `coda::check!`，main 只有一行
+`run_and_exit(TESTS)`；C 测试体放 crate 的 `c/` 下（一行 build.rs 经
+coda-build 编入同一二进制），断言用 `coda.h` 的
 `PASS/FAIL/SKIP/INFO` 宏，入口 `run_c_tests()`。产物为 musl 静态 ELF，
-构建时自动装入 rootfs `/tests/`。
+构建时自动装入 rootfs `/tests/`。需要内核模块时在 `virtuoso.toml`
+的 `[tests] require` 声明（优先 `=m` 免内核重建）；只跑部分用例用
+`virtuoso test --only test-<name>`。
 
-标记协议 v1 对 Rust/C 断言一视同仁（C 宏经 FFI 落回 testfw，计数同源），
+标记协议 v1 对 Rust/C 断言一视同仁（C 宏经 FFI 落回 coda，计数同源），
 init 按 `/tests/` 下可执行文件自动发现——**不需要**改 init。
 
 ## 判定纪律
