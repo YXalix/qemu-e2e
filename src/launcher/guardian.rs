@@ -1,10 +1,14 @@
-//! guardian — 守护者：进程组 RAII 治理。
+//! guardian — 守护者：进程组与终端前台的 RAII 治理。
 //!
 //! `ProcessGroupGuard` 取代早期 Makefile 驱动方案的 PID 文件 + `kill -- -PGID` hack：
 //! guard 存活即持有进程组，`Drop`（含 panic 展开、错误提前返回、Ctrl-C 退出路径）
 //! 保证收割，宿主机不残留 QEMU 子进程。`Supervised` 在此之上叠加活动进程组
 //! 注册表（Ctrl-C 守护收割）；注册表与墙钟看门狗同文件承载（registry 节）。
+//! `TerminalHandover` 补齐终端前台这一面：交互会话把控制终端前台移交给
+//! QEMU 进程组（移交动作在子进程 exec 前完成，见 qemu::spawn），
+//! finish/Drop 时还原给调用方进程组。
 
+use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -65,11 +69,61 @@ impl Drop for ProcessGroupGuard {
     }
 }
 
+/// 终端前台移交守卫：记录调用方当前的前台进程组，会话结束时还原。
+/// 还原覆盖 job-control shell 自行回收之外的场景（无 job control 的
+/// 祖先脚本不会回收——前台组悬死会让后续读 tty 的进程冻结）。
+pub(crate) struct TerminalHandover {
+    saved_pgid: libc::pid_t,
+}
+
+impl TerminalHandover {
+    /// 记录当前终端前台组。fd0 非控制终端 → Ok(None)（piped 路径 / 无 tty
+    /// 环境，QEMU 读管道或 /dev/null，不存在 SIGTTIN 问题，无需移交）。
+    pub(crate) fn capture() -> anyhow::Result<Option<Self>> {
+        // SAFETY: isatty 只查询 fd 类型，无副作用。
+        if unsafe { libc::isatty(0) } != 1 {
+            return Ok(None);
+        }
+        // SAFETY: tcgetpgrp 只读终端前台归属。
+        let saved_pgid = unsafe { libc::tcgetpgrp(0) };
+        if saved_pgid < 0 {
+            let err = io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::ENOTTY) {
+                // fd0 是 tty 但非本会话控制终端（isatty 已过）：读写这种
+                // 终端不触发 SIGTTIN/SIGTTOU，无需移交，按无终端处理。
+                return Ok(None);
+            }
+            anyhow::bail!("tcgetpgrp(0) failed: {err}");
+        }
+        Ok(Some(Self { saved_pgid }))
+    }
+}
+
+impl Drop for TerminalHandover {
+    fn drop(&mut self) {
+        // QEMU（前台组）退出后调用方回到"后台"；后台组调 tcsetpgrp 的内核
+        // 响应是 SIGTTOU（默认动作 stop），还原期间必须先阻塞。
+        let mut blocked: libc::sigset_t = unsafe { std::mem::zeroed() };
+        let mut saved_mask: libc::sigset_t = unsafe { std::mem::zeroed() };
+        // SAFETY: sigset_t 清零 + sigemptyset 后使用；掩码改动仅本线程。
+        unsafe {
+            libc::sigemptyset(&mut blocked);
+            libc::sigaddset(&mut blocked, libc::SIGTTOU);
+            if libc::pthread_sigmask(libc::SIG_BLOCK, &blocked, &mut saved_mask) != 0 {
+                return; // 拿不到掩码就不动前台：宁可悬挂前台也不冒险 stop 自己
+            }
+            libc::tcsetpgrp(0, self.saved_pgid);
+            libc::pthread_sigmask(libc::SIG_SETMASK, &saved_mask, std::ptr::null_mut());
+        }
+    }
+}
+
 /// 注册表登记 + 收割守卫的组合句柄：spawn 后 `adopt` 一次、收尾 `finish`
 /// 一次，取代调用方的 register / adopt / 注销 / disarm 四步样板。
 pub(crate) struct Supervised {
     pgid: u32,
     guard: ProcessGroupGuard,
+    tty: Option<TerminalHandover>,
 }
 
 impl Supervised {
@@ -79,7 +133,15 @@ impl Supervised {
         Self {
             pgid,
             guard: ProcessGroupGuard::adopt(pgid),
+            tty: None,
         }
+    }
+
+    /// 挂上终端前台还原责任（交互会话专用）。guard 声明在 tty 之前：
+    /// 异常 Drop 路径先收割 QEMU 再还原前台。
+    pub(crate) fn with_tty(mut self, tty: Option<TerminalHandover>) -> Self {
+        self.tty = tty;
+        self
     }
 
     pub(crate) fn pgid(&self) -> u32 {
@@ -91,10 +153,12 @@ impl Supervised {
         self.guard.kill_now();
     }
 
-    /// 注销注册表并解除收割责任（进程组已自然退出时调用）。
+    /// 注销注册表并解除收割责任（进程组已自然退出时调用）；
+    /// 终端前台同点还原给调用方进程组。
     pub(crate) fn finish(&mut self) {
         clear();
         self.guard.disarm();
+        self.tty = None; // Drop 即还原前台
     }
 }
 

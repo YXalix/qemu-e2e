@@ -73,6 +73,7 @@ fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
     })?;
 
     println!("[LAUNCH] {}", inv.command_line()?);
+    println!("Serial console attached — quit with Ctrl-A then X");
     let (mut child, mut sup) = inv.spawn_supervised(false)?;
     let st = child.wait().context("failed to wait for QEMU exit")?;
     sup.finish();
