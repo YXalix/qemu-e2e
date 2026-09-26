@@ -230,8 +230,9 @@ fn test_once(
         _ => {}
     }
     println!(
-        "[RUN] verdict: {verdict} (exit {code}, {:.1}s) — details: virtuoso triage",
-        duration_ms as f64 / 1000.0
+        "[RUN] verdict: {verdict} (exit {code}, {:.1}s) — verdict.json: {}",
+        duration_ms as f64 / 1000.0,
+        run.path.join("verdict.json").display()
     );
     Ok((code, verdict))
 }

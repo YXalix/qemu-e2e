@@ -109,15 +109,6 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Triage report for the latest test run (--json emits the verdict)
-    Triage {
-        /// Specific run (directory name under target/runs); default = latest
-        #[arg(long)]
-        run: Option<String>,
-        /// Machine-readable JSON output
-        #[arg(long)]
-        json: bool,
-    },
 }
 
 #[derive(Subcommand)]

@@ -3,7 +3,7 @@
 //! 约定：颜色只修饰不承载语义（非 TTY / NO_COLOR 自动退化纯文本）；
 //! 状态图标 ✓ / ✗ / ! 与 [PASS]/[FAIL]/[WARN] 同义；`[TAG]` 前缀一 tag
 //! 一语义：[RUN] 工件与轮次、[LAUNCH] 启动命令、[DOCTOR] 体检、
-//! [TRIAGE] / [CLUSTER] / [SUGGEST] / [REPLAY] 各归其位。
+//! [REPLAY] 各归其位。
 
 /// stdout 是否着色（TERM 存在且非 dumb，且无 NO_COLOR；仅影响颜色不影响判定）。
 pub fn tty() -> bool {

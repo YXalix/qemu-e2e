@@ -77,15 +77,15 @@ virtuoso doctor               # 一屏体检：✓/✗/! 组件行，最快确�
 ## 4. 首跑与判定
 
 ```bash
-virtuoso test --timeout 60    # 构建 → 启动 → 判定 → 工件落盘
-virtuoso triage               # 分诊最近一次运行
+virtuoso test --timeout 60    # 构建 → 启动 → 判定 → 工件落盘（收尾打印 verdict 行）
 ```
 
 加速器语义按宿主平台：**Linux 恒 TCG**（`shell --kvm` 交互式开 KVM）；
 **macOS 上宿主与目标同构（arm64）时缺省 HVF**，`--tcg` 强制纯模拟，
 交叉 guest（x86_64 / riscv64）自动回落 TCG（慢，超时预算酌情放大）。
 
-**判定以 triage 的 verdict 为准**：`verdict: passed` 才算通过。退出码只是
+**判定以 test 收尾的 verdict 行为准**（机读唯一面 = run 目录下的
+`verdict.json`）：`verdict: passed` 才算通过。退出码只是
 接口契约（0=通过、124=超时、其余=失败）——`-no-reboot` 下内核 panic 会让
 QEMU 以 exit 0 退出，只看退出码会假通过；`exit 0` 但
 `verdict: incomplete` = 标记协议没走完，同样按失败处理。

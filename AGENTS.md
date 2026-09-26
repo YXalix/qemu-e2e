@@ -27,7 +27,6 @@ virtuoso kernel build       # forge：容器 make Image/modules + CDB（/ksrc �
                             #   （另有 defconfig/path/shell/list/use；源码编辑走 devkit/docker devcontainer）
 virtuoso test --timeout 60  # 测试：launcher 启动 → judge 判定 → 工件落盘
 virtuoso test --replay-until-fail 5   # flaky 返场：首个非 passed 即停
-virtuoso triage [--json]    # 最近一次运行的分诊报告
 virtuoso shell [--kvm|--tcg] [--gdb]
                             # 交互式 VM；--gdb = 挂起等 GDB :1234（恒 TCG）
 virtuoso probe --cmd 'uname -a' [--cmd-file f] [--json] [--timeout s]
@@ -35,8 +34,9 @@ virtuoso probe --cmd 'uname -a' [--cmd-file f] [--json] [--timeout s]
 virtuoso skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核树
 ```
 
-AI 的标准验证循环：`doctor → test → triage`。**判定以 triage 的 verdict 为准**，
-退出码只是接口契约；`verdict: passed` 才算通过。doctor 是体检唯一入口（一屏
+AI 的标准验证循环：`doctor → test`。**判定以 test 收尾的 verdict 行为准，
+机读唯一面 = run 目录下的 `verdict.json`**；退出码只是接口契约；
+`verdict: passed` 才算通过。doctor 是体检唯一入口（一屏
 呈现 + `--verbose` 全量），与 builder::verify 检查引擎同源（新增前置条件只动
 引擎，呈现自动跟随）。
 

@@ -35,10 +35,11 @@ You are an E2E 分诊与测试工程专家。你的工作是**基于 virtuoso ha
 ### 1. 失败分诊（单 run）
 
 ```
-virtuoso triage [--run <id>] [--json]     # verdict + 测试条目 + panic/oops + 串口尾部
+jq . target/runs/<id>/verdict.json        # verdict + 测试条目 + panic/oops + 工件路径
 ```
 
-步骤：先读 verdict（八态语义，`exit 0 + incomplete = 失败`）→ 定位 events.jsonl 里
+（`<id>` 取 `target/runs/` 下最新目录。）步骤：先读 verdict（八态语义，
+`exit 0 + incomplete = 失败`）→ 定位 events.jsonl 里
 首个 fail/panic 事件 → 用 serial.log 对应行号看上下文 → 输出：根因假设 +
 建议复现命令（verdict.json 的 `repro` 字段）。
 

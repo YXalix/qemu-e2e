@@ -19,7 +19,6 @@ CLI 入口。
 cargo install --path .      # 规范二进制 virtuoso 装入 PATH
 virtuoso doctor             # 一屏环境体检（✓/✗ 组件行；--verbose 全量）
 virtuoso test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
-virtuoso triage             # 分诊报告（判定以 verdict 为准）
 ```
 
 ## 常用命令
@@ -31,7 +30,6 @@ virtuoso triage             # 分诊报告（判定以 verdict 为准）
 | `virtuoso shell [--kvm] [--gdb]` | 交互式 VM（BusyBox shell）；`--gdb` GDB stub `:1234` 挂起启动 |
 | `virtuoso test [--arch a] [--replay-until-fail N]` | 构建 → 启动 → 判定；`--replay-until-fail` flaky 返场 |
 | `virtuoso probe --cmd '…'` | AI 交互通道（virtio-serial agent 命令批） |
-| `virtuoso triage` | 单次运行分诊报告 |
 
 ## 文档
 

@@ -92,7 +92,7 @@ When the user changes kernel code and wants verification, execute this loop end-
    - Bump the timeout if reclaim/swap-heavy tests take longer; the harness kills the VM at the cap and exits 124.
 
 6. **Judge the run** — the verdict is authoritative, the exit code is not:
-   - `virtuoso triage` prints the verdict, per-test results, panics, and the serial tail (`--json` for machine-readable output; run dir under `target/runs/`).
+   - The final `[RUN] verdict:` line printed by `virtuoso test` is authoritative; the machine-readable verdict lives in `target/runs/<id>/verdict.json` (per-test results, panics, artifact paths).
    - With `-no-reboot`, a kernel panic makes QEMU exit 0 — trust `verdict: passed` only.
 
 ## Container Mode: Where to Edit, Where to Build

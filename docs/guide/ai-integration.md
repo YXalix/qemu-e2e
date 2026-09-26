@@ -6,10 +6,11 @@ probe 做运行时交互。
 ## 标准验证循环
 
 ```
-doctor → test → triage
+doctor → test
 ```
 
-**判定以 triage 的 verdict 为准**：`verdict: passed` 才算通过。退出码只是
+**判定以 test 收尾的 verdict 行为准**（机读唯一面 = run 目录下的
+`verdict.json`）：`verdict: passed` 才算通过。退出码只是
 接口契约（0=通过、124=超时、其余=失败）——`-no-reboot` 下内核 panic 会让
 QEMU 以 exit 0 退出，只看退出码会假通过。
 
@@ -18,7 +19,7 @@ QEMU 以 exit 0 退出，只看退出码会假通过。
 | 能力 | 输入 | 输出 | 对接点 |
 |---|---|---|---|
 | **测试脚手架生成** | 自然语言描述 / git diff | 用例 crate（Rust 入口 + C 体） | builder 编译即用 |
-| **串口日志分诊** | `events.jsonl` / `verdict.json` | 根因假设 + 建议复现命令 | `virtuoso triage` |
+| **串口日志分诊** | `events.jsonl` / `verdict.json` | 根因假设 + 建议复现命令 | 直读 run 目录工件（`verdict.json` 八态 + `events.jsonl` 逐事件） |
 | **VM 内交互探测** | shell 命令批 | 结构化事件流（`agent-events.jsonl`） | `virtuoso probe`（virtio-serial + virtuoso-agent） |
 
 ## skill

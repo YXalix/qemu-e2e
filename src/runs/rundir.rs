@@ -32,31 +32,6 @@ pub fn create_run_dir(project_root: &Path, arch: &str) -> anyhow::Result<RunDir>
     Ok(RunDir { id, path })
 }
 
-/// 解析 `--run`：None/"latest" → 最新一次；否则为 runs 下的目录名（拒绝路径穿越）。
-pub fn resolve_run(project_root: &Path, spec: Option<&str>) -> anyhow::Result<PathBuf> {
-    let root = runs_root(project_root);
-    let path = match spec.filter(|s| !s.is_empty() && *s != "latest") {
-        None => latest_run(project_root),
-        Some(name) => {
-            if name.contains('/') || name.contains("..") {
-                anyhow::bail!("invalid run id: {name}");
-            }
-            let p = root.join(name);
-            p.is_dir().then_some(p)
-        }
-    };
-    path.ok_or_else(|| {
-        anyhow::anyhow!(
-            "no runs found ({}) — run virtuoso test once to produce artifacts",
-            root.display()
-        )
-    })
-}
-
-pub fn latest_run(project_root: &Path) -> Option<PathBuf> {
-    list_run_dirs(project_root).into_iter().next()
-}
-
 pub fn list_run_dirs(project_root: &Path) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = std::fs::read_dir(runs_root(project_root))
         .into_iter()
@@ -96,7 +71,7 @@ pub struct PumpOutcome {
 
 impl PumpOutcome {
     /// 非零退出（失败/超时）且 QEMU 有输出时，把 stderr 尾部打到 stderr 侧；
-    /// 成功保持安静——全文在 qemu-stderr.log，triage 会给出路径。
+    /// 成功保持安静——全文在 qemu-stderr.log，verdict.json 的 artifacts 段给出路径。
     pub fn report_tail_on_failure(&self, code: i32) {
         if code == 0 || self.qemu_lines == 0 {
             return;
@@ -245,44 +220,6 @@ pub fn finalize_run(run: &RunDir, meta: &RunMeta) -> anyhow::Result<String> {
         serde_json::to_string_pretty(&report)?,
     )?;
     Ok(verdict.as_str().to_string())
-}
-
-/// verdict.json 缺失（Ctrl-C/SIGKILL 中断）时的兜底：现场解析 serial.log。
-pub fn load_verdict_or_parse(run_dir: &Path) -> anyhow::Result<VerdictReport> {
-    let vpath = run_dir.join("verdict.json");
-    if let Ok(text) = std::fs::read_to_string(&vpath) {
-        return serde_json::from_str(&text).context("parse verdict.json");
-    }
-    let audit = read_serial_audit(&run_dir.join("serial.log"));
-    let id = run_dir
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let mut report = VerdictReport::build(
-        &audit,
-        &RunMeta {
-            run_id: id,
-            arch: run_dir
-                .file_name()
-                .and_then(|n| {
-                    n.to_string_lossy()
-                        .rsplit_once('-')
-                        .map(|(_, a)| a.to_string())
-                })
-                .unwrap_or_default(),
-            exit_code: None,
-            duration_ms: 0,
-            timeout_s: String::new(),
-            kernel: None,
-            qemu_version: None,
-            topo: serde_json::Value::Null,
-            build_failed: false,
-        },
-    );
-    report.verdict = judge::Verdict::Unknown;
-    report.verdict_source =
-        Some("serial.log fallback (run did not finish cleanly, verdict.json missing)".to_string());
-    Ok(report)
 }
 
 #[cfg(test)]

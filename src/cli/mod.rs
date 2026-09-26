@@ -4,7 +4,6 @@
 //! - build   → `cli::build`（build / clean / skill）
 //! - kernel  → `cli::kernel`（容器化内核供给：clone/defconfig/build/cc*/卷管理；逻辑在 forge）
 //! - vm      → `cli::vm`（shell / test：启动、看门狗、判定接线）
-//! - 呈现命令 → `runs::render`（triage）
 //!
 //! 行为基线（退出码语义）不变：0=通过、124=超时、其余=失败（单点在 judge::exit）。
 
@@ -21,7 +20,6 @@ use std::path::Path;
 use launcher::{Arch, NumaTopology};
 
 use crate::config::Config;
-use crate::runs;
 use crate::Command as CliCommand;
 
 pub(crate) use pmem::pmem_opt;
@@ -55,10 +53,6 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
             cmd_file,
             json,
         } => probe::run_probe(arch.as_deref(), timeout, &cmds, cmd_file.as_deref(), json),
-        CliCommand::Triage { run, json } => {
-            let cfg = Config::load()?;
-            runs::run_triage(&cfg, run.as_deref(), json)
-        }
     }
 }
 

@@ -1,8 +1,9 @@
 # Troubleshooting — Symptom → Solution
 
-AI/人共用的故障速查。先跑 `virtuoso triage`（或 `virtuoso triage --run <id> --json`），
-它直接给出 verdict、测试清单、panic 行与串口尾部；下文的每个症状都假设你已看过对应
-`target/runs/<id>/` 下的工件。调试手段（shell / GDB / probe）见
+AI/人共用的故障速查。先看最近一次 `virtuoso test` 收尾的 verdict 行与
+`target/runs/<id>/verdict.json`（机读判定唯一面），逐事件事实在
+`events.jsonl`，panic 行与串口原文在 `serial.log`；下文的每个症状都假设你已看过对应
+run 目录下的工件。调试手段（shell / GDB / probe）见
 [调试](guide/debugging.md)。
 
 ## 超时（exit 124，verdict: timeout）
@@ -32,7 +33,7 @@ AI/人共用的故障速查。先跑 `virtuoso triage`（或 `virtuoso triage --
 
 ## verdict: failed（有 FAILED 测试）
 
-**Solution**: `triage` 列出每个测试的断言计数（pass/fail/skip）。找 `[FAIL]` 行上文；
+**Solution**: `verdict.json` 的 `tests` 段列出每个测试的状态与断言计数。找 `serial.log` 里 `[FAIL]` 行上文；
 需复现用 `virtuoso shell` 进 VM 手跑 `/tests/test_x`（rootfs 里保留全部用例）。
 
 ## insmod 失败 / 模块缺失
@@ -68,9 +69,8 @@ clean && virtuoso build` 重建；查 `target/runs/<id>/build.log` 的编译告�
 
 ## Ctrl-C 中断后想看已输出的日志
 
-**Solution**: 串口是逐行同步落盘的：直接看最新 `target/runs/`（`virtuoso triage`
-找最新 id）下的 `serial.log`。verdict.json 缺失时 `triage` 会自动降级为现场解析
-serial.log（`verdict: unknown`）。
+**Solution**: 串口是逐行同步落盘的：直接看 `target/runs/` 下最新 id 的
+`serial.log`。verdict.json 缺失说明 run 未正常收尾（如 Ctrl-C 中断），按失败处理。
 
 ## BusyBox 下载/构建失败
 

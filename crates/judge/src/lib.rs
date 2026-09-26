@@ -78,7 +78,7 @@ pub struct Audit {
     pub events: Vec<Event>,
 }
 
-/// 运行判定 —— verdict 字符串是冻结接口（triage/runs/CI 三态判定依赖）。
+/// 运行判定 —— verdict 字符串是冻结接口（runs 工件与 CI 判定依赖）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {

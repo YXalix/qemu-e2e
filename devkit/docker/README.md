@@ -80,10 +80,11 @@ virtuoso kernel use ksrc-mainline   # 切 current（写 .virtuoso/kernel-current
 
 ```bash
 virtuoso kernel build                           # 容器 make（volume 原生 I/O）
-virtuoso doctor && virtuoso build && virtuoso test && virtuoso triage
+virtuoso doctor && virtuoso build && virtuoso test
 ```
 
-判定以 `triage` 的 verdict 为准（`verdict: passed` 才算通过）；配合
+判定以 test 收尾的 verdict 行为准（机读唯一面 = run 目录下的
+`verdict.json`，`verdict: passed` 才算通过）；配合
 `virtuoso skill install`（KERNEL_PATH 指向宿主可见路径）注入 kernel-dev /
 kernel-virtuoso 两个 skill，AI 即具备驱动测试回路 / 分诊 / 写用例的知识。
 

@@ -10,8 +10,7 @@ QEMU 里跑真实测试程序，用一条命令回答
 
 ```bash
 virtuoso doctor             # 一屏环境体检（✓/✗ 组件行；--verbose 全量）
-virtuoso test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
-virtuoso triage             # 以 verdict 为准的判定报告
+virtuoso test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘（收尾打印 verdict 行）
 ```
 
 从零上手见[快速开始](quick-start.md)。

@@ -30,16 +30,16 @@ QEMU 以 exit 0 退出——只看退出码会假通过；verdict 用 `TEST_COMP
 退出码对账，panic / oops 独立成档。`exit 0` 但 `verdict: incomplete` = 标记
 协议没走完，按失败处理。
 
-## 分析命令
+## 分析入口
 
 ```bash
-virtuoso triage [--run <id>] [--json]    # 最近（或指定）run 的分诊报告
+cat target/runs/<id>/verdict.json        # 机读判定唯一面（八态 verdict + 逐测试明细）
 virtuoso test --replay-until-fail 5      # flaky 返场：首个非 passed 即停
 ```
 
-`triage` 支持 `--json`，可直接进管道。语义细节：
-
-- Ctrl-C 中断的 run：工件已落盘，`triage` 对缺失的 verdict.json 自动降级为
-  现场解析 serial.log（`verdict: unknown`）。
+判定呈现不设第二命令：`test` 收尾打印 verdict 行；逐事件事实在
+`events.jsonl`，人工细读直接看 run 目录下的 `serial.log` 与
+`verdict.json`。Ctrl-C 中断的 run 工件已落盘，但 verdict.json 可能缺失
+（标记协议未走完，人工判读按失败处理）。
 
 症状速查见 [Troubleshooting](../troubleshooting.md)。

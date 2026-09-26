@@ -88,7 +88,7 @@ virtuoso/
 │   ├── main.rs                 # clap 子命令定义
 │   ├── config/                 # 类型化配置（schema/global/components/plan/busybox）
 │   ├── cli/                    # doctor / build / kernel / vm / probe / mod（分发+解析 helpers）/ diagnostics
-│   └── runs/                   # rundir（run 目录、输出泵、verdict 落盘回读）+ render（triage 呈现）
+│   └── runs/                   # rundir（run 目录、输出泵、verdict 落盘）
 ├── crates/
 │   ├── common/                 # 基础层（零依赖）：Arch 矩阵 / which / ELF / 内存单位 / 时间 / 人类可读大小
 │   ├── builder/                # 构建器：镜像发现 / C+Rust 用例 / 模块清单 / busybox 供给 / cpio+ext4 组装 / verify 引擎

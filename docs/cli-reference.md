@@ -14,7 +14,6 @@
 | `shell [--kvm] [--tcg] [--gdb]` | launcher | 交互式 VM（BusyBox shell）；`--kvm` 仅 Linux，`--tcg` 强制纯模拟（macOS 缺省 HVF 时用），`--gdb` 挂起启动 + GDB stub `:1234`（恒 TCG） |
 | `test [--timeout N] [--arch a] [--replay-until-fail N] [--tcg]` | 全链路 | 构建 → 启动 → 判定 → 工件落盘；返场模式首个非 passed 即停；macOS 同构缺省 HVF |
 | `probe --cmd/--cmd-file [--json] [--timeout N]` | launcher+judge | AI 交互通道：virtio-serial agent 命令批，结构化事件流 |
-| `triage [--run id] [--json]` | runs | 最近（或指定）run 的分诊报告 |
 | `skill install \| uninstall` | cli | AI skill 装入 / 移出内核树 |
 
 ## 通用行为
@@ -29,8 +28,8 @@
 ## AI 的标准验证循环
 
 ```
-doctor → test → triage
+doctor → test
 ```
 
-判定以 triage 的 verdict 为准（`verdict: passed` 才算通过）。工作流详见
-[AI 集成](guide/ai-integration.md)。
+判定以 test 收尾的 verdict 行为准（`verdict: passed` 才算通过；机读唯一面 =
+run 目录下的 `verdict.json`）。工作流详见 [AI 集成](guide/ai-integration.md)。
