@@ -6,7 +6,7 @@
 
 | 命令 | 说明 |
 |---|---|
-| `doctor [--arch a] [--verbose] [--json]` | 环境体检：一屏 ✓/✗/! 组件行；`--verbose` = 类型化配置诊断 + 完整检查清单 |
+| `doctor [--arch a] [--verbose] [--json]` | 环境体检：一屏 ✓/✗/! 组件行（缺失的 `rootfs.d/` 自动创建空目录，见[测试编写](writing-tests.md#向-rootfs-添加文件-rootfsd)）；`--verbose` = 类型化配置诊断 + 完整检查清单 |
 | `build [--busybox-only]` | 重建 initrd.img / rootfs.img / tools.img；`--busybox-only` 仅备当前架构静态 BusyBox（GitHub Release 拉取 + 本地缓存复用） |
 | `kernel clone/defconfig/build/path/shell` | 容器化内核供给：named volume 源码 + 钉死工具链镜像（详见 [devkit/docker/README.md](../../devkit/docker/README.md)） |
 | `kernel list` / `kernel use <volume>` | 卷管理：列卷（状态 + current 标记）/ 切 current（状态文件 `.virtuoso/kernel-current.json`） |

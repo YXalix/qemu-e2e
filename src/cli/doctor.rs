@@ -4,10 +4,12 @@
 //! 前缀归并为组件行，✓/✗/! 一眼可读）；`--verbose` = 类型化配置诊断 +
 //! 完整检查清单。退出码：critical 未过 → 1。
 
+use std::path::Path;
+
 use crate::util::which;
 use crate::Arch;
 
-use crate::builder::verify::{detail, CheckKind, Level, Report};
+use crate::builder::verify::{detail, CheckKind, Level, Report, RootfsDState};
 
 use super::resolve_arch;
 use crate::config::Config;
@@ -63,7 +65,9 @@ fn group_of(kind: CheckKind) -> Group {
         | CheckKind::KernelDocker => Group::Kernel,
         CheckKind::QemuBinary | CheckKind::QemuImg => Group::Qemu,
         CheckKind::Modules | CheckKind::Components => Group::Modules,
-        CheckKind::BusyBox | CheckKind::ToolsImage | CheckKind::Initrd => Group::Artifacts,
+        CheckKind::BusyBox | CheckKind::ToolsImage | CheckKind::Initrd | CheckKind::RootfsD => {
+            Group::Artifacts
+        }
     }
 }
 
@@ -184,7 +188,7 @@ fn render(groups: &[GroupOut], tty: bool) -> String {
 
 /// 检查引擎输入投影（保证检查语义单一来源——新增前置条件只动
 /// crate::builder::verify::run_checks，doctor 的两种呈现自动跟随）。
-fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
+fn engine_report(cfg: &Config, arch: Arch, rootfs_d: RootfsDState) -> anyhow::Result<Report> {
     let host_arch = Arch::parse(std::env::consts::ARCH);
     let kernel_path = cfg.kernel_path().ok().map(|(kp, _)| kp);
     let supply = cfg.busybox_supply();
@@ -214,6 +218,7 @@ fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
         initrd: Some(&cfg.artifacts_dir.join("initrd.img")),
         vfio_enabled: cfg.vfio().is_some(),
         pmem_enabled: cfg.pmem_size().is_some(),
+        rootfs_d,
     }))
 }
 
@@ -244,12 +249,55 @@ fn docker_report(cfg: &Config, report: &mut Report) {
     ));
 }
 
+/// rootfs.d 缺失即建（空目录）：drop-in 目录不随 clone 分发，doctor 是新人
+/// 必经入口，建出后由引擎检查就地解释（verify::check_rootfs_d）。创建失败
+/// 不拦体检——降级为 WARN 呈现，退出码不受影响。
+fn ensure_rootfs_d(dir: &Path) -> RootfsDState {
+    if let Ok(md) = std::fs::metadata(dir) {
+        return if md.is_dir() {
+            RootfsDState::Ready {
+                files: count_files(dir),
+                created: false,
+            }
+        } else {
+            RootfsDState::NotADir
+        };
+    }
+    match std::fs::create_dir_all(dir) {
+        Ok(()) => RootfsDState::Ready {
+            files: 0,
+            created: true,
+        },
+        Err(e) => RootfsDState::Absent {
+            err: Some(e.to_string()),
+        },
+    }
+}
+
+/// rootfs.d 将并入的文件数（递归；与 builder 的整树并入同口径）。
+fn count_files(dir: &Path) -> usize {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut n = 0;
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            n += count_files(&p);
+        } else {
+            n += 1;
+        }
+    }
+    n
+}
+
 // ---------------------------------------------------------------- 入口
 
 pub fn run_doctor(arch_override: Option<&str>, json: bool, verbose: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let arch = resolve_arch(&cfg, arch_override)?;
-    let mut report = engine_report(&cfg, arch)?;
+    let rootfs_d = ensure_rootfs_d(&cfg.project_root.join("rootfs.d"));
+    let mut report = engine_report(&cfg, arch, rootfs_d)?;
     docker_report(&cfg, &mut report);
 
     // --verbose：全量呈现（类型化配置诊断 + 完整检查清单），文本态专属
@@ -360,6 +408,7 @@ mod tests {
             (CheckKind::BusyBox, Group::Artifacts),
             (CheckKind::ToolsImage, Group::Artifacts),
             (CheckKind::Initrd, Group::Artifacts),
+            (CheckKind::RootfsD, Group::Artifacts),
         ] {
             assert_eq!(group_of(kind), want, "kind={kind:?}");
         }
@@ -473,6 +522,12 @@ mod tests {
                 "Initrd: /a/initrd.img (12M)",
                 Some("initrd.img (12M)"),
             ),
+            check(
+                Level::Info,
+                CheckKind::RootfsD,
+                "rootfs.d: 2 file(s) (drop-in dir; merged into rootfs at build (add-only))",
+                Some("rootfs.d (2 files)"),
+            ),
         ]));
         let rendered = render(&groups, false);
         let lines: Vec<&str> = rendered.lines().collect();
@@ -481,7 +536,44 @@ mod tests {
         assert!(lines[2].contains("Kernel") && lines[2].contains("v6.6.0 · Image (42M)"));
         assert!(
             lines[5].contains("Artifacts")
-                && lines[5].contains("busybox · tools.img · initrd.img (12M)")
+                && lines[5].contains("busybox · tools.img · initrd.img (12M) · rootfs.d (2 files)")
         );
+    }
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("doctor-rd-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        d
+    }
+
+    #[test]
+    fn ensure_rootfs_d_creates_missing_then_counts() {
+        let d = tmp("create");
+        assert!(matches!(
+            ensure_rootfs_d(&d),
+            RootfsDState::Ready {
+                files: 0,
+                created: true
+            }
+        ));
+        std::fs::write(d.join("a.txt"), "x").unwrap();
+        std::fs::create_dir_all(d.join("sub")).unwrap();
+        std::fs::write(d.join("sub").join("b.sh"), "y").unwrap();
+        assert!(matches!(
+            ensure_rootfs_d(&d),
+            RootfsDState::Ready {
+                files: 2,
+                created: false
+            }
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn ensure_rootfs_d_bails_on_non_dir() {
+        let d = tmp("notdir");
+        std::fs::write(&d, "not a dir").unwrap();
+        assert!(matches!(ensure_rootfs_d(&d), RootfsDState::NotADir));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

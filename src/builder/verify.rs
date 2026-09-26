@@ -33,6 +33,7 @@ pub(crate) enum CheckKind {
     BusyBox,
     ToolsImage,
     Initrd,
+    RootfsD,
 }
 
 impl CheckKind {
@@ -53,6 +54,7 @@ impl CheckKind {
             CheckKind::BusyBox => "BusyBox",
             CheckKind::ToolsImage => "Tools image",
             CheckKind::Initrd => "Initrd",
+            CheckKind::RootfsD => "rootfs.d",
         }
     }
 }
@@ -164,6 +166,17 @@ pub(crate) fn is_stdout_tty() -> bool {
 
 // ---------------------------------------------------------------- 引擎输入与编排
 
+/// rootfs.d drop-in 状态（目录不随 clone 分发；doctor 负责缺失即创建，
+/// 见 cli::doctor::ensure_rootfs_d，本引擎只读状态）。
+pub(crate) enum RootfsDState {
+    /// 目录就绪：files = 将并入的文件数；created = 本次运行刚创建。
+    Ready { files: usize, created: bool },
+    /// 路径存在但不是目录（drop-in 不生效）。
+    NotADir,
+    /// 不存在（err = 创建失败原因；None = 调用方未尝试创建）。
+    Absent { err: Option<String> },
+}
+
 /// 检查引擎输入（doctor / engine_report 投影；一次装配，免长参数表）。
 pub(crate) struct CheckInput<'a> {
     pub config_file_exists: bool,
@@ -181,9 +194,11 @@ pub(crate) struct CheckInput<'a> {
     pub initrd: Option<&'a Path>,
     pub vfio_enabled: bool,
     pub pmem_enabled: bool,
+    pub rootfs_d: RootfsDState,
 }
 
-/// 运行全部检查（verify.sh 的 11 项 + 组件平台门），逐项独立成函数。
+/// 运行全部检查（verify.sh 的 11 项 + 组件平台门 + rootfs.d drop-in），
+/// 逐项独立成函数。
 pub(crate) fn run_checks(input: &CheckInput) -> Report {
     let mut checks = Vec::new();
     check_config(input, &mut checks);
@@ -197,6 +212,7 @@ pub(crate) fn run_checks(input: &CheckInput) -> Report {
     check_tools_image(input, &mut checks);
     check_initrd(input, &mut checks);
     check_components(input, &mut checks);
+    check_rootfs_d(input, &mut checks);
 
     let critical_pass = checks.iter().filter(|c| c.level == Level::Pass).count() as u32;
     let critical_fail = checks.iter().filter(|c| c.level == Level::Fail).count() as u32;
@@ -573,6 +589,41 @@ fn check_components(input: &CheckInput, checks: &mut Vec<Check>) {
             CheckKind::Components,
             "Components: pmem on macOS is experimental (memory-backend-file + dumpdtb/fdtput 未在 HVF 实测)",
         ));
+    }
+}
+
+// 13. rootfs.d drop-in（可选用户目录，不判死；doctor 负责缺失即创建）
+fn check_rootfs_d(input: &CheckInput, checks: &mut Vec<Check>) {
+    let hint = "drop-in dir; merged into rootfs at build (add-only)";
+    match &input.rootfs_d {
+        RootfsDState::Ready { files: _, created: true } => checks.push(info(
+            CheckKind::RootfsD,
+            format!("rootfs.d: created ({hint})"),
+            Some("rootfs.d created".into()),
+        )),
+        RootfsDState::Ready { files: 0, created: false } => checks.push(info(
+            CheckKind::RootfsD,
+            format!("rootfs.d: empty ({hint})"),
+            Some("rootfs.d empty".into()),
+        )),
+        RootfsDState::Ready { files, created: false } => checks.push(info(
+            CheckKind::RootfsD,
+            format!("rootfs.d: {files} file(s) ({hint})"),
+            Some(format!("rootfs.d ({files} files)")),
+        )),
+        RootfsDState::NotADir => checks.push(warn(
+            CheckKind::RootfsD,
+            "rootfs.d: not a directory — drop-in skipped (replace it with a directory)",
+        )),
+        RootfsDState::Absent { err: Some(e) } => checks.push(warn(
+            CheckKind::RootfsD,
+            format!("rootfs.d: not present (create failed: {e}); optional {hint}"),
+        )),
+        RootfsDState::Absent { err: None } => checks.push(info(
+            CheckKind::RootfsD,
+            format!("rootfs.d: not present (optional {hint}; `virtuoso doctor` creates it)"),
+            None,
+        )),
     }
 }
 

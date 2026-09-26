@@ -116,10 +116,11 @@ group = "smoke"
 
 ## 向 rootfs 添加文件（rootfs.d）
 
-仓库根 `rootfs.d/` 是用户 drop-in 目录（git 忽略，随用随建）：构建时整树
+仓库根 `rootfs.d/` 是用户 drop-in 目录（git 忽略，不随 clone 分发）：构建时整树
 **增量并入** rootfs（目录级并集），适合测试数据、预置脚本、环境文件。
 **只增不覆盖**——任何与 builder 组装产物同路径的文件都是构建期错误，
-框架文件（init、模块清单、busybox 树）不可能被遮蔽。缺省无此目录 = 无操作。
+框架文件（init、模块清单、busybox 树）不可能被遮蔽。目录缺省不存在 =
+构建无操作；首次 `virtuoso doctor` 会自动创建空目录，也可随手自建。
 
 放一个脚本用例就是加测试：`rootfs.d/tests/<组>/run-foo.sh`（可执行位），
 init 按退出码判 PASSED/FAILED，与编译用例同协议同判定。

@@ -248,7 +248,10 @@ pub(crate) fn apply_rootfs_d(
     }
     let mut count = 0usize;
     merge_tree(rootfs_dir, rootfs_d_dir, rootfs_d_dir, &mut count)?;
-    progress.line(&format!("rootfs.d: {count} file(s) added"));
+    // 空目录与缺失同义（doctor 会建出空目录）：静默，不打 0 行噪音
+    if count > 0 {
+        progress.line(&format!("rootfs.d: {count} file(s) added"));
+    }
     Ok(count)
 }
 
