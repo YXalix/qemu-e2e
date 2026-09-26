@@ -47,28 +47,18 @@ pub fn run_probe(
     let run = crate::runs::create_run_dir(&cfg.project_root, arch.name())?;
     println!("[RUN] artifacts: {}", run.path.display());
 
+    // ---- 启动（agent 串口恒开：probe 绕过组件开关，socket 直接指定）----
     let sock_path = run.path.join("agent.sock");
     let _ = std::fs::remove_file(&sock_path); // QEMU 不清理已存在的 socket 路径
-
-    // ---- 启动（agent 串口 + piped 串口捕获；TCG 缺省，KVM 走 shell 模式）----
-    let kernel = super::kernel_image_path(&cfg, arch)?;
-    let inv = launcher::QemuInvocation::new(
+    let inv = super::build_invocation(&super::LaunchPlan {
+        cfg: &cfg,
         arch,
-        &kernel,
-        cfg.artifacts_dir.join("initrd.img"),
-        cfg.artifacts_dir.join("rootfs.img"),
-    )
-    .accel(launcher::Accel::Tcg)
-    .pmem(super::pmem_opt(&cfg, arch, &topo)?)
-    .topo(topo)
-    .qemu_override(cfg.qemu_override().as_deref())
-    .virtio_disks(super::tools_disk_opt(&cfg))
-    .agent_serial(&sock_path)
-    .extra_opts(&cfg.qemu_extra());
-    println!(
-        "[LAUNCH] {}",
-        inv.command_line()?
-    );
+        topo,
+        accel: launcher::Accel::Tcg,
+        auto_test: false,
+        agent_socket: Some(sock_path.clone()),
+    })?;
+    println!("[LAUNCH] {}", inv.command_line()?);
     let (mut child, mut sup) = inv.spawn_supervised(true)?;
 
     // 串口泵放工作线程（阻塞读），主线程跑 agent 协议；总超时到点看门狗

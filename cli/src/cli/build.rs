@@ -96,16 +96,14 @@ pub fn run_clean() -> anyhow::Result<i32> {
 pub fn run_skill(action: SkillAction) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     // 安装目标必须显式指定 KERNEL_PATH（不自动探测：探测到的树未必是用户想装入的树）
-    let Ok((kernel_path, explicit)) = cfg.kernel_path() else {
-        eprintln!("ERROR: KERNEL_PATH is not set.");
-        eprintln!("  Set kernel_path in virtuoso.toml (or the KERNEL_PATH env var).");
-        return Ok(1);
+    let kernel_path = match cfg.kernel_path() {
+        Ok((p, true)) => p,
+        Ok(_) | Err(_) => {
+            anyhow::bail!(
+                "KERNEL_PATH is not set.\n  Set kernel_path in virtuoso.toml (or the KERNEL_PATH env var)."
+            );
+        }
     };
-    if !explicit {
-        eprintln!("ERROR: KERNEL_PATH is not set (auto-detected value is not acceptable here).");
-        eprintln!("  Set kernel_path in virtuoso.toml (or the KERNEL_PATH env var).");
-        return Ok(1);
-    }
     let kernel_path = kernel_path.display().to_string();
 
     match action {

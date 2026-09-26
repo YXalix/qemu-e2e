@@ -58,6 +58,13 @@ pub struct Config {
     pub toml: Option<VirtuosoToml>,
 }
 
+/// env 布尔解析（宽松语义："1"/"true"/"yes"/"on" 为真，其余为假）。
+fn env_bool(key: &str) -> Option<bool> {
+    std::env::var(key)
+        .ok()
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+}
+
 impl Config {
     pub fn load() -> anyhow::Result<Self> {
         let project_root = find_project_root().ok_or_else(|| {
@@ -98,19 +105,14 @@ impl Config {
     pub fn busybox_supply(&self) -> builder::busybox::Supply {
         let toml = self.toml.as_ref().and_then(|t| t.busybox.as_ref());
         builder::busybox::Supply {
-            version: scalar(toml.and_then(|b| b.version.as_ref()), "BUSYBOX_VERSION")
-                .filter(|s| !s.is_empty()),
+            version: scalar(toml.and_then(|b| b.version.as_ref()), "BUSYBOX_VERSION"),
             release_repo: scalar(
                 toml.and_then(|b| b.release_repo.as_ref()),
                 "BUSYBOX_RELEASE_REPO",
-            )
-            .filter(|s| !s.is_empty()),
-            dl_url: scalar(toml.and_then(|b| b.dl_url.as_ref()), "BUSYBOX_DL_URL")
-                .filter(|s| !s.is_empty()),
-            force_source_build: match std::env::var("BUSYBOX_SOURCE_BUILD") {
-                Ok(v) => v == "1",
-                Err(_) => toml.and_then(|b| b.force_source_build).unwrap_or(false),
-            },
+            ),
+            dl_url: scalar(toml.and_then(|b| b.dl_url.as_ref()), "BUSYBOX_DL_URL"),
+            force_source_build: env_bool("BUSYBOX_SOURCE_BUILD")
+                .unwrap_or_else(|| toml.and_then(|b| b.force_source_build).unwrap_or(false)),
         }
     }
 
@@ -128,7 +130,7 @@ impl Config {
 
     /// (KERNEL_PATH, 是否显式指定)。未指定时 = 项目根上一级（qemu-e2e 自动探测语义）。
     pub fn kernel_path(&self) -> anyhow::Result<(PathBuf, bool)> {
-        match scalar(self.tv(|t| &t.kernel_path), "KERNEL_PATH").filter(|s| !s.is_empty()) {
+        match scalar(self.tv(|t| &t.kernel_path), "KERNEL_PATH") {
             Some(p) => Ok((PathBuf::from(p), true)),
             None => {
                 let parent = self
@@ -142,34 +144,31 @@ impl Config {
 
     /// kernel_image 覆盖（缺省 = 内核树内 arch 对应镜像）。
     pub fn kernel_image(&self) -> Option<String> {
-        scalar(self.tv(|t| &t.kernel_image), "KERNEL_IMAGE").filter(|s| !s.trim().is_empty())
+        scalar(self.tv(|t| &t.kernel_image), "KERNEL_IMAGE")
     }
 
     /// kernel_preset（"mainline" = 预编 mainline mini 内核）：激活后内核镜像
     /// 走 `virtuoso fetch` 的缓存（target/kernel/preset），源码树不再是前置。
     /// env KERNEL_PRESET 覆盖 toml（冻结的标量优先级）。
     pub fn kernel_preset(&self) -> Option<String> {
-        scalar(self.tv(|t| &t.kernel_preset), "KERNEL_PRESET").filter(|s| !s.trim().is_empty())
+        scalar(self.tv(|t| &t.kernel_preset), "KERNEL_PRESET")
     }
 
     /// QEMU_TIMEOUT 原始字符串（"0" 由 test 命令拒绝）。
     pub fn timeout_raw(&self) -> String {
-        scalar(self.tv(|t| &t.timeout_secs), "QEMU_TIMEOUT")
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "0".into())
+        scalar(self.tv(|t| &t.timeout_secs), "QEMU_TIMEOUT").unwrap_or_else(|| "0".into())
     }
 
-    /// AUTO_TEST 开关（缺省 true —— 常规启动即跑测试；env 覆盖 toml）。
+    /// AUTO_TEST 开关（缺省 true —— 常规启动即跑测试；env 覆盖 toml，
+    /// env_bool 宽松语义：1/true/yes/on 为真）。
     pub fn auto_test(&self) -> bool {
-        match std::env::var("AUTO_TEST") {
-            Ok(v) => v != "0",
-            Err(_) => self.toml.as_ref().and_then(|t| t.auto_test).unwrap_or(true),
-        }
+        env_bool("AUTO_TEST")
+            .unwrap_or_else(|| self.toml.as_ref().and_then(|t| t.auto_test).unwrap_or(true))
     }
 
     /// QEMU 二进制覆盖。
     pub fn qemu_override(&self) -> Option<String> {
-        scalar(self.tv(|t| &t.qemu), "QEMU").filter(|s| !s.is_empty())
+        scalar(self.tv(|t| &t.qemu), "QEMU")
     }
 
     /// QEMU 透传参数：`QEMU_OPTS` 环境变量（空白切分）优先，否则 toml
@@ -201,7 +200,7 @@ impl Config {
 
     /// vfio 直通设备 BDF 列表（组件未启用 = 空）。
     pub fn vfio(&self) -> Option<&[String]> {
-        let v = self.toml.as_ref()?.components.as_ref()?.vfio.as_ref()?;
+        let v = self.comp(|c| c.vfio.as_ref())?;
         v.enabled
             .unwrap_or(false)
             .then(|| v.devices.as_deref().unwrap_or(&[]))
@@ -212,29 +211,17 @@ impl Config {
     /// 未启用（缺省单节点）回落遗留变量，再回落 1 / "1G"。
     pub fn topo_params(&self) -> (String, String, String) {
         let smp = scalar(self.tv(|t| &t.smp), "SMP").unwrap_or_else(|| "8".into());
-        let numa = self
-            .toml
-            .as_ref()
-            .and_then(|t| t.components.as_ref())
-            .and_then(|c| c.numa.as_ref())
-            .filter(|n| n.enabled.unwrap_or(false));
-        let nodes = match numa {
-            Some(n) => {
-                let raw = n.nodes.as_ref().map(|s| s.0.clone());
-                raw.filter(|s| !s.trim().is_empty())
-                    .unwrap_or_else(|| "2".into())
-            }
+        let numa = self.comp(|c| c.numa.as_ref()).filter(|n| n.enabled.unwrap_or(false));
+        // 优先级冻结：NUMA_NODES / NUMA_MEMORY env 覆盖 toml（组件启用与否皆然）
+        let nodes = match &numa {
+            Some(n) => scalar(n.nodes.as_ref(), "NUMA_NODES").unwrap_or_else(|| "2".into()),
             None => std::env::var("NUMA_NODES")
                 .ok()
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| "1".into()),
         };
-        let mem = match numa {
-            Some(n) => {
-                let raw = n.memory_per_node.as_ref().map(|s| s.0.clone());
-                raw.filter(|s| !s.trim().is_empty())
-                    .unwrap_or_else(|| "1G".into())
-            }
+        let mem = match &numa {
+            Some(n) => scalar(n.memory_per_node.as_ref(), "NUMA_MEMORY").unwrap_or_else(|| "1G".into()),
             None => std::env::var("NUMA_MEMORY")
                 .ok()
                 .filter(|s| !s.trim().is_empty())
@@ -247,52 +234,43 @@ impl Config {
     /// tools_disk → agent → vfio → numa → pmem，去重保首个），按 stage 分区。
     pub fn component_plan(&self) -> ComponentPlan {
         let mut plan = ComponentPlan::default();
-        let comps = self.toml.as_ref().and_then(|t| t.components.as_ref());
-        if let Some(c) = comps.and_then(|c| c.tools_disk.as_ref()) {
-            if c.enabled.unwrap_or(false) {
-                plan.push(c.stage, &c.require);
-            }
+        if let Some(c) = self.comp(|c| c.tools_disk.as_ref()) {
+            push_enabled(&mut plan, c);
         }
-        if let Some(c) = comps.and_then(|c| c.agent.as_ref()) {
-            if c.enabled.unwrap_or(false) {
-                plan.push(c.stage, &c.require);
-            }
+        if let Some(c) = self.comp(|c| c.agent.as_ref()) {
+            push_enabled(&mut plan, c);
         }
-        if let Some(c) = comps.and_then(|c| c.vfio.as_ref()) {
-            if c.enabled.unwrap_or(false) {
-                plan.push(c.stage, &c.require);
-            }
+        if let Some(c) = self.comp(|c| c.vfio.as_ref()) {
+            push_enabled(&mut plan, c);
         }
-        if let Some(c) = comps.and_then(|c| c.numa.as_ref()) {
-            if c.enabled.unwrap_or(false) {
-                plan.push(c.stage, &c.require);
-            }
+        if let Some(c) = self.comp(|c| c.numa.as_ref()) {
+            push_enabled(&mut plan, c);
         }
-        if let Some(c) = comps.and_then(|c| c.pmem.as_ref()) {
-            if c.enabled.unwrap_or(false) {
-                plan.push(c.stage, &c.require);
-            }
+        if let Some(c) = self.comp(|c| c.pmem.as_ref()) {
+            push_enabled(&mut plan, c);
         }
         plan
+    }
+
+    /// 组件段访问入口（toml 未配置 / components 段缺失 = None）。
+    fn comp<'a, T>(
+        &'a self,
+        f: impl FnOnce(&'a ComponentsSection) -> Option<&'a T>,
+    ) -> Option<&'a T> {
+        f(self.toml.as_ref()?.components.as_ref()?)
     }
 
     /// tools_disk 组件是否启用（段缺省 = true：tools.img 存在即附加，
     /// 与冻结不变量 3 的「调用方增量」语义一致）。
     pub fn tools_disk_enabled(&self) -> bool {
-        self.toml
-            .as_ref()
-            .and_then(|t| t.components.as_ref())
-            .and_then(|c| c.tools_disk.as_ref())
+        self.comp(|c| c.tools_disk.as_ref())
             .and_then(|c| c.enabled)
             .unwrap_or(true)
     }
 
     /// agent 组件是否启用（段缺省 = false：argv 保持冻结基线）。
     pub fn agent_enabled(&self) -> bool {
-        self.toml
-            .as_ref()
-            .and_then(|t| t.components.as_ref())
-            .and_then(|c| c.agent.as_ref())
+        self.comp(|c| c.agent.as_ref())
             .and_then(|c| c.enabled)
             .unwrap_or(false)
     }
@@ -300,18 +278,12 @@ impl Config {
     /// pmem 组件 size（启用才 Some；未写 size 用缺省 "256M"）。
     /// 段缺省（或 enabled=false）= 关闭：argv 保持冻结基线。
     pub fn pmem_size(&self) -> Option<String> {
-        self.toml
-            .as_ref()?
-            .components
-            .as_ref()?
-            .pmem
-            .as_ref()
+        self.comp(|c| c.pmem.as_ref())
             .filter(|p| p.enabled.unwrap_or(false))
             .map(|p| {
                 p.size
                     .as_ref()
                     .map(|s| s.0.clone())
-                    .filter(|s| !s.trim().is_empty())
                     .unwrap_or_else(|| "256M".into())
             })
     }
@@ -438,6 +410,21 @@ struct ComponentsSection {
 // 组件公共字段（enabled / require / stage）逐结构体显式声明 —— 不用
 // #[serde(flatten)]，它与 deny_unknown_fields 不兼容（未知键会漏过）。
 
+/// 组件公共字段的统一视图：启用判定与 require 并集只看这三个面，
+/// 各组件结构体逐项实现（五行样板换掉调用方的五行复制块）。
+trait Component {
+    fn enabled(&self) -> Option<bool>;
+    fn stage(&self) -> Option<Stage>;
+    fn require(&self) -> &Option<Vec<String>>;
+}
+
+/// 启用组件的 require 并入计划（禁用组件整体跳过）。
+fn push_enabled(plan: &mut ComponentPlan, c: &impl Component) {
+    if c.enabled().unwrap_or(false) {
+        plan.push(c.stage(), c.require());
+    }
+}
+
 /// tools.img 常驻工具盘（外挂 virtio-blk → /dev/vdb 挂 /tools）。
 /// 段缺省即启用；require 默认为空（virtio_blk/ext4 已在 boot 基础集）。
 #[derive(serde::Deserialize)]
@@ -448,6 +435,18 @@ struct ToolsDiskComponent {
     stage: Option<Stage>,
 }
 
+impl Component for ToolsDiskComponent {
+    fn enabled(&self) -> Option<bool> {
+        self.enabled
+    }
+    fn stage(&self) -> Option<Stage> {
+        self.stage
+    }
+    fn require(&self) -> &Option<Vec<String>> {
+        &self.require
+    }
+}
+
 /// AI probe 通道（virtio-serial + guest 内 virtuoso-agent）。
 /// 段缺省即关闭 —— argv 保持冻结基线（不变量 3）。
 #[derive(serde::Deserialize)]
@@ -456,6 +455,18 @@ struct AgentComponent {
     enabled: Option<bool>,
     require: Option<Vec<String>>,
     stage: Option<Stage>,
+}
+
+impl Component for AgentComponent {
+    fn enabled(&self) -> Option<bool> {
+        self.enabled
+    }
+    fn stage(&self) -> Option<Stage> {
+        self.stage
+    }
+    fn require(&self) -> &Option<Vec<String>> {
+        &self.require
+    }
 }
 
 /// vfio-pci 直通：devices = 宿主设备 BDF 列表，逐条生成
@@ -469,6 +480,18 @@ struct VfioComponent {
     devices: Option<Vec<String>>,
 }
 
+impl Component for VfioComponent {
+    fn enabled(&self) -> Option<bool> {
+        self.enabled
+    }
+    fn stage(&self) -> Option<Stage> {
+        self.stage
+    }
+    fn require(&self) -> &Option<Vec<String>> {
+        &self.require
+    }
+}
+
 /// 多节点 NUMA 拓扑；段缺省（或 enabled=false）= 单节点。
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -478,6 +501,18 @@ struct NumaComponent {
     stage: Option<Stage>,
     nodes: Option<StrVal>,
     memory_per_node: Option<StrVal>,
+}
+
+impl Component for NumaComponent {
+    fn enabled(&self) -> Option<bool> {
+        self.enabled
+    }
+    fn stage(&self) -> Option<Stage> {
+        self.stage
+    }
+    fn require(&self) -> &Option<Vec<String>> {
+        &self.require
+    }
 }
 
 /// 持久内存（QEMU nvdimm → guest /dev/pmem0）；段缺省 = 关闭（argv 保持
@@ -490,6 +525,18 @@ struct PmemComponent {
     require: Option<Vec<String>>,
     stage: Option<Stage>,
     size: Option<StrVal>,
+}
+
+impl Component for PmemComponent {
+    fn enabled(&self) -> Option<bool> {
+        self.enabled
+    }
+    fn stage(&self) -> Option<Stage> {
+        self.stage
+    }
+    fn require(&self) -> &Option<Vec<String>> {
+        &self.require
+    }
 }
 
 #[derive(serde::Deserialize)]

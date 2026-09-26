@@ -7,11 +7,9 @@ use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
 use std::time::Instant;
 
 use anyhow::Context;
-use launcher::{Accel, Arch, HostOs, QemuInvocation};
+use launcher::{Accel, Arch, HostOs};
 
-use super::{
-    agent_socket_opt, kernel_image_path, pmem_opt, resolve_arch, resolve_topology, tools_disk_opt,
-};
+use super::{build_invocation, open_agent_socket, resolve_arch, resolve_topology, LaunchPlan};
 use crate::config::Config;
 use crate::runs;
 
@@ -50,7 +48,6 @@ fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let arch = resolve_arch(&cfg, None)?;
     let topo = resolve_topology(&cfg)?;
-    let kernel = kernel_image_path(&cfg, arch)?;
     if gdb_stub {
         println!("Starting QEMU with GDB stub on port 1234...");
     }
@@ -64,30 +61,16 @@ fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
         }
     }
 
-    let inv = QemuInvocation::new(
+    let inv = build_invocation(&LaunchPlan {
+        cfg: &cfg,
         arch,
-        &kernel,
-        cfg.artifacts_dir.join("initrd.img"),
-        cfg.artifacts_dir.join("rootfs.img"),
-    )
-    .accel(accel)
-    .pmem(pmem_opt(&cfg, arch, &topo)?)
-    .topo(topo)
-    .qemu_override(cfg.qemu_override().as_deref())
-    .virtio_disks(tools_disk_opt(&cfg))
-    .extra_opts(&cfg.qemu_extra());
-    let inv = match agent_socket_opt(&cfg, &cfg.target_dir, "agent-shell") {
-        Some(sock) => {
-            let _ = std::fs::remove_file(&sock); // QEMU 不清理已存在的 socket 路径
-            inv.agent_serial(sock)
-        }
-        None => inv,
-    };
+        topo: topo.clone(),
+        accel,
+        auto_test: false,
+        agent_socket: open_agent_socket(&cfg, &cfg.target_dir, "agent-shell"),
+    })?;
 
-    println!(
-        "[LAUNCH] {}",
-        inv.command_line()?
-    );
+    println!("[LAUNCH] {}", inv.command_line()?);
     let (mut child, mut sup) = inv.spawn_supervised(false)?;
     let st = child.wait().context("等待 QEMU 退出失败")?;
     sup.finish();
@@ -160,38 +143,24 @@ fn test_once(
         );
         runs::finalize_run(&run, &meta)?;
         runs::prune(&cfg.project_root, runs::RUNS_KEEP);
-        eprintln!(
-            "ERROR: initrd build failed; artifacts: {}",
+        // 单一 ERROR 打印点在 main（bail 携带现场与工件路径）
+        return Err(e.context(format!(
+            "initrd build failed; artifacts: {}",
             run.path.display()
-        );
-        eprintln!("ERROR: {e:#}");
-        return Ok(1);
+        )));
     }
 
     // ---- 启动（launcher；收割与判定在 guardian/judge）----
     let started = Instant::now();
-    let kernel = kernel_image_path(cfg, arch)?;
-    let inv = QemuInvocation::new(
+    let inv = build_invocation(&LaunchPlan {
+        cfg,
         arch,
-        &kernel,
-        cfg.artifacts_dir.join("initrd.img"),
-        cfg.artifacts_dir.join("rootfs.img"),
-    )
-    .accel(accel)
-    .topo(topo.clone())
-    .qemu_override(cfg.qemu_override().as_deref())
-    .virtio_disks(tools_disk_opt(cfg))
-    .pmem(pmem_opt(cfg, arch, &topo)?)
-    .auto_test(cfg.auto_test())
-    .extra_opts(&cfg.qemu_extra());
-    let inv = match agent_socket_opt(cfg, &run.path, "agent") {
-        Some(sock) => inv.agent_serial(sock),
-        None => inv,
-    };
-    println!(
-        "[LAUNCH] {}",
-        inv.command_line()?
-    );
+        topo: topo.clone(),
+        accel,
+        auto_test: cfg.auto_test(),
+        agent_socket: open_agent_socket(cfg, &run.path, "agent"),
+    })?;
+    println!("[LAUNCH] {}", inv.command_line()?);
     println!("Running QEMU test with {timeout_secs}s timeout...");
     let (mut child, mut sup) = inv.spawn_supervised(true)?;
 
@@ -235,7 +204,7 @@ fn test_once(
         exit_code: Some(code),
         duration_ms,
         timeout_s: timeout_secs.to_string(),
-        kernel: Some(kernel),
+        kernel: Some(super::kernel_image_path(cfg, arch)?),
         qemu_version: launcher::qemu_version(arch),
         topo: serde_json::json!({
             "smp": topo.smp.to_string(),
