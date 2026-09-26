@@ -54,7 +54,7 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
         } => vm::run_test(timeout, arch.as_deref(), replay_until_fail, tcg),
         CliCommand::Clean => build::run_clean(),
         CliCommand::Skill { action } => build::run_skill(action),
-        CliCommand::Matrix { arch } => vm::run_matrix(arch.as_deref()),
+        CliCommand::Matrix { arch, tcg, kvm } => vm::run_matrix(arch.as_deref(), tcg, kvm),
         CliCommand::Probe {
             arch,
             timeout,
@@ -89,7 +89,7 @@ pub(crate) fn resolve_arch(cfg: &Config, cli_arch: Option<&str>) -> anyhow::Resu
     cli_arch
         .and_then(Arch::parse)
         .or_else(|| cfg.arch())
-        .ok_or_else(|| anyhow::anyhow!("无法解析目标架构（检查 ARCH 值）"))
+        .ok_or_else(|| anyhow::anyhow!("cannot resolve the target arch (check the ARCH value)"))
 }
 
 /// 解析 NUMA 拓扑（非法配置解析期报错，而非运行时）。
@@ -97,7 +97,7 @@ pub(crate) fn resolve_topology(cfg: &Config) -> anyhow::Result<NumaTopology> {
     let (smp, nodes, mem) = cfg.topo_params();
     NumaTopology::parse(&smp, &nodes, &mem).map_err(|e| {
         anyhow::anyhow!(
-            "{e}\n  修改 virtuoso.toml 的 smp / [components.numa]（SMP 必须被 NUMA 节点数整除）"
+            "{e}\n  Fix smp / [components.numa] in virtuoso.toml (smp must be divisible by the NUMA node count)"
         )
     })
 }
@@ -114,7 +114,7 @@ pub(crate) fn preset_kind(cfg: &Config) -> anyhow::Result<Option<String>> {
         None => Ok(None),
         Some(v) if v == "mainline" => Ok(Some(v)),
         Some(v) => Err(anyhow::anyhow!(
-            "未知 kernel_preset: {v}（当前支持：mainline）"
+            "unknown kernel_preset: {v} (supported: mainline)"
         )),
     }
 }

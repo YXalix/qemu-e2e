@@ -173,14 +173,15 @@ pub fn applet_names(infra_dir: &Path, version: &str, bin: &Path) -> anyhow::Resu
 }
 
 fn read_applet_file(p: &Path) -> anyhow::Result<Vec<String>> {
-    let text = std::fs::read_to_string(p).with_context(|| format!("读取 {} 失败", p.display()))?;
+    let text =
+        std::fs::read_to_string(p).with_context(|| format!("read {} failed", p.display()))?;
     let names: Vec<String> = text
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(str::to_string)
         .collect();
-    anyhow::ensure!(!names.is_empty(), "{} 内容为空", p.display());
+    anyhow::ensure!(!names.is_empty(), "{} is empty", p.display());
     Ok(names)
 }
 
@@ -277,9 +278,9 @@ fn build_from_source(
     }
 
     let run = |mut c: Command| -> anyhow::Result<()> {
-        let status = c.status().with_context(|| "busybox 构建步骤失败")?;
+        let status = c.status().with_context(|| "busybox build step failed")?;
         if !status.success() {
-            anyhow::bail!("busybox 构建步骤退出码 {status}");
+            anyhow::bail!("busybox build step exited with {status}");
         }
         Ok(())
     };

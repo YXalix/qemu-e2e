@@ -27,19 +27,21 @@ pub fn make_ext4(dir: &Path, out: &Path, label: &str) -> anyhow::Result<()> {
         .arg("-sm")
         .arg(dir)
         .output()
-        .context("du 启动失败")?;
+        .context("failed to run du")?;
     if !du.status.success() {
-        anyhow::bail!("du -sm {} 失败", dir.display());
+        anyhow::bail!("du -sm {} failed", dir.display());
     }
     let mb: u64 = String::from_utf8_lossy(&du.stdout)
         .split_whitespace()
         .next()
         .and_then(|s| s.parse().ok())
-        .context("du 输出解析失败")?;
+        .context("failed to parse du output")?;
     let size_mb = mb + 2;
 
     let mke2fs = find_mke2fs().ok_or_else(|| {
-        anyhow::anyhow!("mke2fs not found (Linux: e2fsprogs 包; macOS: brew install e2fsprogs)")
+        anyhow::anyhow!(
+            "mke2fs not found (Linux: e2fsprogs package; macOS: brew install e2fsprogs)"
+        )
     })?;
     let _ = std::fs::remove_file(out);
     let status = std::process::Command::new(&mke2fs)
@@ -48,9 +50,9 @@ pub fn make_ext4(dir: &Path, out: &Path, label: &str) -> anyhow::Result<()> {
         .arg(out)
         .arg(format!("{size_mb}M"))
         .status()
-        .with_context(|| format!("{} 启动失败（安装 e2fsprogs）", mke2fs.display()))?;
+        .with_context(|| format!("failed to run {} (install e2fsprogs)", mke2fs.display()))?;
     if !status.success() {
-        anyhow::bail!("{label} ext4 构建失败（mke2fs 退出码 {status}）");
+        anyhow::bail!("{label} ext4 build failed (mke2fs exit {status})");
     }
     Ok(())
 }

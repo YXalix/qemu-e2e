@@ -17,7 +17,7 @@ use crate::runs;
 /// （macOS 同构 HVF，其余 TCG）。`--kvm --tcg` 互斥。
 pub(crate) fn resolve_accel(kvm: bool, tcg: bool, arch: Arch) -> anyhow::Result<Accel> {
     if kvm && tcg {
-        anyhow::bail!("--kvm 与 --tcg 互斥");
+        anyhow::bail!("--kvm and --tcg are mutually exclusive");
     }
     Ok(if kvm {
         Accel::Kvm
@@ -32,7 +32,7 @@ pub fn run_shell(kvm: bool, tcg: bool, gdb: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let arch = resolve_arch(&cfg, None)?;
     if gdb && kvm {
-        anyhow::bail!("--gdb 与 --kvm 互斥（GDB 单步调试走 TCG 纯模拟）");
+        anyhow::bail!("--gdb and --kvm are mutually exclusive (single-stepping needs TCG)");
     }
     // --gdb：挂起等 GDB 连接，恒 TCG（单步可靠）；其余走平台 accel 规则
     let accel = if gdb {
@@ -72,7 +72,7 @@ fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
 
     println!("[LAUNCH] {}", inv.command_line()?);
     let (mut child, mut sup) = inv.spawn_supervised(false)?;
-    let st = child.wait().context("等待 QEMU 退出失败")?;
+    let st = child.wait().context("failed to wait for QEMU exit")?;
     sup.finish();
     Ok(super::code_of(st))
 }
@@ -95,7 +95,9 @@ pub fn run_test(
         if rounds > 1 {
             println!("[REPLAY] round {round}/{rounds}");
         }
-        last_code = test_once(&cfg, cli_arch, timeout_secs, tcg)?;
+        let accel = if tcg { Some(Accel::Tcg) } else { None };
+        let (code, _) = test_once(&cfg, cli_arch, timeout_secs, accel)?;
+        last_code = code;
         if last_code != 0 {
             if rounds > 1 {
                 eprintln!("[REPLAY] aborted at round {round}/{rounds} (verdict not passed)");
@@ -116,18 +118,22 @@ fn resolve_timeout(cfg: &Config, cli_timeout: Option<u64>) -> anyhow::Result<u64
     if raw.trim() == "0" {
         anyhow::bail!("Set QEMU_TIMEOUT (e.g., virtuoso test --timeout 60)");
     }
-    raw.trim().parse().context("QEMU_TIMEOUT 必须是数字")
+    raw.trim().parse().context("QEMU_TIMEOUT must be a number")
 }
 
-/// 单次完整测试（test 与 matrix 共用）。
+/// 单次完整测试（test 与 matrix 共用），返回 (退出码, verdict 字符串)。
+/// `accel_override` = None 时按平台规则（--tcg 语义由调用方折算）。
 fn test_once(
     cfg: &Config,
     cli_arch: Option<&str>,
     timeout_secs: u64,
-    tcg: bool,
-) -> anyhow::Result<i32> {
+    accel_override: Option<Accel>,
+) -> anyhow::Result<(i32, String)> {
     let arch = resolve_arch(cfg, cli_arch)?;
-    let accel = resolve_accel(false, tcg, arch)?;
+    let accel = match accel_override {
+        Some(a) => a,
+        None => resolve_accel(false, false, arch)?,
+    };
     let topo = resolve_topology(cfg)?;
     let run = runs::create_run_dir(&cfg.project_root, arch.name())?;
     println!("[RUN] artifacts: {}", run.path.display());
@@ -224,12 +230,14 @@ fn test_once(
         _ => {}
     }
     println!(
-        "[RUN] verdict: {verdict} (exit {code}, {:.1}s) — 详情: virtuoso triage",
+        "[RUN] verdict: {verdict} (exit {code}, {:.1}s) — details: virtuoso triage",
         duration_ms as f64 / 1000.0
     );
-    Ok(code)
+    Ok((code, verdict))
 }
 
+/// matrix 单架构一跑：test_once 恒按 --tcg=false 走平台规则，matrix 需要显式
+/// accel —— 复用 test_once 语义但 accel 由调用方给定（复刻 test_once 的启动段）。
 fn build_failed_meta(
     run: &runs::RunDir,
     arch: Arch,
@@ -251,7 +259,7 @@ fn build_failed_meta(
 
 /// 多架构矩阵：三架构（或 --arch 指定）串行执行完整测试，汇总总表。
 /// 同宿主机串行避免资源争抢（CI 多 runner 天然并行）。
-pub fn run_matrix(cli_arch: Option<&str>) -> anyhow::Result<i32> {
+pub fn run_matrix(cli_arch: Option<&str>, kvm: bool, tcg: bool) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let timeout_secs = resolve_timeout(&cfg, None)?;
     let arches: Vec<Arch> = match cli_arch.and_then(Arch::parse) {
@@ -263,18 +271,21 @@ pub fn run_matrix(cli_arch: Option<&str>) -> anyhow::Result<i32> {
     for arch in arches {
         println!();
         println!("========== matrix: {} ==========", arch.name());
-        let code = match test_once(&cfg, Some(arch.name()), timeout_secs, false) {
-            Ok(c) => c,
+        let accel = match resolve_accel(kvm, tcg, arch) {
+            Ok(a) => a,
             Err(e) => {
                 eprintln!("ERROR: {} — {e:#}", arch.name());
-                1
+                results.push((arch, 1, "invalid-args".into()));
+                continue;
             }
         };
-        let verdict = runs::latest_run(&cfg.project_root)
-            .and_then(|d| runs::load_verdict_or_parse(&d).ok())
-            .map(|v| v.verdict.as_str().to_string())
-            .unwrap_or_else(|| "unknown".into());
-        results.push((arch, code, verdict));
+        match test_once(&cfg, Some(arch.name()), timeout_secs, Some(accel)) {
+            Ok((code, verdict)) => results.push((arch, code, verdict)),
+            Err(e) => {
+                eprintln!("ERROR: {} — {e:#}", arch.name());
+                results.push((arch, 1, "error".into()));
+            }
+        }
     }
 
     println!();

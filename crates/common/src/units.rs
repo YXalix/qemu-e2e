@@ -33,12 +33,12 @@ pub fn parse_memory(s: &str) -> Result<(u64, MemUnit), String> {
     let digits = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
     let n: u64 = s[..digits]
         .parse()
-        .map_err(|_| format!("内存值无法解析: {s}"))?;
+        .map_err(|_| format!("cannot parse memory value: {s}"))?;
     let unit = match s[digits..].trim() {
         "" => MemUnit::Bare,
         "G" | "g" => MemUnit::G,
         "M" | "m" => MemUnit::M,
-        other => return Err(format!("内存单位不支持: {other}")),
+        other => return Err(format!("unsupported memory unit: {other}")),
     };
     Ok((n, unit))
 }

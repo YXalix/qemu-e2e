@@ -32,7 +32,11 @@ impl From<judge::report::VerdictReport> for RunSummary {
             run_id: report.run_id,
             arch: report.arch,
             verdict: report.verdict,
-            tests: report.tests.into_iter().map(|t| (t.name, t.status)).collect(),
+            tests: report
+                .tests
+                .into_iter()
+                .map(|t| (t.name, t.status))
+                .collect(),
             panics: report.panics,
             oops: report.oops,
         }
@@ -349,7 +353,11 @@ mod tests {
             run_id: id.into(),
             arch: "arm64".into(),
             verdict,
-            tests: tests.to_vec().iter().map(|(n, s)| (n.to_string(), *s)).collect(),
+            tests: tests
+                .to_vec()
+                .iter()
+                .map(|(n, s)| (n.to_string(), *s))
+                .collect(),
             panics: vec![],
             oops: vec![],
         }

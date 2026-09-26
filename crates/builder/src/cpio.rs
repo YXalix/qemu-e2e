@@ -22,10 +22,10 @@ pub fn pack_dir_gzip(dir: &Path, out: &Path) -> anyhow::Result<()> {
     // 确定性：路径排序（GNU find 为 readdir 序，内容等价、顺序不构成契约）
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let out_file = File::create(out).with_context(|| format!("创建 {} 失败", out.display()))?;
+    let out_file = File::create(out).with_context(|| format!("create {} failed", out.display()))?;
     let mut gz = flate2::write::GzEncoder::new(out_file, flate2::Compression::best());
     write_stream(&entries, dir, &mut gz)?;
-    gz.finish().with_context(|| "gzip 收尾失败")?;
+    gz.finish().with_context(|| "gzip finish failed")?;
     Ok(())
 }
 
@@ -37,12 +37,12 @@ fn collect_entries(
     out: &mut Vec<(String, std::fs::Metadata)>,
 ) -> anyhow::Result<()> {
     for entry in std::fs::read_dir(dir)
-        .with_context(|| format!("读取 {} 失败", dir.display()))?
+        .with_context(|| format!("read {} failed", dir.display()))?
         .flatten()
     {
         let path = entry.path();
         let meta = std::fs::symlink_metadata(&path)
-            .with_context(|| format!("stat {} 失败", path.display()))?;
+            .with_context(|| format!("stat {} failed", path.display()))?;
         let rel = path
             .strip_prefix(root)
             .unwrap_or(&path)
@@ -88,12 +88,12 @@ fn write_stream<W: Write>(
             S_IFLNK => {
                 // 符号链接：数据段 = target 路径文本
                 let target = std::fs::read_link(root.join(rel))
-                    .with_context(|| format!("readlink {name} 失败"))?;
+                    .with_context(|| format!("readlink {name} failed"))?;
                 write_data(w, target.as_os_str().as_encoded_bytes())?;
             }
             S_IFREG => {
                 let data =
-                    std::fs::read(root.join(rel)).with_context(|| format!("读取 {name} 失败"))?;
+                    std::fs::read(root.join(rel)).with_context(|| format!("read {name} failed"))?;
                 write_data(w, &data)?;
             }
             _ => {} // 目录无数据段

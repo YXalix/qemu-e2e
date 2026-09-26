@@ -13,7 +13,4 @@ pub mod rundir;
 
 pub use judge::report::RunMeta;
 pub use render::{run_cluster, run_replay, run_runs, run_suggest, run_triage};
-pub use rundir::{
-    create_run_dir, finalize_run, latest_run, load_verdict_or_parse, prune, pump_child, RunDir,
-    RUNS_KEEP,
-};
+pub use rundir::{create_run_dir, finalize_run, prune, pump_child, RunDir, RUNS_KEEP};

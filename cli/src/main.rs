@@ -28,147 +28,154 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// 一屏环境体检（✓/✗/! 组件行；--verbose 全量清单 + 类型化配置诊断）
+    /// One-screen environment check (✓/✗/! per component; --verbose for the full checklist)
     Doctor {
-        /// 覆盖目标架构（透传为 ARCH 环境变量）
+        /// Override the target arch (passed through as the ARCH env var)
         #[arg(long)]
         arch: Option<String>,
-        /// 全量输出：类型化配置诊断 + 完整检查清单
+        /// Full output: typed config diagnostics + complete checklist
         #[arg(long)]
         verbose: bool,
-        /// 机器可读 JSON 输出
+        /// Machine-readable JSON output
         #[arg(long)]
         json: bool,
     },
-    /// 构建 initrd：C 用例 + modules.conf + BusyBox
+    /// Build initrd/rootfs: C testcases + modules.conf + BusyBox
     Build {
-        /// 只确保当前架构的静态 BusyBox（release 下载优先，源码兜底）
+        /// Only provision the static BusyBox for the current arch (release download first, source fallback)
         #[arg(long = "busybox-only")]
         busybox_only: bool,
     },
-    /// 拉取 preset 预编内核（mainline mini Image，全 =y 零模块）到
-    /// target/kernel/preset —— kernel_preset = "mainline" 的开箱供给
+    /// Fetch the preset prebuilt kernel (mainline mini Image) into
+    /// target/kernel/preset — the out-of-the-box supply for kernel_preset = "mainline"
     Fetch {
-        /// 覆盖版本（X.Y[.Z]）；缺省 = infra/kernel/pin 钉定，再缺省 = 最新已发布
+        /// Override version (X.Y[.Z]); default = infra/kernel/pin pin, else latest release
         #[arg(long)]
         version: Option<String>,
-        /// 只拉指定架构（缺省三架构全量）
+        /// Fetch only this arch (default: all three arches)
         #[arg(long)]
         arch: Option<String>,
     },
-    /// 容器化内核供给（forge）：named volume 源码 + 钉死工具链镜像。
-    /// 卷管理与 current 切换（状态文件 .virtuoso/kernel-current.json）；
-    /// 产出 = 宿主可见内核树（kernel_path 消费），verdict 管线不感知模式
+    /// Containerized kernel supply (forge): named-volume sources + pinned
+    /// toolchain image. Volume management and current switching
+    /// (state file .virtuoso/kernel-current.json); output = a host-visible
+    /// kernel tree (consumed via kernel_path)
     Kernel {
         #[command(subcommand)]
         action: KernelAction,
     },
-    /// 交互式启动 QEMU，落入 BusyBox shell（--gdb 挂起等 GDB 连接 :1234）
+    /// Boot QEMU interactively into the BusyBox shell (--gdb waits for GDB on :1234)
     Shell {
-        /// KVM 加速（Linux；仅宿主与目标同构时可用）
+        /// KVM acceleration (Linux; only when host matches the target arch)
         #[arg(long)]
         kvm: bool,
-        /// 强制 TCG 纯模拟（macOS 缺省 HVF 时使用）
+        /// Force TCG emulation (use on macOS, which defaults to HVF)
         #[arg(long)]
         tcg: bool,
-        /// 挂起等待 GDB 连接 :1234（恒 TCG 纯模拟）
+        /// Halt waiting for GDB on :1234 (always TCG)
         #[arg(long)]
         gdb: bool,
     },
-    /// CI 模式：重建 initrd → 超时运行 → 标记协议判定退出码。
-    /// --replay-until-fail N：对可疑 flaky 场景自动返场最多 N 次，出现首个
-    /// 非 passed verdict 即停（tracker 返场语义）。
+    /// CI mode: rebuild initrd → run with timeout → marker-protocol verdict.
+    /// --replay-until-fail N: re-run up to N times for suspected flaky cases,
+    /// stopping at the first non-passed verdict.
     Test {
-        /// 墙钟超时秒数；0 一律拒绝。缺省读 virtuoso.toml 的 timeout_secs
+        /// Wall-clock timeout seconds; 0 is rejected. Default: timeout_secs from virtuoso.toml
         #[arg(long)]
         timeout: Option<u64>,
-        /// 覆盖目标架构（透传为 ARCH 环境变量）
+        /// Override the target arch (passed through as the ARCH env var)
         #[arg(long)]
         arch: Option<String>,
-        /// 返场次数上限（缺省 1 = 单次执行）
+        /// Replay round limit (default 1 = single run)
         #[arg(long = "replay-until-fail")]
         replay_until_fail: Option<u32>,
-        /// 强制 TCG 纯模拟（macOS 缺省 HVF 时使用；Linux 本就缺省 TCG）
+        /// Force TCG emulation (macOS defaults to HVF; Linux already defaults to TCG)
         #[arg(long)]
         tcg: bool,
     },
-    /// 清理生成物
+    /// Remove build artifacts
     Clean,
-    /// AI skill 管理（装入 / 移出内核树）
+    /// Manage AI skills (install into / remove from the kernel tree)
     Skill {
         #[command(subcommand)]
         action: SkillAction,
     },
-    /// AI probe：经 virtio-serial agent 下发命令批，结构化事件流回吐
-    /// （tools/virtuoso-agent 通道；AI 交互入口，退出码语义 0/1/124）
+    /// AI probe: send a command batch over the virtio-serial agent and stream
+    /// structured events back (tools/virtuoso-agent channel; exit codes 0/1/124)
     Probe {
-        /// 覆盖目标架构（透传为 ARCH 环境变量）
+        /// Override the target arch (passed through as the ARCH env var)
         #[arg(long)]
         arch: Option<String>,
-        /// 墙钟总超时秒数（含 TCG 引导与握手；0 一律拒绝）
+        /// Total wall-clock timeout seconds, including TCG boot and handshake (0 is rejected; default 300)
         #[arg(long)]
         timeout: Option<u64>,
-        /// 要执行的 shell 命令（可重复）
+        /// Shell command to run (repeatable)
         #[arg(long = "cmd")]
         cmds: Vec<String>,
-        /// 命令清单文件（每行一条，# 注释）
+        /// File with one command per line (# comments allowed)
         #[arg(long = "cmd-file")]
         cmd_file: Option<PathBuf>,
-        /// 机器可读 JSON 输出（事件行原样透传，供 AI 管道消费）
+        /// Machine-readable JSON output (raw event lines, for AI pipelines)
         #[arg(long)]
         json: bool,
     },
-    /// 多架构矩阵批量测试（launcher）
+    /// Batch-test the arch matrix (serially)
     Matrix {
-        /// 目标架构；缺省为三架构全矩阵
+        /// Target arch; default is the full three-arch matrix
         #[arg(long)]
         arch: Option<String>,
+        /// Force TCG emulation (macOS defaults to HVF; Linux already defaults to TCG)
+        #[arg(long)]
+        tcg: bool,
+        /// KVM acceleration (Linux; only when host matches the target arch)
+        #[arg(long)]
+        kvm: bool,
     },
-    /// 最近一次测试运行的分诊报告（--json 输出 verdict 供管道消费）
+    /// Triage report for the latest test run (--json emits the verdict)
     Triage {
-        /// 指定运行（target/runs 下的目录名）；缺省 = latest
+        /// Specific run (directory name under target/runs); default = latest
         #[arg(long)]
         run: Option<String>,
-        /// 机器可读 JSON 输出
+        /// Machine-readable JSON output
         #[arg(long)]
         json: bool,
     },
-    /// 列出历史测试运行（最新在前；--json 输出数组）
+    /// List past test runs (newest first; --json emits an array)
     Runs {
-        /// 机器可读 JSON 输出
+        /// Machine-readable JSON output
         #[arg(long)]
         json: bool,
     },
-    /// 对任一串口日志做标记协议回放断言（不启动 QEMU）
+    /// Assert the marker protocol on any serial log offline (no QEMU)
     Replay {
-        /// 串口日志文件
+        /// Serial log file
         #[arg(long = "log")]
         log: PathBuf,
-        /// 机器可读 JSON 输出
+        /// Machine-readable JSON output
         #[arg(long)]
         json: bool,
     },
-    /// 跨 run 失败指纹聚类（tracker）：flaky 用例清单 + 失败首现 run
+    /// Cluster cross-run failure fingerprints (tracker): flaky tests + first-seen run
     Cluster {
-        /// 机器可读 JSON 输出
+        /// Machine-readable JSON output
         #[arg(long)]
         json: bool,
     },
-    /// 补丁↔测试映射（tracker）：git diff 的子系统路径 → 推荐最小测试集
+    /// Patch↔test mapping (tracker): changed subsystem paths → minimal test set
     Suggest {
-        /// 统一 diff 文件；缺省对 KERNEL_PATH 内核树做 git diff（含暂存区）
+        /// Unified diff file; default runs git diff on the KERNEL_PATH tree (incl. staged)
         #[arg(long = "diff")]
         diff: Option<PathBuf>,
-        /// 机器可读 JSON 输出
+        /// Machine-readable JSON output
         #[arg(long)]
         json: bool,
     },
-    /// 文档：mdBook 构建到 target/book（docs/ 是唯一事实来源；发布走 gh-pages）
+    /// Docs: build mdBook into target/book (docs/ is the single source)
     Docs {
-        /// 本地预览（mdbook serve，http://localhost:3000，改文件实时刷新）
+        /// Live preview (mdbook serve on http://localhost:3000)
         #[arg(long)]
         serve: bool,
-        /// 构建完成后打开浏览器
+        /// Open the browser after building
         #[arg(long)]
         open: bool,
     },
@@ -176,64 +183,64 @@ enum Command {
 
 #[derive(Subcommand)]
 enum SkillAction {
-    /// 安装 kernel-dev skill 到内核树
+    /// Install the kernel-dev skills into the kernel tree
     Install,
-    /// 从内核树移除 kernel-dev skill
+    /// Remove the skills from the kernel tree
     Uninstall,
 }
 
 #[derive(Subcommand)]
 enum KernelAction {
-    /// 克隆内核源码进 named volume（建卷 + .clangd 渲染 + 写 current）
+    /// Clone kernel sources into a named volume (create + render .clangd + set current)
     Clone {
-        /// 内核 git 仓库 URL
+        /// Kernel git repository URL
         url: String,
-        /// clone 的分支/tag（缺省 master；KERNEL_REF 可临时覆盖）
+        /// Branch/tag to clone (default master; KERNEL_REF overrides)
         #[arg(long = "ref")]
         ref_name: Option<String>,
-        /// 目标卷名（缺省 virtuoso-kernel；KERNEL_VOLUME 可临时覆盖）
+        /// Target volume name (default virtuoso-kernel; KERNEL_VOLUME overrides)
         #[arg(long = "as")]
         as_volume: Option<String>,
-        /// 覆盖目标架构（缺省 = 顶层 arch；KERNEL_ARCH 可临时覆盖）
+        /// Override the target arch (default: top-level arch; KERNEL_ARCH overrides)
         #[arg(long)]
         arch: Option<String>,
     },
-    /// make <name>（.config 落 volume）
+    /// Run make <name> (.config lands in the volume)
     Defconfig {
-        /// make 目标（缺省 defconfig；如 arm64_defconfig / oe_core_defconfig）
+        /// make target (default defconfig; e.g. arm64_defconfig / oe_core_defconfig)
         name: Option<String>,
-        /// 覆盖目标架构（缺省 = current 记录 / 顶层 arch）
+        /// Override the target arch (default: current-recorded / top-level arch)
         #[arg(long)]
         arch: Option<String>,
     },
-    /// make Image/bzImage + modules；CDB 生成（/ksrc 原始形态，devcontainer 内 clangd 消费）
+    /// make Image/bzImage + modules; generate CDB (raw form under /ksrc, consumed by clangd in the devcontainer)
     Build {
-        /// 并行作业数（缺省 = 宿主核数）
+        /// Parallel jobs (default: host cores)
         #[arg(short = 'j', long)]
         jobs: Option<usize>,
-        /// 覆盖目标架构
+        /// Override the target arch
         #[arg(long)]
         arch: Option<String>,
     },
-    /// 打印活动卷的宿主可见路径（QEMU 消费 kernel_path；AI/编辑器 cwd）
+    /// Print the host-visible path of a volume (for kernel_path; AI/editor cwd)
     Path {
-        /// 查询指定卷（缺省 = current）
+        /// Query a specific volume (default: current)
         #[arg(long)]
         volume: Option<String>,
     },
-    /// 容器内交互 bash
+    /// Interactive bash inside the container
     Shell {
-        /// 覆盖目标架构
+        /// Override the target arch
         #[arg(long)]
         arch: Option<String>,
     },
-    /// 列出卷：内容状态（empty/cloned/configured）+ current 标记
+    /// List volumes: content state (empty/cloned/configured) + current marker
     List,
-    /// 切换 current（写 .virtuoso/kernel-current.json；切回免重编）
+    /// Switch current (writes .virtuoso/kernel-current.json; switching back keeps increments)
     Use {
-        /// 卷名
+        /// Volume name
         volume: String,
-        /// 覆盖记录的架构（缺省 = 当前解析的目标架构）
+        /// Override the recorded arch (default: currently resolved target arch)
         #[arg(long)]
         arch: Option<String>,
     },

@@ -27,7 +27,10 @@ mod tests {
     fn quote_safe_chars_verbatim_spaces_quoted() {
         assert_eq!(quote("virt"), "virt");
         assert_eq!(quote("file=a.img,format=raw"), "file=a.img,format=raw");
-        assert_eq!(quote("https://gh.example.com/x/y.git"), "https://gh.example.com/x/y.git");
+        assert_eq!(
+            quote("https://gh.example.com/x/y.git"),
+            "https://gh.example.com/x/y.git"
+        );
         assert_eq!(quote("/tmp/a b.img"), "'/tmp/a b.img'");
         assert_eq!(quote("a'b"), "'a'\\''b'");
         assert_eq!(quote(""), "''");

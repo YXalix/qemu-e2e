@@ -195,10 +195,14 @@ impl QemuInvocation {
         // accel × 宿主平台合法性（错误前置到 argv 构造期，而非留给 QEMU 报）
         match (self.accel, self.host) {
             (Accel::Kvm, HostOs::Darwin) => {
-                anyhow::bail!("KVM 需要 Linux 宿主（macOS 硬件加速是 HVF）");
+                anyhow::bail!(
+                    "KVM requires a Linux host (on macOS the hardware accelerator is HVF)"
+                );
             }
             (Accel::Hvf, HostOs::Linux) => {
-                anyhow::bail!("HVF 需要 macOS 宿主（Linux 硬件加速是 KVM）");
+                anyhow::bail!(
+                    "HVF requires a macOS host (on Linux the hardware accelerator is KVM)"
+                );
             }
             _ => {}
         }
@@ -218,7 +222,7 @@ impl QemuInvocation {
         args.push("-machine".into());
         if self.topo.nodes > 1 {
             if self.pmem.is_some() {
-                anyhow::bail!("pmem 组件暂不支持 NUMA 多节点（保留单节点拓扑）");
+                anyhow::bail!("the pmem component does not support multi-node NUMA yet (single-node topology kept)");
             }
             args.push(self.arch.machine().into());
         } else {

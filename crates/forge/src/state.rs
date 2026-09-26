@@ -29,16 +29,14 @@ pub fn read(project_root: &Path) -> anyhow::Result<Option<Current>> {
     if !p.is_file() {
         return Ok(None);
     }
-    let text = std::fs::read_to_string(&p)
-        .with_context(|| format!("读取 {}", p.display()))?;
-    serde_json::from_str(&text)
-        .map(Some)
-        .with_context(|| {
-            format!(
-                "{} 损坏（期望 {{volume, arch}}）；重新执行 `virtuoso kernel use <volume>` 修复",
-                p.display()
-            )
-        })
+    let text =
+        std::fs::read_to_string(&p).with_context(|| format!("read {} failed", p.display()))?;
+    serde_json::from_str(&text).map(Some).with_context(|| {
+        format!(
+            "{} 损坏（期望 {{volume, arch}}）；重新执行 `virtuoso kernel use <volume>` 修复",
+            p.display()
+        )
+    })
 }
 
 /// 写入（目录不存在则创建；父目录 `.virtuoso/` 已 git 忽略）。

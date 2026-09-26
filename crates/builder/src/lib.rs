@@ -83,7 +83,7 @@ pub fn build_boot_pair(
         );
     }
     if image::find_mke2fs().is_none() {
-        anyhow::bail!("mke2fs not found (Linux: e2fsprogs 包; macOS: brew install e2fsprogs)");
+        anyhow::bail!("mke2fs not found (Linux: e2fsprogs package; macOS: brew install e2fsprogs)");
     }
     std::fs::create_dir_all(build_dir)?;
     std::fs::create_dir_all(artifacts_dir)?;
@@ -105,7 +105,7 @@ pub fn build_boot_pair(
     let initramfs_dir = build_dir.join("initramfs");
     assemble_busybox_tree(&initramfs_dir, &busybox_bin, &applets)?;
     std::fs::copy(infra_dir.join("init-initramfs"), initramfs_dir.join("init"))
-        .context("复制 init-initramfs 失败")?;
+        .context("copy init-initramfs failed")?;
     common::fsutil::set_executable(&initramfs_dir.join("init"))?;
     std::fs::create_dir_all(initramfs_dir.join("mnt"))?;
     std::fs::create_dir_all(initramfs_dir.join("lib/modules"))?;
@@ -129,7 +129,7 @@ pub fn build_boot_pair(
     progress.line("Building rootfs.img (ext4 rootfs)...");
     let rootfs_dir = build_dir.join("rootfs");
     assemble_busybox_tree(&rootfs_dir, &busybox_bin, &applets)?;
-    std::fs::copy(infra_dir.join("init"), rootfs_dir.join("init")).context("复制 init 失败")?;
+    std::fs::copy(infra_dir.join("init"), rootfs_dir.join("init")).context("copy init failed")?;
     common::fsutil::set_executable(&rootfs_dir.join("init"))?;
     std::fs::create_dir_all(rootfs_dir.join("lib/modules"))?;
     let (runtime_names, runtime_conf): (Vec<String>, String) = if preset_kernel {
@@ -230,7 +230,7 @@ pub fn assemble_busybox_tree(
             continue;
         }
         std::os::unix::fs::symlink("busybox", &link)
-            .with_context(|| format!("创建符号链接 {} 失败", link.display()))?;
+            .with_context(|| format!("symlink {} failed", link.display()))?;
     }
 
     std::fs::write(dest.join("etc/passwd"), "root:x:0:0:root:/root:/bin/sh\n")?;

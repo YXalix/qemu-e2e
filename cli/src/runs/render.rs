@@ -139,7 +139,7 @@ pub fn run_runs(cfg: &Config, json: bool) -> anyhow::Result<i32> {
     }
     if dirs.is_empty() {
         println!(
-            "no runs yet — virtuoso test 会写入 {}/",
+            "no runs yet — virtuoso test writes into {}/",
             runs_root(&cfg.project_root).display()
         );
         return Ok(0);
@@ -186,7 +186,7 @@ fn load_summaries(cfg: &Config) -> anyhow::Result<Vec<tracker::RunSummary>> {
     let dirs = list_run_dirs(&cfg.project_root);
     if dirs.is_empty() {
         anyhow::bail!(
-            "未找到运行记录（{}）——先执行一次 virtuoso test 生成工件",
+            "no runs found ({}) — run virtuoso test once to produce artifacts",
             runs_root(&cfg.project_root).display()
         );
     }
@@ -207,20 +207,20 @@ pub fn run_cluster(cfg: &Config, json: bool) -> anyhow::Result<i32> {
     let clusters = tracker::cluster(&summaries);
     let flaky = tracker::flaky_tests(&summaries);
 
-    if json {
-        let out = serde_json::json!({
-            "runs_scanned": summaries.len(),
-            "clusters": clusters,
-            "flaky": flaky,
-        });
-        println!("{}", serde_json::to_string_pretty(&out)?);
-        return Ok(0);
-    }
-
     let failed_runs = summaries
         .iter()
         .filter(|s| s.verdict != Verdict::Passed)
         .count();
+    if json {
+        let out = serde_json::json!({
+            "runs_scanned": summaries.len(),
+            "failed_runs": failed_runs,
+            "clusters": clusters,
+            "flaky": flaky,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(i32::from(failed_runs > 0));
+    }
     println!(
         "[CLUSTER] {} runs scanned, {} failed, {} fingerprint bucket(s)",
         summaries.len(),
@@ -269,7 +269,7 @@ pub fn run_cluster(cfg: &Config, json: bool) -> anyhow::Result<i32> {
             first.first_run_id
         );
     }
-    Ok(0)
+    Ok(i32::from(failed_runs > 0))
 }
 
 /// `virtuoso suggest`：补丁↔测试映射。--diff 读统一 diff 文件；
@@ -283,7 +283,7 @@ pub fn run_suggest(
     let changed: Vec<String> = match diff {
         Some(path) => {
             let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("读取 diff {} 失败", path.display()))?;
+                .with_context(|| format!("read diff {} failed", path.display()))?;
             tracker::paths_from_unified_diff(&text)
         }
         None => {
@@ -295,10 +295,10 @@ pub fn run_suggest(
                     .arg(&kernel_path)
                     .args(["diff", base, "--name-only"])
                     .output()
-                    .context("git 启动失败（内核树需要是 git 仓库）")?;
+                    .context("failed to run git (kernel tree must be a git repo)")?;
                 if !out.status.success() {
                     let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                    anyhow::bail!("git diff 在 {} 失败: {err}", kernel_path.display());
+                    anyhow::bail!("git diff failed in {}: {err}", kernel_path.display());
                 }
                 for line in String::from_utf8_lossy(&out.stdout).lines() {
                     let name = line.trim();
@@ -373,7 +373,7 @@ struct ReplayReport {
 /// `virtuoso replay`：对任意串口日志离线做标记协议断言（不启动 QEMU）。
 pub fn run_replay(log: &Path, json: bool) -> anyhow::Result<i32> {
     let text = std::fs::read_to_string(log)
-        .with_context(|| format!("读取串口日志 {} 失败", log.display()))?;
+        .with_context(|| format!("read serial log {} failed", log.display()))?;
     let audit = judge::parse(&text);
     let verdict = judge::judge(0, false, &audit);
     let verdict = if audit.marker.is_none() && audit.panics.is_empty() && audit.oops.is_empty() {

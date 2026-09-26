@@ -28,7 +28,7 @@ pub fn create_run_dir(project_root: &Path, arch: &str) -> anyhow::Result<RunDir>
     let id = format!("{}-{arch}", unix_ms());
     let path = runs_root(project_root).join(&id);
     std::fs::create_dir_all(&path)
-        .with_context(|| format!("创建运行目录 {} 失败", path.display()))?;
+        .with_context(|| format!("create run dir {} failed", path.display()))?;
     Ok(RunDir { id, path })
 }
 
@@ -39,7 +39,7 @@ pub fn resolve_run(project_root: &Path, spec: Option<&str>) -> anyhow::Result<Pa
         None => latest_run(project_root),
         Some(name) => {
             if name.contains('/') || name.contains("..") {
-                anyhow::bail!("非法 run 标识: {name}");
+                anyhow::bail!("invalid run id: {name}");
             }
             let p = root.join(name);
             p.is_dir().then_some(p)
@@ -47,7 +47,7 @@ pub fn resolve_run(project_root: &Path, spec: Option<&str>) -> anyhow::Result<Pa
     };
     path.ok_or_else(|| {
         anyhow::anyhow!(
-            "未找到运行记录（{}）——先执行一次 virtuoso test 生成工件",
+            "no runs found ({}) — run virtuoso test once to produce artifacts",
             root.display()
         )
     })
@@ -103,12 +103,12 @@ impl PumpOutcome {
         }
         let omitted = self.qemu_lines - self.qemu_tail.len();
         let head = if omitted > 0 {
-            format!("（前 {omitted} 行略）")
+            format!("(first {omitted} lines omitted)")
         } else {
             String::new()
         };
         eprintln!(
-            "---------- QEMU stderr 尾部（{} 行）{head} ----------",
+            "---------- QEMU stderr tail ({} lines){head} ----------",
             self.qemu_tail.len()
         );
         for line in &self.qemu_tail {
@@ -228,7 +228,7 @@ pub fn finalize_run(run: &RunDir, meta: &RunMeta) -> anyhow::Result<String> {
     });
     let mut ev_body = String::new();
     for e in &events {
-        ev_body.push_str(&serde_json::to_string(e).context("events.jsonl 序列化失败")?);
+        ev_body.push_str(&serde_json::to_string(e).context("serialize events.jsonl")?);
         ev_body.push('\n');
     }
     std::fs::write(run.path.join("events.jsonl"), ev_body)?;
@@ -251,7 +251,7 @@ pub fn finalize_run(run: &RunDir, meta: &RunMeta) -> anyhow::Result<String> {
 pub fn load_verdict_or_parse(run_dir: &Path) -> anyhow::Result<VerdictReport> {
     let vpath = run_dir.join("verdict.json");
     if let Ok(text) = std::fs::read_to_string(&vpath) {
-        return serde_json::from_str(&text).context("verdict.json 解析失败");
+        return serde_json::from_str(&text).context("parse verdict.json");
     }
     let audit = read_serial_audit(&run_dir.join("serial.log"));
     let id = run_dir
@@ -281,7 +281,7 @@ pub fn load_verdict_or_parse(run_dir: &Path) -> anyhow::Result<VerdictReport> {
     );
     report.verdict = judge::Verdict::Unknown;
     report.verdict_source =
-        Some("serial.log fallback（运行未正常收尾，verdict.json 缺失）".to_string());
+        Some("serial.log fallback (run did not finish cleanly, verdict.json missing)".to_string());
     Ok(report)
 }
 

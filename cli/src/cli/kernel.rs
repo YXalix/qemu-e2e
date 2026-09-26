@@ -23,10 +23,13 @@ pub fn run_kernel(action: KernelAction) -> anyhow::Result<i32> {
             ref_name,
             as_volume,
             arch,
-        } => run_clone(&url, ref_name.as_deref(), as_volume.as_deref(), arch.as_deref()),
-        KernelAction::Defconfig { name, arch } => {
-            run_defconfig(name.as_deref(), arch.as_deref())
-        }
+        } => run_clone(
+            &url,
+            ref_name.as_deref(),
+            as_volume.as_deref(),
+            arch.as_deref(),
+        ),
+        KernelAction::Defconfig { name, arch } => run_defconfig(name.as_deref(), arch.as_deref()),
         KernelAction::Build { jobs, arch } => run_build(jobs, arch.as_deref()),
         KernelAction::Path { volume } => run_path(volume.as_deref()),
         KernelAction::Shell { arch } => run_shell(arch.as_deref()),
@@ -41,12 +44,12 @@ pub fn run_kernel(action: KernelAction) -> anyhow::Result<i32> {
 /// —— 测哪个架构就编哪个架构：缺省与 virtuoso.toml 的 arch 天然一致。
 fn kernel_arch(cfg: &Config, cli_arch: Option<&str>) -> anyhow::Result<Arch> {
     if let Some(a) = cli_arch {
-        return Arch::parse(a).ok_or_else(|| anyhow::anyhow!("未知架构 {a}"));
+        return Arch::parse(a).ok_or_else(|| anyhow::anyhow!("unknown arch {a}"));
     }
     if let Ok(v) = std::env::var("KERNEL_ARCH") {
         if !v.trim().is_empty() {
             return Arch::parse(v.trim())
-                .ok_or_else(|| anyhow::anyhow!("KERNEL_ARCH 非法: {v}（arm64|x86_64|riscv64）"));
+                .ok_or_else(|| anyhow::anyhow!("invalid KERNEL_ARCH: {v} (arm64|x86_64|riscv64)"));
         }
     }
     resolve_arch(cfg, None)
@@ -75,7 +78,11 @@ fn toolchain_image() -> String {
 fn clone_ref(cli_ref: Option<&str>) -> String {
     cli_ref
         .map(str::to_string)
-        .or_else(|| std::env::var("KERNEL_REF").ok().filter(|v| !v.trim().is_empty()))
+        .or_else(|| {
+            std::env::var("KERNEL_REF")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+        })
         .unwrap_or_else(|| forge::DEFAULT_REF.to_string())
 }
 
@@ -94,7 +101,11 @@ fn run_clone(
     let cfg = Config::load()?;
     let volume = as_volume
         .map(str::to_string)
-        .or_else(|| std::env::var("KERNEL_VOLUME").ok().filter(|v| !v.trim().is_empty()))
+        .or_else(|| {
+            std::env::var("KERNEL_VOLUME")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+        })
         .unwrap_or_else(|| forge::DEFAULT_VOLUME.to_string());
     let arch = kernel_arch(&cfg, cli_arch)?;
     let ref_name = clone_ref(cli_ref);
@@ -111,11 +122,14 @@ fn run_clone(
         },
         &mut progress,
     )?;
-    println!("Kernel: cloned {url}@{ref_name} → volume {volume}（.clangd 已按 {} 配好）", arch.name());
-    println!("Kernel: current → {volume} ({})", arch.name());
-    println!("宿主可见路径（AI/编辑器 cwd）：{}", view.display());
     println!(
-        "Kernel: devcontainer 已渲染 → .devcontainer/（VS Code 打开本仓库 →「Reopen in Container」进 /ksrc）"
+        "Kernel: cloned {url}@{ref_name} → volume {volume} (.clangd rendered for {})",
+        arch.name()
+    );
+    println!("Kernel: current → {volume} ({})", arch.name());
+    println!("Host-visible path (AI/editor cwd): {}", view.display());
+    println!(
+        "Kernel: devcontainer rendered → .devcontainer/ (open this repo in VS Code → Reopen in Container to enter /ksrc)"
     );
     println!("next: virtuoso kernel defconfig && virtuoso kernel build");
     Ok(0)
@@ -126,7 +140,10 @@ fn run_defconfig(name: Option<&str>, cli_arch: Option<&str>) -> anyhow::Result<i
     let volume = current_volume(&cfg)?;
     let arch = kernel_arch(&cfg, cli_arch)?;
     let target = name.unwrap_or("defconfig");
-    println!("Kernel: make {target}（volume {volume}，arch {}）", arch.name());
+    println!(
+        "Kernel: make {target}（volume {volume}，arch {}）",
+        arch.name()
+    );
     forge::toolchain::run_streaming(
         &volume,
         &toolchain_image(),
@@ -140,7 +157,11 @@ fn run_build(jobs: Option<usize>, cli_arch: Option<&str>) -> anyhow::Result<i32>
     let cfg = Config::load()?;
     let volume = current_volume(&cfg)?;
     let arch = kernel_arch(&cfg, cli_arch)?;
-    let jobs = jobs.unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(8));
+    let jobs = jobs.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(8)
+    });
     let image_target = forge::toolchain::make_image_target(arch);
     println!(
         "Kernel: make -j{jobs} {image_target} modules（volume {volume}，arch {}）",
@@ -154,7 +175,7 @@ fn run_build(jobs: Option<usize>, cli_arch: Option<&str>) -> anyhow::Result<i32>
     )?;
     forge::toolchain::cdb_generate(&volume, &toolchain_image())?;
     println!(
-        "Kernel: built {image_target} + modules；compile_commands.json 已生成（/ksrc 原始形态，devcontainer 内 clangd 消费）"
+        "Kernel: built {image_target} + modules; compile_commands.json generated (raw form under /ksrc, consumed by clangd in the devcontainer)"
     );
     Ok(0)
 }
@@ -169,11 +190,11 @@ fn run_path(volume_flag: Option<&str>) -> anyhow::Result<i32> {
     if !view.is_dir() {
         if std::env::consts::OS == "macos" {
             anyhow::bail!(
-                "{} 不可达——OrbStack 未安装或未运行（视图仅在 OrbStack 运行时存在）。\n  启动 OrbStack 后重试。",
+                "{} is unreachable — OrbStack is not installed or not running (the view only exists while OrbStack runs).\n  Start OrbStack and retry.",
                 view.display()
             );
         }
-        anyhow::bail!("volume {volume} 不存在或不可达——先 `virtuoso kernel clone <git-url>`。");
+        anyhow::bail!("volume {volume} does not exist or is unreachable — run `virtuoso kernel clone <git-url>` first.");
     }
     println!("{}", view.display());
     Ok(0)
@@ -197,7 +218,7 @@ fn run_list() -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let volumes = forge::volume::list()?;
     if volumes.is_empty() {
-        println!("（引擎里还没有卷——`virtuoso kernel clone <git-url>` 创建）");
+        println!("(no volumes yet — create one with `virtuoso kernel clone <git-url>`)");
         return Ok(0);
     }
     let current = forge::state::read(&cfg.project_root)?;
@@ -225,12 +246,10 @@ fn run_use(volume: &str, cli_arch: Option<&str>) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     anyhow::ensure!(
         forge::volume::exists(volume),
-        "volume {volume} 不存在（`virtuoso kernel list` 查看已有卷，或 `virtuoso kernel clone <git-url> --as {volume}` 创建）"
+        "volume {volume} does not exist (see `virtuoso kernel list`, or create it with `virtuoso kernel clone <git-url> --as {volume}`)"
     );
-    let arch = match cli_arch {
-        Some(a) => Arch::parse(a).ok_or_else(|| anyhow::anyhow!("未知架构 {a}"))?,
-        None => kernel_arch(&cfg, None)?,
-    };
+    // --arch 覆盖记录的架构（KERNEL_ARCH/env/顶层 arch 由 kernel_arch 统一解析）
+    let arch = kernel_arch(&cfg, cli_arch)?;
     forge::state::write(
         &cfg.project_root,
         &forge::state::Current {
@@ -240,8 +259,8 @@ fn run_use(volume: &str, cli_arch: Option<&str>) -> anyhow::Result<i32> {
     )?;
     println!("Kernel: current → {volume} ({})", arch.name());
     println!(
-        "Kernel: devcontainer 已渲染 → .devcontainer/（VS Code 打开本仓库 →「Reopen in Container」进 /ksrc）"
+        "Kernel: devcontainer rendered → .devcontainer/ (open this repo in VS Code → Reopen in Container to enter /ksrc)"
     );
-    println!("next: virtuoso kernel path  # 宿主可见路径，指给 kernel_path（QEMU 消费）");
+    println!("next: virtuoso kernel path  # host-visible path for kernel_path (QEMU consumes it)");
     Ok(0)
 }

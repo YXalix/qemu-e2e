@@ -21,8 +21,8 @@ pub fn run_docs(serve: bool, open: bool) -> anyhow::Result<i32> {
     match cmd.status() {
         Ok(status) => Ok(code_of(status)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow::anyhow!(
-            "未找到 mdbook —— 先安装：cargo install mdbook --locked"
+            "mdbook not found — install it first: cargo install mdbook --locked"
         )),
-        Err(e) => Err(anyhow::Error::new(e).context("运行 mdbook 失败")),
+        Err(e) => Err(anyhow::Error::new(e).context("failed to run mdbook")),
     }
 }

@@ -60,16 +60,19 @@ pub struct Config {
 
 /// env 布尔解析（宽松语义："1"/"true"/"yes"/"on" 为真，其余为假）。
 fn env_bool(key: &str) -> Option<bool> {
-    std::env::var(key)
-        .ok()
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+    std::env::var(key).ok().map(|v| {
+        matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 impl Config {
     pub fn load() -> anyhow::Result<Self> {
         let project_root = find_project_root().ok_or_else(|| {
             anyhow::anyhow!(
-                "virtuoso 项目根未找到（需要 infra/init）；请在 virtuoso 检出目录内运行"
+                "virtuoso project root not found (needs infra/init); run inside a virtuoso checkout"
             )
         })?;
         let infra_dir = project_root.join("infra");
@@ -136,7 +139,7 @@ impl Config {
                 let parent = self
                     .project_root
                     .parent()
-                    .context("项目根没有上级目录，无法自动探测 KERNEL_PATH")?;
+                    .context("project root has no parent, cannot auto-detect KERNEL_PATH")?;
                 Ok((parent.to_path_buf(), false))
             }
         }
@@ -211,7 +214,9 @@ impl Config {
     /// 未启用（缺省单节点）回落遗留变量，再回落 1 / "1G"。
     pub fn topo_params(&self) -> (String, String, String) {
         let smp = scalar(self.tv(|t| &t.smp), "SMP").unwrap_or_else(|| "8".into());
-        let numa = self.comp(|c| c.numa.as_ref()).filter(|n| n.enabled.unwrap_or(false));
+        let numa = self
+            .comp(|c| c.numa.as_ref())
+            .filter(|n| n.enabled.unwrap_or(false));
         // 优先级冻结：NUMA_NODES / NUMA_MEMORY env 覆盖 toml（组件启用与否皆然）
         let nodes = match &numa {
             Some(n) => scalar(n.nodes.as_ref(), "NUMA_NODES").unwrap_or_else(|| "2".into()),
@@ -221,7 +226,9 @@ impl Config {
                 .unwrap_or_else(|| "1".into()),
         };
         let mem = match &numa {
-            Some(n) => scalar(n.memory_per_node.as_ref(), "NUMA_MEMORY").unwrap_or_else(|| "1G".into()),
+            Some(n) => {
+                scalar(n.memory_per_node.as_ref(), "NUMA_MEMORY").unwrap_or_else(|| "1G".into())
+            }
             None => std::env::var("NUMA_MEMORY")
                 .ok()
                 .filter(|s| !s.trim().is_empty())
@@ -550,11 +557,11 @@ struct BusyboxSection {
 
 fn parse_toml(path: &Path) -> anyhow::Result<VirtuosoToml> {
     let raw =
-        std::fs::read_to_string(path).with_context(|| format!("读取 {} 失败", path.display()))?;
+        std::fs::read_to_string(path).with_context(|| format!("read {} failed", path.display()))?;
     toml::from_str(&raw).map_err(|e| {
-        let mut msg = format!("{} 解析失败（未知键或非法类型）：{e}", path.display());
+        let mut msg = format!("{} parse failed (unknown key or invalid type): {e}", path.display());
         if raw.contains("[numa]") {
-            msg.push_str("\n  旧段 [numa] 已迁移为 [components.numa]（enabled = true + nodes/memory_per_node）");
+            msg.push_str("\n  The legacy [numa] section has moved to [components.numa] (enabled = true + nodes/memory_per_node)");
         }
         anyhow::anyhow!(msg)
     })

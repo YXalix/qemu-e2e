@@ -214,7 +214,7 @@ fn group_checks(report: &Report) -> Vec<GroupOut> {
 fn render(groups: &[GroupOut], tty: bool) -> String {
     let c = |code: &str, s: &str| {
         if tty {
-            format!("\x1b[{code}m{s}\x1b[0m")
+            common::ui::paint(code, s)
         } else {
             s.to_string()
         }
@@ -310,12 +310,16 @@ pub fn run_doctor(arch_override: Option<&str>, json: bool, verbose: bool) -> any
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         let tty = builder::verify::is_stdout_tty();
+        let (pass_icon, fail_icon) = (
+            common::ui::icon(common::ui::Icon::Pass),
+            common::ui::icon(common::ui::Icon::Fail),
+        );
         println!("Virtuoso doctor · arch {}", arch.name());
         print!("{}", render(&groups, tty));
         if fail_total > 0 {
             println!(
                 "\n  {} {fail_total} critical, {} warnings — full checklist: virtuoso doctor --verbose",
-                (if tty { "\x1b[0;31m✗\x1b[0m" } else { "✗" }),
+                fail_icon,
                 report.warnings
             );
         } else {
@@ -323,7 +327,7 @@ pub fn run_doctor(arch_override: Option<&str>, json: bool, verbose: bool) -> any
                 t if t.trim() == "0" => "virtuoso test --timeout 60".to_string(),
                 t => format!("virtuoso test --timeout {}", t.trim()),
             };
-            println!("\n  {} Ready — {suggest}", (if tty { "\x1b[0;32m✓\x1b[0m" } else { "✓" }));
+            println!("\n  {pass_icon} Ready — {suggest}");
         }
     }
     Ok(i32::from(fail_total > 0))
@@ -389,10 +393,16 @@ mod tests {
     #[test]
     fn detail_strips_kind_label() {
         assert_eq!(
-            detail(CheckKind::QemuBinary, "QEMU binary: qemu-system-arm not found"),
+            detail(
+                CheckKind::QemuBinary,
+                "QEMU binary: qemu-system-arm not found"
+            ),
             "qemu-system-arm not found"
         );
-        assert_eq!(detail(CheckKind::BusyBox, "BusyBox: cached (arm64)"), "cached (arm64)");
+        assert_eq!(
+            detail(CheckKind::BusyBox, "BusyBox: cached (arm64)"),
+            "cached (arm64)"
+        );
         // 未以 label 开头的消息原样保留（防御性）
         assert_eq!(detail(CheckKind::Config, "bare text"), "bare text");
     }

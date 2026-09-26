@@ -81,10 +81,10 @@ pub fn copy_module_list(
             anyhow::bail!("Module {module}.ko not found");
         };
         std::fs::copy(&ko, dest.join(format!("{module}.ko")))
-            .with_context(|| format!("复制 {} 失败", ko.display()))?;
+            .with_context(|| format!("copy {} failed", ko.display()))?;
     }
     std::fs::write(dest.join(conf_name), conf_text)
-        .with_context(|| format!("写入 {conf_name} 失败"))?;
+        .with_context(|| format!("write {conf_name} failed"))?;
     Ok(())
 }
 

@@ -87,9 +87,7 @@ pub fn run_clean() -> anyhow::Result<i32> {
         println!("removed: {}/", testcases_target.display());
         removed += 1;
     }
-    println!(
-        "clean done: {removed} item(s) removed (busybox cache kept)",
-    );
+    println!("clean done: {removed} item(s) removed (busybox cache kept)",);
     Ok(0)
 }
 
@@ -112,7 +110,12 @@ pub fn run_skill(action: SkillAction) -> anyhow::Result<i32> {
             for skill in ["kernel-dev", "kernel-virtuoso"] {
                 let dst_dir = Path::new(&kernel_path).join(".claude/skills").join(skill);
                 std::fs::create_dir_all(&dst_dir)?;
-                let src = cfg.project_root.join("devkit").join("skills").join(skill).join("SKILL.md");
+                let src = cfg
+                    .project_root
+                    .join("devkit")
+                    .join("skills")
+                    .join(skill)
+                    .join("SKILL.md");
                 std::fs::copy(&src, dst_dir.join("SKILL.md"))?;
                 println!("  installed: {skill}");
             }

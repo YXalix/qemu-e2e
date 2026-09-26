@@ -115,12 +115,7 @@ pub fn detail(kind: CheckKind, msg: &str) -> &str {
         .unwrap_or(msg)
 }
 
-fn check(
-    level: Level,
-    kind: CheckKind,
-    msg: impl Into<String>,
-    summary: Option<String>,
-) -> Check {
+fn check(level: Level, kind: CheckKind, msg: impl Into<String>, summary: Option<String>) -> Check {
     Check {
         level,
         kind,
@@ -297,7 +292,10 @@ fn check_kernel_source(input: &CheckInput, checks: &mut Vec<Check>) {
                 .kernel_path
                 .map(|p| p.join("arch").is_dir())
                 .unwrap_or(false);
-            match (input.kernel_path.filter(|p| !p.as_os_str().is_empty()), kernel_ok) {
+            match (
+                input.kernel_path.filter(|p| !p.as_os_str().is_empty()),
+                kernel_ok,
+            ) {
                 (Some(p), true) => {
                     let kver = kernel_version(p);
                     let summary = kver
@@ -316,7 +314,10 @@ fn check_kernel_source(input: &CheckInput, checks: &mut Vec<Check>) {
                 }
                 (Some(p), false) => checks.push(fail(
                     CheckKind::KernelSource,
-                    format!("Kernel source: {}/arch not found (set KERNEL_PATH)", p.display()),
+                    format!(
+                        "Kernel source: {}/arch not found (set KERNEL_PATH)",
+                        p.display()
+                    ),
                 )),
                 (None, _) => {}
             }
@@ -348,7 +349,10 @@ fn check_kernel_image(input: &CheckInput, checks: &mut Vec<Check>) {
             };
             checks.push(fail(
                 CheckKind::KernelImage,
-                format!("Kernel image: {} not found ({hint})", input.arch.kernel_img()),
+                format!(
+                    "Kernel image: {} not found ({hint})",
+                    input.arch.kernel_img()
+                ),
             ));
         }
     }
@@ -496,13 +500,14 @@ fn check_initrd(input: &CheckInput, checks: &mut Vec<Check>) {
     match input.initrd.filter(|p| p.is_file()) {
         Some(p) => {
             let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-            let summary = format!(
-                "initrd.img ({})",
-                common::fmt::human_size_ls(size)
-            );
+            let summary = format!("initrd.img ({})", common::fmt::human_size_ls(size));
             checks.push(info(
                 CheckKind::Initrd,
-                format!("Initrd: {} ({})", p.display(), common::fmt::human_size_ls(size)),
+                format!(
+                    "Initrd: {} ({})",
+                    p.display(),
+                    common::fmt::human_size_ls(size)
+                ),
                 Some(summary),
             ));
         }
@@ -613,23 +618,27 @@ impl Report {
     }
 
     fn recount(&mut self) {
-        self.critical_pass = self.checks.iter().filter(|c| c.level == Level::Pass).count() as u32;
-        self.critical_fail = self.checks.iter().filter(|c| c.level == Level::Fail).count() as u32;
-        self.warnings = self.checks.iter().filter(|c| c.level == Level::Warn).count() as u32;
+        self.critical_pass = self
+            .checks
+            .iter()
+            .filter(|c| c.level == Level::Pass)
+            .count() as u32;
+        self.critical_fail = self
+            .checks
+            .iter()
+            .filter(|c| c.level == Level::Fail)
+            .count() as u32;
+        self.warnings = self
+            .checks
+            .iter()
+            .filter(|c| c.level == Level::Warn)
+            .count() as u32;
     }
 
     /// 渲染（tty 下着色；--verbose 全量清单）。
     pub fn render(&self) -> String {
-        let tty = is_stdout_tty();
-        let c = |code: &str, s: &str| {
-            if tty {
-                format!("\x1b[{code}m{s}\x1b[0m")
-            } else {
-                s.to_string()
-            }
-        };
         let mut out = String::new();
-        out.push_str(&c("1", "[DOCTOR] QEMU E2E Prerequisites Check"));
+        out.push_str(&common::ui::bold("[DOCTOR] QEMU E2E Prerequisites Check"));
         out.push_str("\n========================================\n");
         for chk in &self.checks {
             let (tag, code) = match chk.level {
@@ -638,7 +647,7 @@ impl Report {
                 Level::Warn => ("[WARN]", "0;33"),
                 Level::Info => ("[INFO]", "0;36"),
             };
-            out.push_str(&format!("  {} {}\n", c(code, tag), chk.msg));
+            out.push_str(&format!("  {} {}\n", common::ui::paint(code, tag), chk.msg));
         }
         out
     }
@@ -646,10 +655,5 @@ impl Report {
 
 /// 仅影响颜色，不影响判定（doctor 呈现层共用同一 NO_COLOR 语义）。
 pub fn is_stdout_tty() -> bool {
-    // 无 libc 依赖的近似判断：TERM 存在且非 dumb，且没有 CI 强制管道。
-    // 仅影响颜色，不影响判定。
-    std::env::var_os("TERM")
-        .map(|t| t != "dumb")
-        .unwrap_or(false)
-        && std::env::var_os("NO_COLOR").is_none()
+    common::ui::tty()
 }

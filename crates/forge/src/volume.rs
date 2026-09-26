@@ -13,7 +13,10 @@ use anyhow::Context;
 
 /// OrbStack 对 named volume 的宿主视图（OrbStack 运行时存在）。
 pub fn orbstack_view(home: &Path, volume: &str) -> PathBuf {
-    home.join("OrbStack").join("docker").join("volumes").join(volume)
+    home.join("OrbStack")
+        .join("docker")
+        .join("volumes")
+        .join(volume)
 }
 
 /// volume 的宿主可见路径。
@@ -22,26 +25,24 @@ pub fn host_view(volume: &str) -> anyhow::Result<PathBuf> {
         "macos" => {
             let home = std::env::var_os("HOME")
                 .map(PathBuf::from)
-                .context("HOME 未设置，无法定位 OrbStack volume 视图")?;
+                .context("HOME is not set, cannot locate the OrbStack volume view")?;
             Ok(orbstack_view(&home, volume))
         }
         "linux" => {
             let out = Command::new("docker")
                 .args(["volume", "inspect", volume, "--format", "{{ .Mountpoint }}"])
                 .output()
-                .context("运行 docker volume inspect 失败（docker 在位？）")?;
+                .context("failed to run docker volume inspect (is docker present?)")?;
             anyhow::ensure!(
                 out.status.success(),
                 "volume {volume} 不存在（先 `virtuoso kernel clone <git-url>`）：{}",
                 String::from_utf8_lossy(&out.stderr).trim()
             );
             let mp = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            anyhow::ensure!(!mp.is_empty(), "volume {volume} 的 Mountpoint 为空");
+            anyhow::ensure!(!mp.is_empty(), "volume {volume} has an empty Mountpoint");
             Ok(PathBuf::from(mp))
         }
-        os => anyhow::bail!(
-            "不支持的宿主平台 {os}（docker 内核供给支持 macOS/Linux）"
-        ),
+        os => anyhow::bail!("不支持的宿主平台 {os}（docker 内核供给支持 macOS/Linux）"),
     }
 }
 
@@ -76,18 +77,29 @@ fn docker_context_endpoint() -> anyhow::Result<String> {
     let out = Command::new("docker")
         .args(["context", "show"])
         .output()
-        .map_err(|_| anyhow::anyhow!("docker 不可用（安装并启动 OrbStack 后重试）"))?;
+        .map_err(|_| {
+            anyhow::anyhow!("docker unavailable (install and start OrbStack, then retry)")
+        })?;
     anyhow::ensure!(
         out.status.success(),
         "docker context show 失败：{}",
         String::from_utf8_lossy(&out.stderr).trim()
     );
     let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    anyhow::ensure!(!name.is_empty(), "docker context 为空（安装并启动 OrbStack 后重试）");
+    anyhow::ensure!(
+        !name.is_empty(),
+        "docker context is empty (install and start OrbStack, then retry)"
+    );
     let out = Command::new("docker")
-        .args(["context", "inspect", "--format", "{{ .Endpoints.docker.Host }}", &name])
+        .args([
+            "context",
+            "inspect",
+            "--format",
+            "{{ .Endpoints.docker.Host }}",
+            &name,
+        ])
         .output()
-        .context("运行 docker context inspect 失败")?;
+        .context("failed to run docker context inspect")?;
     anyhow::ensure!(
         out.status.success(),
         "docker context inspect {name} 失败：{}",
@@ -101,7 +113,7 @@ pub fn list() -> anyhow::Result<Vec<String>> {
     let out = Command::new("docker")
         .args(["volume", "ls", "--format", "{{ .Name }}"])
         .output()
-        .context("运行 docker volume ls 失败（docker 在位？）")?;
+        .context("failed to run docker volume ls (is docker present?)")?;
     anyhow::ensure!(
         out.status.success(),
         "docker volume ls 失败：{}",
@@ -147,7 +159,10 @@ impl Status {
 
 /// 按宿主视图探测卷内容：Makefile+.config = configured，仅 Makefile = cloned。
 pub fn status(view: &Path) -> Status {
-    match (view.join("Makefile").is_file(), view.join(".config").is_file()) {
+    match (
+        view.join("Makefile").is_file(),
+        view.join(".config").is_file(),
+    ) {
         (true, true) => Status::Configured,
         (true, false) => Status::Cloned,
         _ => Status::Empty,
@@ -161,12 +176,17 @@ mod tests {
     #[test]
     fn orbstack_view_layout() {
         let p = orbstack_view(Path::new("/Users/u"), "ksrc-oe66");
-        assert_eq!(p, PathBuf::from("/Users/u/OrbStack/docker/volumes/ksrc-oe66"));
+        assert_eq!(
+            p,
+            PathBuf::from("/Users/u/OrbStack/docker/volumes/ksrc-oe66")
+        );
     }
 
     #[test]
     fn engine_endpoint_matching() {
-        assert!(endpoint_is_orbstack("unix:///Users/u/.orbstack/run/docker.sock"));
+        assert!(endpoint_is_orbstack(
+            "unix:///Users/u/.orbstack/run/docker.sock"
+        ));
         assert!(endpoint_is_orbstack("tcp://orbstack.internal:2375"));
         assert!(!endpoint_is_orbstack("unix:///var/run/docker.sock"));
         assert!(!endpoint_is_orbstack("npipe:////./pipe/docker_engine"));

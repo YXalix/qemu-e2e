@@ -90,7 +90,8 @@ pub fn setup(arch: Arch, build_dir: &Path) -> anyhow::Result<CrossSetup> {
         return Ok(CrossSetup {
             triple,
             note: Some(
-                "cross: zig 缺失——C 测试体将在构建期报错（`virtuoso doctor --verbose` 可先行拦截）".into(),
+                "cross: zig 缺失——C 测试体将在构建期报错（`virtuoso doctor --verbose` 可先行拦截）"
+                    .into(),
             ),
             ..Default::default()
         });

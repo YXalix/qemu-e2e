@@ -9,8 +9,8 @@ use crate::config::Config;
 pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
     println!("[CONFIG] Virtuoso — typed config diagnostics");
     match &cfg.toml_path() {
-        Some(t) => println!("  virtuoso.toml: {} (唯一配置面)", t.display()),
-        None => println!("  virtuoso.toml: absent (使用内置缺省；仓库根有完整注释模板)"),
+        Some(t) => println!("  virtuoso.toml: {} (single config surface)", t.display()),
+        None => println!("  virtuoso.toml: absent (built-in defaults; a fully commented template ships at the repo root)"),
     }
 
     // 架构

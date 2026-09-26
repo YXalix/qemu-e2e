@@ -72,7 +72,7 @@ pub fn latest_released(repo: &str) -> anyhow::Result<String> {
                 ".tag_name",
             ])
             .output()
-            .context("运行 gh api 查询最新 release 失败")?;
+            .context("failed to run gh api for the latest release")?;
         if out.status.success() {
             let tag = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if let Some(v) = version_of_tag(&tag) {
@@ -93,14 +93,14 @@ pub fn latest_released(repo: &str) -> anyhow::Result<String> {
                 &format!("https://github.com/{repo}/releases/latest"),
             ])
             .output()
-            .context("查询最新 preset 内核 release 失败（curl）")?;
+            .context("failed to query the latest preset-kernel release (curl)")?;
         let url = String::from_utf8_lossy(&out.stdout);
         let tag = url.rsplit('/').next().unwrap_or_default();
         if let Some(v) = version_of_tag(tag) {
             return Ok(v);
         }
     }
-    anyhow::bail!("未发现已发布的 preset 内核（{repo} 的 kernel-v* release）——先跑 kernel-release 工作流，或用 --version / infra/kernel/pin 显式指定")
+    anyhow::bail!("no published preset kernel found (no kernel-v* release on {repo}) — run the kernel-release workflow first, or pass --version / pin infra/kernel/pin explicitly")
 }
 
 /// 确保单架构 preset 镜像就位（已缓存直接复用），返回其路径。
@@ -116,7 +116,7 @@ pub fn ensure_image(
         progress.line(&format!("Kernel preset: cached ({})", arch.name()));
         return Ok(img);
     }
-    std::fs::create_dir_all(dir).with_context(|| format!("创建 {} 失败", dir.display()))?;
+    std::fs::create_dir_all(dir).with_context(|| format!("create {} failed", dir.display()))?;
     let tag = tag_for(version);
     let asset = image_name(arch);
     let tmp = dir.join(format!("{asset}.tmp"));
@@ -143,7 +143,7 @@ pub fn ensure_image(
             return Err(e);
         }
     }
-    std::fs::rename(&tmp, &img).with_context(|| format!("就位 {asset} 失败"))?;
+    std::fs::rename(&tmp, &img).with_context(|| format!("place {asset} failed"))?;
     progress.line(&format!("Kernel preset: downloaded ({})", arch.name()));
     Ok(img)
 }
@@ -179,9 +179,10 @@ fn verify_sha256(
             (name == asset).then(|| hash.to_string())
         })
         .next()
-        .with_context(|| format!("SHA256SUMS 中没有 {asset} 条目"))?;
-    let actual = sha256_hex(file)
-        .context("宿主缺少 sha256sum/shasum，无法核对 SHA256SUMS（重跑以重试下载）")?;
+        .with_context(|| format!("SHA256SUMS has no entry for {asset}"))?;
+    let actual = sha256_hex(file).context(
+        "no sha256sum/shasum on host, cannot verify SHA256SUMS (re-run to retry the download)",
+    )?;
     anyhow::ensure!(
         actual == expect,
         "{asset} 校验和不匹配（期望 {expect}，实际 {actual}）——重新 fetch"

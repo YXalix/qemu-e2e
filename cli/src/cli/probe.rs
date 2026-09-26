@@ -110,7 +110,7 @@ pub fn run_probe(
         Err(e) => eprintln!("ERROR: probe session: {e:#}"),
     }
     println!(
-        "[RUN] probe finished ({:.1}s, exit {exit_code}) — 事件: {}/agent-events.jsonl",
+        "[RUN] probe finished ({:.1}s, exit {exit_code}) — events: {}/agent-events.jsonl",
         started.elapsed().as_secs_f32(),
         run.path.display()
     );
@@ -135,7 +135,7 @@ fn session(
     let mut wire = LineSock::new(sock);
 
     let hello = wire.next_line(deadline)?.context(
-        "EOF before agent hello (virtio_console 模块未加载或 agent 未启动？查 serial.log)",
+        "EOF before agent hello (virtio_console module not loaded, or agent not started? see serial.log)",
     )?;
     log_event(&mut events, &hello, json)?;
     if !hello.contains("\"hello\"") {
@@ -213,7 +213,7 @@ fn exchange(
         let line = wire
             .next_line(Instant::now() + Duration::from_secs(600))?
             .context(
-                "EOF while waiting for agent reply (VM died? watchdog fired? 查 serial.log)",
+                "EOF while waiting for agent reply (VM died? watchdog fired? see serial.log)",
             )?;
         log_event(events, &line, json)?;
         let ev: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
@@ -247,22 +247,15 @@ fn log_event(events: &mut std::fs::File, line: &str, json: bool) -> std::io::Res
         println!("raw: {line}");
         return Ok(());
     };
+    // human 模式降噪：out/err 流与心跳只落 agent-events.jsonl，终端只报
+    // 值得行动的事件（error）；exit 由 session 统一汇报
     let id = ev.get("id").and_then(Value::as_u64);
-    match (
-        ev.get("type").and_then(Value::as_str),
-        ev.get("line").and_then(Value::as_str),
-    ) {
-        (Some(t @ ("out" | "err")), Some(l)) => println!("{}{t}: {l}", tag(id)),
-        // exit 事件由 session 统一汇报（含"未收到 exit"的失败形态），此处静默
-        (Some("exit"), _) => {}
-        (Some("hello"), _) => println!("{}agent hello", tag(id)),
-        (Some("pong"), _) => println!("{}pong", tag(id)),
-        (Some("error"), _) => println!(
+    if ev.get("type").and_then(Value::as_str) == Some("error") {
+        println!(
             "{}error: {}",
             tag(id),
             ev.get("reason").and_then(Value::as_str).unwrap_or("?")
-        ),
-        _ => println!("raw: {line}"),
+        );
     }
     Ok(())
 }

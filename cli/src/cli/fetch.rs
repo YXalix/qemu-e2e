@@ -12,7 +12,7 @@ pub fn run_fetch(version: Option<&str>, arch_cli: Option<&str>) -> anyhow::Resul
     let preset = preset_kind(&cfg)?;
     anyhow::ensure!(
         preset.is_some(),
-        "kernel_preset 未启用：先在 virtuoso.toml 设 kernel_preset = \"mainline\"（或 KERNEL_PRESET env）再 fetch"
+        "kernel_preset is not enabled: set kernel_preset = \"mainline\" in virtuoso.toml (or the KERNEL_PRESET env var), then fetch"
     );
 
     // 缺省三架构全量（matrix 与 CI e2e 直接可用）；--arch 裁剪
@@ -27,14 +27,14 @@ pub fn run_fetch(version: Option<&str>, arch_cli: Option<&str>) -> anyhow::Resul
     )
     .ok_or_else(|| {
         anyhow::anyhow!(
-            "无法确定 preset 内核 release 仓库：设 KERNEL_RELEASE_REPO=owner/repo，或让 git origin 指向 GitHub"
+            "cannot determine the preset-kernel release repo: set KERNEL_RELEASE_REPO=owner/repo, or point git origin at GitHub"
         )
     })?;
 
     // 版本解析：--version > infra/kernel/pin 钉定 > 最新已发布
     let version = match version.map(builder::preset::normalize_version) {
         Some(Some(v)) => v,
-        Some(None) => anyhow::bail!("非法版本号：{version:?}（期望 X.Y[.Z]）"),
+        Some(None) => anyhow::bail!("invalid version: {version:?} (expected X.Y[.Z])"),
         None => match builder::preset::pin_version(&cfg.infra_dir) {
             Some(v) => v,
             None => builder::preset::latest_released(&repo)?,

@@ -13,8 +13,12 @@ use crate::{volume, Progress};
 /// render_clangd 按目标架构替换）。
 pub fn clangd_template(project_root: &Path) -> anyhow::Result<String> {
     let path = project_root.join("devkit").join("docker").join(".clangd");
-    std::fs::read_to_string(&path)
-        .with_context(|| format!("读取 .clangd 模板失败（{} 在位？）", path.display()))
+    std::fs::read_to_string(&path).with_context(|| {
+        format!(
+            "read .clangd template failed (is {} in place?)",
+            path.display()
+        )
+    })
 }
 
 /// --target=<triple> 行替换（退役 kernel.sh 的 sed：`s/--target=[a-z0-9_-]*/…/`）。
@@ -63,7 +67,7 @@ pub fn run(job: &CloneJob, progress: &mut Progress) -> anyhow::Result<std::path:
     let out = std::process::Command::new("docker")
         .args(["volume", "create", volume_name])
         .output()
-        .context("运行 docker volume create 失败（docker 在位？）")?;
+        .context("failed to run docker volume create (is docker present?)")?;
     anyhow::ensure!(
         out.status.success(),
         "docker volume create {volume_name} 失败：{}",
@@ -114,7 +118,8 @@ mod tests {
 
     #[test]
     fn render_clangd_swaps_target_triple() {
-        let template = "CompileFlags:\n  Add:\n    - --target=aarch64-linux-gnu\n    - -fno-spell-checking\n";
+        let template =
+            "CompileFlags:\n  Add:\n    - --target=aarch64-linux-gnu\n    - -fno-spell-checking\n";
         let rendered = render_clangd(template, "riscv64-linux-gnu");
         assert!(rendered.contains("--target=riscv64-linux-gnu"));
         assert!(!rendered.contains("aarch64-linux-gnu"));

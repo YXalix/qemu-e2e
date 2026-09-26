@@ -12,6 +12,7 @@ pub mod platform;
 pub mod progress;
 pub mod shell;
 pub mod time;
+pub mod ui;
 pub mod units;
 
 pub use arch::{Arch, ALL_ARCHES};

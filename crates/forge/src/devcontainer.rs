@@ -66,7 +66,9 @@ pub fn path(project_root: &Path) -> PathBuf {
 
 /// 填模板（volume + image → JSONC 文本）。与写盘分离，测试直接消费。
 pub fn render_template(volume: &str, image: &str) -> String {
-    TEMPLATE.replace("{VOLUME}", volume).replace("{IMAGE}", image)
+    TEMPLATE
+        .replace("{VOLUME}", volume)
+        .replace("{IMAGE}", image)
 }
 
 /// 按 current 渲染并写盘（镜像解析 env KERNEL_TOOLCHAIN_IMAGE > ghcr 发布镜像，
@@ -101,14 +103,21 @@ mod tests {
     #[test]
     fn render_targets_current_volume_and_image() {
         let out = render_template("ksrc-oe66", "ghcr.io/yxalix/virtuoso-kernel:latest");
-        let v: serde_json::Value = serde_json::from_str(&json_body(&out)).expect("渲染产物须为合法 JSON");
+        let v: serde_json::Value =
+            serde_json::from_str(&json_body(&out)).expect("渲染产物须为合法 JSON");
         assert_eq!(v["workspaceMount"], "src=ksrc-oe66,dst=/ksrc,type=volume");
         assert_eq!(v["workspaceFolder"], "/ksrc");
         assert_eq!(v["image"], "ghcr.io/yxalix/virtuoso-kernel:latest");
         // 加速首进：image 直用钉死工具链，不再本地 build Dockerfile.kernel
         assert!(v.get("build").is_none());
         assert_eq!(v["remoteUser"], "root");
-        assert!(v["customizations"]["vscode"]["extensions"].as_array().unwrap().len() == 2);
+        assert!(
+            v["customizations"]["vscode"]["extensions"]
+                .as_array()
+                .unwrap()
+                .len()
+                == 2
+        );
     }
 
     #[test]

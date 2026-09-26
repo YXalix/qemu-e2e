@@ -35,7 +35,11 @@ pub fn image_present(image: &str) -> bool {
 
 /// 镜像供给：在位即短路；pull 失败回落本地构建 devkit/docker/Dockerfile.kernel
 /// （与 kernel-builder.yml 发布 ghcr 的钉死工具链同源）。
-pub fn ensure_image(image: &str, dockerfile_dir: &Path, progress: &mut Progress) -> anyhow::Result<()> {
+pub fn ensure_image(
+    image: &str,
+    dockerfile_dir: &Path,
+    progress: &mut Progress,
+) -> anyhow::Result<()> {
     volume::engine_guard()?;
     if image_present(image) {
         return Ok(());
@@ -63,8 +67,11 @@ pub fn ensure_image(image: &str, dockerfile_dir: &Path, progress: &mut Progress)
         .arg(&dockerfile)
         .arg(dockerfile_dir)
         .status()
-        .context("运行 docker build 失败")?;
-    anyhow::ensure!(st.success(), "工具链镜像本地构建失败（{dockerfile:?}）");
+        .context("failed to run docker build")?;
+    anyhow::ensure!(
+        st.success(),
+        "local toolchain-image build failed ({dockerfile:?})"
+    );
     Ok(())
 }
 
@@ -83,7 +90,12 @@ fn base_cmd(volume: &str, image: &str, tty: bool) -> Command {
 }
 
 /// 流式执行容器内脚本（stdio 继承，内核构建的长输出实时可见）。
-pub fn run_streaming(volume: &str, image: &str, envs: &[(&str, &str)], script: &str) -> anyhow::Result<()> {
+pub fn run_streaming(
+    volume: &str,
+    image: &str,
+    envs: &[(&str, &str)],
+    script: &str,
+) -> anyhow::Result<()> {
     let mut cmd = base_cmd(volume, image, false);
     for (k, v) in envs {
         cmd.env(k, v);
@@ -91,7 +103,7 @@ pub fn run_streaming(volume: &str, image: &str, envs: &[(&str, &str)], script: &
     cmd.arg("sh").arg("-c").arg(script);
     let st = cmd
         .status()
-        .with_context(|| format!("运行 docker 失败（引擎在位？volume {volume}）"))?;
+        .with_context(|| format!("failed to run docker (is the engine up? volume {volume})"))?;
     anyhow::ensure!(
         st.success(),
         "容器内命令失败（exit {}）：{script}",
@@ -101,7 +113,12 @@ pub fn run_streaming(volume: &str, image: &str, envs: &[(&str, &str)], script: &
 }
 
 /// 交互式容器命令（shell：TTY + stdio 继承），返回退出码。
-pub fn run_tty(volume: &str, image: &str, envs: &[(&str, &str)], argv: &[&str]) -> anyhow::Result<i32> {
+pub fn run_tty(
+    volume: &str,
+    image: &str,
+    envs: &[(&str, &str)],
+    argv: &[&str],
+) -> anyhow::Result<i32> {
     let mut cmd = base_cmd(volume, image, true);
     for (k, v) in envs {
         cmd.env(k, v);
@@ -109,7 +126,7 @@ pub fn run_tty(volume: &str, image: &str, envs: &[(&str, &str)], argv: &[&str]) 
     cmd.args(argv);
     let st = cmd
         .status()
-        .with_context(|| format!("运行 docker 失败（引擎在位？volume {volume}）"))?;
+        .with_context(|| format!("failed to run docker (is the engine up? volume {volume})"))?;
     Ok(st.code().unwrap_or(130))
 }
 
@@ -121,15 +138,19 @@ pub fn write_file(volume: &str, image: &str, dest: &str, content: &str) -> anyho
         .arg(format!("cat > {dest}"))
         .stdin(Stdio::piped())
         .spawn()
-        .context("启动 docker 失败")?;
+        .context("failed to start docker")?;
     child
         .stdin
         .as_mut()
         .expect("stdin 已声明 piped")
         .write_all(content.as_bytes())
-        .with_context(|| format!("写入容器内 {dest} 失败"))?;
+        .with_context(|| format!("write inside container to {dest} failed"))?;
     let st = child.wait()?;
-    anyhow::ensure!(st.success(), "容器内写入 {dest} 失败（exit {}）", st.code().unwrap_or(-1));
+    anyhow::ensure!(
+        st.success(),
+        "in-container write to {dest} failed (exit {})",
+        st.code().unwrap_or(-1)
+    );
     Ok(())
 }
 

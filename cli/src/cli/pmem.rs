@@ -29,20 +29,22 @@ pub(crate) fn pmem_opt(
     };
     if arch == Arch::X86_64 {
         anyhow::bail!(
-            "[components.pmem] x86_64 暂不支持（QEMU nvdimm 走 ACPI NFIT，需 EFI 引导）—— 仅 DT 架构 arm64/riscv64"
+            "[components.pmem] x86_64 is not supported yet (QEMU nvdimm uses ACPI NFIT and needs an EFI boot) — DT arches only (arm64/riscv64)"
         );
     }
     let total_mem = topo.total_memory().map_err(anyhow::Error::msg)?;
     let pmem_bytes = memory_bytes(&size, "size")?;
-    let total_bytes = memory_bytes(&total_mem, "-m 总内存")?;
+    let total_bytes = memory_bytes(&total_mem, "-m total memory")?;
     if pmem_bytes >= total_bytes {
-        anyhow::bail!("[components.pmem] size ({size}) 必须小于总内存 ({total_mem})");
+        anyhow::bail!(
+            "[components.pmem] size ({size}) must be smaller than total memory ({total_mem})"
+        );
     }
     let limit_bytes = total_bytes - pmem_bytes;
     let mem_limit = render_memory(limit_bytes);
 
     let dir = cfg.build_dir.join("pmem");
-    std::fs::create_dir_all(&dir).with_context(|| format!("创建 {} 失败", dir.display()))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("create {} failed", dir.display()))?;
     let ram_backend = dir.join("ram.img");
     ensure_sparse(&ram_backend, total_bytes)?;
     let dtb = patch_pmem_dtb(cfg, arch, topo, &total_mem, &dir, pmem_bytes)?;
@@ -66,7 +68,7 @@ fn render_memory(bytes: u64) -> String {
 /// "256M"/裸数字 → 字节数（QEMU 语义：裸数字 = 字节）。
 fn memory_bytes(s: &str, what: &str) -> anyhow::Result<u64> {
     let (n, unit) = common::units::parse_memory(s)
-        .map_err(|e| anyhow::anyhow!("[components.pmem] {what} 非法: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("[components.pmem] invalid {what}: {e}"))?;
     Ok(match unit {
         common::units::MemUnit::Bare => n,
         _ => unit.to_mib(n) * 1024 * 1024,
@@ -80,9 +82,9 @@ fn ensure_sparse(path: &Path, bytes: u64) -> anyhow::Result<()> {
         .unwrap_or(true);
     if mismatch {
         std::fs::File::create(path)
-            .with_context(|| format!("创建 {} 失败", path.display()))?
+            .with_context(|| format!("create {} failed", path.display()))?
             .set_len(bytes)
-            .with_context(|| format!("设置 {} 大小为 {bytes} 字节失败", path.display()))?;
+            .with_context(|| format!("failed to size {} to {bytes} bytes", path.display()))?;
     }
     Ok(())
 }
@@ -102,17 +104,19 @@ fn fdtget_words(dtb: &Path, node: &str, prop: &str) -> anyhow::Result<Vec<u64>> 
         .arg(node)
         .arg(prop)
         .output()
-        .with_context(|| format!("运行 fdtget 读取 {node} {prop} 失败（宿主需要 dtc 包）"))?;
+        .with_context(|| {
+            format!("failed to run fdtget {node} {prop} (host needs the dtc package)")
+        })?;
     anyhow::ensure!(
         out.status.success(),
-        "fdtget {node} {prop} 失败: {}",
+        "fdtget {node} {prop} failed: {}",
         String::from_utf8_lossy(&out.stderr).trim()
     );
     String::from_utf8_lossy(&out.stdout)
         .split_whitespace()
         .map(|w| u64::from_str_radix(w.trim_start_matches("0x"), 16))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| anyhow::anyhow!("fdtget {node} {prop} 输出解析失败: {e}"))
+        .map_err(|e| anyhow::anyhow!("failed to parse fdtget {node} {prop} output: {e}"))
 }
 
 fn fdtput(dtb: &Path, args: &[String]) -> anyhow::Result<()> {
@@ -120,10 +124,10 @@ fn fdtput(dtb: &Path, args: &[String]) -> anyhow::Result<()> {
         .arg(dtb)
         .args(args)
         .output()
-        .with_context(|| format!("运行 fdtput {args:?} 失败（宿主需要 dtc 包）"))?;
+        .with_context(|| format!("failed to run fdtput {args:?} (host needs the dtc package)"))?;
     anyhow::ensure!(
         out.status.success(),
-        "fdtput {args:?} 失败: {}",
+        "fdtput {args:?} failed: {}",
         String::from_utf8_lossy(&out.stderr).trim()
     );
     Ok(())
@@ -161,10 +165,10 @@ fn patch_pmem_dtb(
     }
     let out = cmd
         .output()
-        .with_context(|| format!("运行 {qemu} dumpdtb 失败"))?;
+        .with_context(|| format!("failed to run {qemu} dumpdtb"))?;
     anyhow::ensure!(
         out.status.success() && dtb.is_file(),
-        "dumpdtb 失败: {}",
+        "dumpdtb failed: {}",
         String::from_utf8_lossy(&out.stderr).trim()
     );
 
@@ -180,7 +184,7 @@ fn patch_pmem_dtb(
     let reg = fdtget_words(&dtb, "/memory", "reg")?;
     anyhow::ensure!(
         reg.len() == (addr_cells + size_cells) as usize,
-        "/memory reg 形态非预期（{} 个 cell，期望 {}）",
+        "/memory reg has an unexpected shape ({} cells, expected {})",
         reg.len(),
         addr_cells + size_cells
     );
@@ -192,8 +196,8 @@ fn patch_pmem_dtb(
     let base = join(&reg[..addr_cells as usize]);
     let total_bytes = join(&reg[addr_cells as usize..]);
     anyhow::ensure!(
-        total_bytes == memory_bytes(total_mem, "-m 总内存")?,
-        "/memory 大小 ({total_bytes:#x}) 与 -m ({total_mem}) 不一致"
+        total_bytes == memory_bytes(total_mem, "-m total memory")?,
+        "/memory size ({total_bytes:#x}) does not match -m ({total_mem})"
     );
     let pmem_base = base + total_bytes - pmem_bytes;
 

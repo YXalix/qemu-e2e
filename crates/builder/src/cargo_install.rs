@@ -44,9 +44,7 @@ impl CargoInstall<'_> {
             progress.line(&format!(
                 "  WARNING: {} skipped (rust target {} not installed; \
                  run `rustup target add {}` to enable)",
-                self.label,
-                self.triple,
-                self.triple
+                self.label, self.triple, self.triple
             ));
             return Ok(0);
         }
@@ -60,7 +58,7 @@ impl CargoInstall<'_> {
         cmd.args(["build", "--release", "--target", self.triple])
             .current_dir(self.rust_dir);
         self.cross.apply_to_cargo(&mut cmd);
-        let out = cmd.output().context("cargo 启动失败")?;
+        let out = cmd.output().context("failed to run cargo")?;
         if !out.status.success() {
             let log = format!(
                 "{}{}",
@@ -76,17 +74,21 @@ impl CargoInstall<'_> {
             progress.line(line);
         }
 
-        let release_dir = self.rust_dir.join("target").join(self.triple).join("release");
+        let release_dir = self
+            .rust_dir
+            .join("target")
+            .join(self.triple)
+            .join("release");
         let mut installed = 0usize;
         for entry in std::fs::read_dir(&release_dir)?.flatten() {
             if let Some(bin) = crate::testcase::rust_test_binary(&entry.path()) {
                 let name = bin
                     .file_name()
-                    .context("release 目录条目缺文件名")?
+                    .context("release-dir entry has no file name")?
                     .to_string_lossy()
                     .to_string();
                 std::fs::copy(&bin, self.dest.join(&name))
-                    .with_context(|| format!("拷贝 {} 失败", bin.display()))?;
+                    .with_context(|| format!("copy {} failed", bin.display()))?;
                 common::fsutil::set_executable(&self.dest.join(&name))?;
                 progress.line(&format!("{} {name}", self.item_prefix));
                 installed += 1;
