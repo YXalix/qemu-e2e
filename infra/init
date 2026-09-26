@@ -129,7 +129,8 @@ run_auto_tests() {
     for test_exe in "$TESTS_DIR"/*; do
         if [ -f "$test_exe" ] && [ -x "$test_exe" ]; then
             test_count=$((test_count + 1))
-            local test_name=$(basename "$test_exe")
+            local test_name
+            test_name=$(basename "$test_exe")
             echo ""
             echo "--- Running: $test_name ---"
             if "$test_exe"; then
@@ -163,7 +164,7 @@ run_auto_tests() {
 power_off() {
     echo ""
     LOG_INFO "Powering off..."
-    poweroff -f
+    poweroff -f || LOG_ERROR "poweroff returned nonzero (continuing)"
 }
 
 #==========================================

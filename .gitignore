@@ -4,11 +4,12 @@ infra/testcases/**/compile_commands.json
 .cache/
 
 # Build artifacts
-**.cmd
-**.mod
-**.o
-**.ko
-**.order
+*.cmd
+*.mod
+*.o
+*.ko
+*.order
+.DS_Store
 # Rust build artifacts
 /target
 

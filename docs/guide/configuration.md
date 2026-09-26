@@ -59,4 +59,4 @@
 | `riscv64` | `qemu-system-riscv64` | `arch/riscv/boot/Image` | `ttyS0` | `virt` |
 
 交叉组合随意（如 arm64 宿主跑 `--arch x86_64`），目标与宿主不同构时
-doctor / verify 会告警，启动自动回退 TCG。
+doctor 会告警，启动自动回退 TCG。

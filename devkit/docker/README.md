@@ -6,7 +6,7 @@ devcontainer（容器内 clangd）；宿主经平台视图读 volume 只为消�
 （QEMU 的 kernel_path）。测试资产构建（busybox / 用例 workspace）与 QEMU
 运行始终留在宿主原生（macOS 走 HVF、Linux 走 KVM，容器里都没有）。
 
-命令面已收编进 CLI（原 `kernel.sh` 薄壳退役）：`virtuoso kernel` 子命令组
+命令面：`virtuoso kernel` 子命令组
 （逻辑在 `crates/forge`）。双平台同一套命令，唯一分支是 volume 的宿主可见
 路径：
 

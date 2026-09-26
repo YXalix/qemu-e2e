@@ -82,7 +82,7 @@ busybox 版本/配置时提供 `BUSYBOX_APPLETS_FILE`。
 
 ## macOS 专属
 
-**Symptom**: `Host tools: missing -mke2fs`（doctor/verify ✗）
+**Symptom**: `Host tools: missing -mke2fs`（doctor ✗）
 **Solution**: `brew install e2fsprogs`。keg-only 不进 PATH 没关系，
 virtuoso 自动探测 `/opt/homebrew/opt/e2fsprogs/sbin`。
 
@@ -91,7 +91,7 @@ virtuoso 自动探测 `/opt/homebrew/opt/e2fsprogs/sbin`。
 ELF）：`brew install zig`，或自带工具链 `CC=<cross-gcc>` +
 `CARGO_TARGET_<TRIPLE>_LINKER=<linker>`。
 
-**Symptom**: `Components: vfio requires Linux host`（verify FAIL）
+**Symptom**: `Components: vfio requires Linux host`（doctor FAIL）
 **Solution**: vfio-pci 直通架构性依赖 Linux IOMMU，macOS 无法支持——注释掉
 `[components.vfio]`。pmem 在 macOS 为 experimental（doctor WARN），链路
 （memory-backend-file + dumpdtb/fdtput）未经 HVF 实测前不要依赖。
