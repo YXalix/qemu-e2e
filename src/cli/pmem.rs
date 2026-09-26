@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::Context;
-use launcher::{Arch, NumaTopology};
+use crate::launcher::NumaTopology;
+use crate::Arch;
 
 use crate::config::Config;
 
@@ -23,7 +24,7 @@ pub(crate) fn pmem_opt(
     cfg: &Config,
     arch: Arch,
     topo: &NumaTopology,
-) -> anyhow::Result<Option<launcher::PmemSpec>> {
+) -> anyhow::Result<Option<crate::launcher::PmemSpec>> {
     let Some(size) = cfg.pmem_size() else {
         return Ok(None);
     };
@@ -48,7 +49,7 @@ pub(crate) fn pmem_opt(
     let ram_backend = dir.join("ram.img");
     ensure_sparse(&ram_backend, total_bytes)?;
     let dtb = patch_pmem_dtb(cfg, arch, topo, &total_mem, &dir, pmem_bytes)?;
-    Ok(Some(launcher::PmemSpec::new(
+    Ok(Some(crate::launcher::PmemSpec::new(
         size,
         mem_limit,
         ram_backend,
@@ -67,10 +68,10 @@ fn render_memory(bytes: u64) -> String {
 
 /// "256M"/裸数字 → 字节数（QEMU 语义：裸数字 = 字节）。
 fn memory_bytes(s: &str, what: &str) -> anyhow::Result<u64> {
-    let (n, unit) = common::units::parse_memory(s)
+    let (n, unit) = crate::units::parse_memory(s)
         .map_err(|e| anyhow::anyhow!("[components.pmem] invalid {what}: {e}"))?;
     Ok(match unit {
-        common::units::MemUnit::Bare => n,
+        crate::units::MemUnit::Bare => n,
         _ => unit.to_mib(n) * 1024 * 1024,
     })
 }

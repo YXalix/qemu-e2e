@@ -1,13 +1,13 @@
 //! `virtuoso doctor`：环境体检唯一入口。检查引擎复用
-//! builder::verify::run_checks（语义单一来源，引擎输入投影 engine_report
+//! crate::builder::verify::run_checks（语义单一来源，引擎输入投影 engine_report
 //! 在本文件），两种呈现：缺省 = flutter-doctor 风格一屏（引擎检查按消息
 //! 前缀归并为组件行，✓/✗/! 一眼可读，实现在 `screen`）；`--verbose` =
 //! 类型化配置诊断 + 完整检查清单。退出码：critical 未过 → 1。
 
-use common::fsutil::which;
-use launcher::Arch;
+use crate::fsutil::which;
+use crate::Arch;
 
-use builder::verify::{Level, Report};
+use crate::builder::verify::{Level, Report};
 
 use super::resolve_arch;
 use crate::config::Config;
@@ -17,7 +17,7 @@ mod screen;
 // ---------------------------------------------------------------- 引擎输入投影
 
 /// 检查引擎输入投影（保证检查语义单一来源——新增前置条件只动
-/// builder::verify::run_checks，doctor 的两种呈现自动跟随）。
+/// crate::builder::verify::run_checks，doctor 的两种呈现自动跟随）。
 fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
     let host_arch = Arch::parse(std::env::consts::ARCH);
     let kernel_path = cfg.kernel_path().ok().map(|(kp, _)| kp);
@@ -25,13 +25,13 @@ fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
     let kernel_img = kernel_path.as_ref().map(|p| p.join(arch.kernel_img()));
     let plan = cfg.component_plan();
     let module_lines: Vec<String> = plan.all().cloned().collect();
-    let modules = builder::verify::module_presence(&module_lines, kernel_path.as_deref(), &cfg.infra_dir);
+    let modules = crate::builder::verify::module_presence(&module_lines, kernel_path.as_deref(), &cfg.infra_dir);
 
-    Ok(builder::verify::run_checks(&builder::verify::CheckInput {
+    Ok(crate::builder::verify::run_checks(&crate::builder::verify::CheckInput {
         config_file_exists: cfg.toml.is_some(),
         kernel_path: kernel_path.as_deref(),
         arch,
-        host: common::HostOs::current(),
+        host: crate::HostOs::current(),
         host_is_cross: host_arch.is_some_and(|h| h != arch),
         kernel_image: kernel_img.as_deref(),
         qemu_bin: which(arch.qemu_bin()).then_some(arch.qemu_bin()),
@@ -52,21 +52,21 @@ fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
 /// docker 供给模式附加检查（forge 活动卷）：状态文件存在 = 活动卷开启，
 /// 才投影 forge 检查——raw 用户无状态文件，零打扰。
 fn docker_report(cfg: &Config, report: &mut Report) {
-    let Ok(Some(current)) = forge::state::read(&cfg.project_root) else {
+    let Ok(Some(current)) = crate::forge::state::read(&cfg.project_root) else {
         return;
     };
     let volume = std::env::var("KERNEL_VOLUME")
         .ok()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or(current.volume);
-    let engine_err = forge::volume::engine_guard().err().map(|e| e.to_string());
-    let host_view = forge::volume::host_view(&volume).ok();
-    let image = std::env::var(forge::toolchain::IMAGE_ENV)
+    let engine_err = crate::forge::volume::engine_guard().err().map(|e| e.to_string());
+    let host_view = crate::forge::volume::host_view(&volume).ok();
+    let image = std::env::var(crate::forge::toolchain::IMAGE_ENV)
         .ok()
         .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| forge::DEFAULT_IMAGE.to_string());
-    let image_present = forge::toolchain::image_present(&image);
-    report.extend(builder::verify::kernel_docker_checks(
+        .unwrap_or_else(|| crate::forge::DEFAULT_IMAGE.to_string());
+    let image_present = crate::forge::toolchain::image_present(&image);
+    report.extend(crate::builder::verify::kernel_docker_checks(
         &volume,
         &current.arch,
         engine_err.as_deref(),
@@ -122,10 +122,10 @@ pub fn run_doctor(arch_override: Option<&str>, json: bool, verbose: bool) -> any
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
-        let tty = builder::verify::is_stdout_tty();
+        let tty = crate::builder::verify::is_stdout_tty();
         let (pass_icon, fail_icon) = (
-            common::ui::icon(common::ui::Icon::Pass),
-            common::ui::icon(common::ui::Icon::Fail),
+            crate::ui::icon(crate::ui::Icon::Pass),
+            crate::ui::icon(crate::ui::Icon::Fail),
         );
         println!("Virtuoso doctor · arch {}", arch.name());
         print!("{}", screen::render(&groups, tty));

@@ -6,9 +6,9 @@ use std::process::{Child, ExitStatus};
 
 use anyhow::Context;
 
-use common::time::unix_ms;
-use judge::report::{Artifacts, RunMeta, VerdictReport};
-use judge::{Audit, Event, EventKind};
+use crate::time::unix_ms;
+use crate::judge::report::{Artifacts, RunMeta, VerdictReport};
+use crate::judge::{Audit, Event, EventKind};
 
 pub const RUNS_KEEP: usize = 20;
 
@@ -93,7 +93,7 @@ impl PumpOutcome {
 }
 
 /// 把已 spawn 的子进程两条流分开泵送（追加落盘；仅 stdout 回显终端）。
-/// 由 launcher::QemuInvocation::spawn(piped=true) 提供子进程。
+/// 由 crate::launcher::QemuInvocation::spawn(piped=true) 提供子进程。
 pub fn pump_child(
     child: &mut Child,
     out_log: &Path,
@@ -181,7 +181,7 @@ pub fn pump_child(
 
 fn read_serial_audit(serial: &Path) -> Audit {
     let text = std::fs::read_to_string(serial).unwrap_or_default();
-    judge::parse(&text)
+    crate::judge::parse(&text)
 }
 
 /// 运行结束后写 events.jsonl + verdict.json，返回 verdict 字符串。

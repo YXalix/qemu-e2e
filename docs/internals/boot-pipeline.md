@@ -82,7 +82,7 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 
 ### 2.3 cpio.gz → ext4 转换（并入 `virtuoso build`）
 
-ext4 打包由 builder 完成（`crates/builder/src/image.rs::make_ext4`，
+ext4 打包由 builder 完成（`src/builder/image.rs::make_ext4`，
 `mke2fs -d` + 自动尺寸）：先 cpio 解包成树，再按 `du -sm` + **2MB 余量**
 生成镜像（绝不要拍固定尺寸——曾有过 64MB 空洞的教训，ext4 的元数据 +
 journal 会把创建时声明的大小全部真实占满）。release 的 rootfs cpio.gz
@@ -206,7 +206,7 @@ POSIX/busybox-ash 语法（本地校验：
 
 **换 rootfs 发行版**（如 Alpine/debootstrap）
 → rootfs.img 就是普通 ext4。改 builder 的 rootfs 组装段
-（`crates/builder/src/`），或在 VM 外 loop mount 后替换内容。两阶段启动链
+（`src/builder/`），或在 VM 外 loop mount 后替换内容。两阶段启动链
 不需要任何改动。
 
 **发新 busybox 版本** → Actions 手动触发 `busybox-release`（填版本号），
@@ -257,7 +257,7 @@ qemu-system-aarch64 -M virt -cpu cortex-a72 -m 1G -nographic -no-reboot \
 | `infra/init` | 阶段 2 PID 1（测试 init，构建时注入 rootfs） | — |
 | `infra/modules-boot.conf` | boot 冻结基础集 → initramfs | — |
 | `virtuoso.toml` | 唯一配置面：全局键 + 组件 require 并集 → rootfs modules.conf | — |
-| `crates/builder/` | busybox 供给 + 两段式镜像组装 | — |
+| `src/builder/` | busybox 供给 + 两段式镜像组装 | — |
 | `target/artifacts/initrd.img` / `rootfs.img` / `tools.img` | 构建产物 | ✅ |
 | `target/build/busybox/`、`rootfs/`、`initramfs/`、`tools/` | 缓存与暂存目录 | ✅ |
 | `.github/workflows/busybox-release.yml` | release 生成（含冻结 init） | — |

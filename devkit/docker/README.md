@@ -7,7 +7,7 @@ devcontainer（容器内 clangd）；宿主经平台视图读 volume 只为消�
 运行始终留在宿主原生（macOS 走 HVF、Linux 走 KVM，容器里都没有）。
 
 命令面：`virtuoso kernel` 子命令组
-（逻辑在 `crates/forge`）。双平台同一套命令，唯一分支是 volume 的宿主可见
+（逻辑在 `src/forge/`）。双平台同一套命令，唯一分支是 volume 的宿主可见
 路径：
 
 | | macOS（OrbStack） | Linux（docker-ce） |

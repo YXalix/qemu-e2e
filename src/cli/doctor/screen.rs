@@ -3,7 +3,7 @@
 //! 消息文本反解；Pass/Info 行取引擎预计算的 summary 紧凑短语，Fail/Warn
 //! 行取 label 剥离后的全文。
 
-use builder::verify::{detail, CheckKind, Level, Report};
+use crate::builder::verify::{detail, CheckKind, Level, Report};
 
 // ---------------------------------------------------------------- 引擎检查 → 组件分组
 
@@ -121,7 +121,7 @@ pub(super) fn group_checks(report: &Report) -> Vec<GroupOut> {
 pub(super) fn render(groups: &[GroupOut], tty: bool) -> String {
     let c = |code: &str, s: &str| {
         if tty {
-            common::ui::paint(code, s)
+            crate::ui::paint(code, s)
         } else {
             s.to_string()
         }
@@ -173,7 +173,7 @@ pub(super) fn render(groups: &[GroupOut], tty: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use builder::verify::Check;
+    use crate::builder::verify::Check;
 
     fn check(level: Level, kind: CheckKind, msg: &str, summary: Option<&str>) -> Check {
         Check {

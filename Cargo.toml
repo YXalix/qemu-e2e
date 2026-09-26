@@ -1,47 +1,22 @@
 [package]
 # bin 名 = 包名 virtuoso（src/main.rs 自动识别）；cargo install --path . 装入 PATH。
+# 单包 crate：领域模块 builder/launcher/judge/forge 与工具模块（arch/ui/fsutil/…）
+# 同住 src/，无 workspace 成员。
 name = "virtuoso"
-version.workspace = true
-edition.workspace = true
+version = "0.1.0"
+edition = "2021"
 publish = false
 
 [dependencies]
-anyhow.workspace = true
-clap = { version = "4", features = ["derive"] }
-serde.workspace = true
-serde_json.workspace = true
-toml = "0.8"
-common.workspace = true
-judge.workspace = true
-launcher.workspace = true
-builder.workspace = true
-forge.workspace = true
-
-[workspace]
-resolver = "2"
-members = [
-    "crates/builder",
-    "crates/launcher",
-    "crates/judge",
-    "crates/forge",
-]
-exclude = [
-    # 测试用例固件是独立 workspace（coda std 框架 + C 体 coda-scaffold 编入），不进主依赖图
-    "infra/testcases",
-]
-
-[workspace.package]
-version = "0.1.0"
-edition = "2021"
-
-[workspace.dependencies]
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+ctrlc = "3"
+# 纯 Rust 后端（miniz_oxide）：initrd 的 gzip 与平台无关，不引入 C 依赖
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-libc = "0.2"
-ctrlc = "3"
-common = { path = "crates/common" }
-builder = { path = "crates/builder" }
-launcher = { path = "crates/launcher" }
-judge = { path = "crates/judge" }
-forge = { path = "crates/forge" }
+toml = "0.8"
+
+# 测试用例固件是独立 workspace（infra/testcases 自带 [workspace]，
+# coda std 框架 + C 体 coda-scaffold 编入），不进本包依赖图。

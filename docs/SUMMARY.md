@@ -9,7 +9,7 @@
 # 架构
 
 - [总体架构](architecture/overview.md)
-- [核心 crate 设计](architecture/crates.md)
+- [核心模块设计](architecture/modules.md)
 - [冻结契约](architecture/contracts.md)
 
 # 组件

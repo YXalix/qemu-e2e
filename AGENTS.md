@@ -7,9 +7,11 @@
 ## 定位与权威
 
 Virtuoso 是 QEMU 内核 E2E 测试装置：供给内核 → 构建 BusyBox+musl 静态测试固件 →
-QEMU 启动跑 `/tests/` → 串口标记协议判定 → verdict.json 落盘。**Rust workspace
-是唯一行为权威**（根包 `src/` CLI 编排 + crates：common 基础层 / builder 构建 /
-launcher 启动+进程治理 / judge 判定+跨 run 聚类 / forge 容器化内核供给）；
+QEMU 启动跑 `/tests/` → 串口标记协议判定 → verdict.json 落盘。**单包 Rust crate
+是唯一行为权威**（`src/` 下：`main` 子命令分发 + `cli` 命令实现 + `config` 类型化
+配置 + `runs` 运行工件 + 领域模块 `builder` 构建 / `launcher` 启动+进程治理 /
+`judge` 判定+跨 run 聚类 / `forge` 容器化内核供给；顶层工具模块 `arch` / `ui` /
+`fsutil` 等为原 common 摊平）；
 `infra/` 是 VM 内源资产（init、testcases、tools、busybox 名单——多为冻结数据）；
 `devkit/` 是内核开发容器与 AI skill 源；构建产物与运行工件落 `target/`（git 忽略）。
 
@@ -35,7 +37,7 @@ virtuoso skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核�
 ```
 
 AI 的标准验证循环：`clippy → doctor → test`。改 Rust 源码必须先跑
-`cargo clippy --workspace --all-targets -- -D warnings`（CI 同款门禁，本地不过别提交）；
+`cargo clippy --all-targets -- -D warnings`（CI 同款门禁，本地不过别提交）；
 再 `doctor → test`。**判定以 test 收尾的 verdict 行为准，
 机读唯一面 = run 目录下的 `verdict.json`**；退出码只是接口契约；
 `verdict: passed` 才算通过。doctor 是体检唯一入口（一屏
@@ -50,7 +52,7 @@ AI 的标准验证循环：`clippy → doctor → test`。改 Rust 源码必须�
 2. **test 退出码**：0=通过、124=超时、其余=失败。
 3. **argv 冻结**：`QemuInvocation::argv` 的输出冻结在**按宿主平台的双基线**上
    （Linux=memfd 后端、macOS=ram 后端、HVF→`-accel hvf`），由
-   `crates/launcher/src/qemu/argv.rs` 的 `argv_*` 单测显式钉死平台把守；
+   `src/launcher/qemu/argv.rs` 的 `argv_*` 单测显式钉死平台把守；
    人工复核用 `QEMU=echo virtuoso shell` 打印 argv。数据盘与 agent 通道属调用方
    增量：**缺省（无盘无 agent）argv 与所属平台的基线逐字一致**。
 4. 测试必须静态链接（`-static`），禁止用 `|| true` 掩盖失败。

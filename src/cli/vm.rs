@@ -7,7 +7,8 @@ use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
 use std::time::Instant;
 
 use anyhow::Context;
-use launcher::{Accel, Arch, HostOs};
+use crate::launcher::Accel;
+use crate::{Arch, HostOs};
 
 use super::{build_invocation, open_agent_socket, resolve_arch, resolve_topology, LaunchPlan};
 use crate::config::Config;
@@ -192,7 +193,7 @@ fn test_once(
     // 墙钟看门狗：到点 KILL 进程组（等价 timeout --signal=KILL 的 124 语义）
     let timed_out = Arc::new(AtomicBool::new(false));
     let watchdog =
-        launcher::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
+        crate::launcher::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
 
     let pumped = runs::pump_child(
         &mut child,
@@ -206,11 +207,11 @@ fn test_once(
     let _ = watchdog.join();
 
     // 退出码：超时 124；被信号杀死归一（137→124、信号死亡→130）；其余保留真实码。
-    // 语义表单点在 judge::exit。
+    // 语义表单点在 crate::judge::exit。
     let code = if timed_out_now {
-        judge::exit::EXIT_TIMEOUT
+        crate::judge::exit::EXIT_TIMEOUT
     } else {
-        let code = judge::exit::normalize(status.code());
+        let code = crate::judge::exit::normalize(status.code());
         if status.code().is_none() {
             sup.kill_now();
         }
@@ -230,7 +231,7 @@ fn test_once(
         duration_ms,
         timeout_s: timeout_secs.to_string(),
         kernel: Some(super::kernel_image_path(cfg, arch)?),
-        qemu_version: launcher::qemu_version(arch),
+        qemu_version: crate::launcher::qemu_version(arch),
         topo: serde_json::json!({
             "smp": topo.smp.to_string(),
             "numa_nodes": topo.nodes.to_string(),

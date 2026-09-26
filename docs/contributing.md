@@ -4,7 +4,7 @@
 
 - VM 内 shell 代码保持 POSIX 兼容（`init` / `init-initramfs` 跑在 BusyBox
   `sh`，不是 bash）；改完先 `busybox sh -n` 语法校验。
-- 新增前置条件 → 同步 `crates/builder/src/verify/`（检查引擎：`mod.rs` 输入与
+- 新增前置条件 → 同步 `src/builder/verify/`（检查引擎：`mod.rs` 输入与
   编排、`checks.rs` 逐项检查、`check.rs` 类型与渲染；doctor 的分组呈现自动跟随，
   见 `src/cli/doctor/`）。
 - harness 暴露新行为 → 配一个对应测试用例。

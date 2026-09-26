@@ -2,7 +2,7 @@
 //! 命令批，结构化事件流回吐。构建 → agent 串口启动 → ping 握手 → 逐条
 //! 下发 → 收割。运行工件：run 目录的 serial.log + agent-events.jsonl。
 //!
-//! 退出码沿用 judge::exit 契约：0 = 全部命令 exit 0；124 = 看门狗超时；
+//! 退出码沿用 crate::judge::exit 契约：0 = 全部命令 exit 0；124 = 看门狗超时；
 //! 其余 = 失败（协议中断/命令非零退出）。
 
 use std::io::{Read, Write};
@@ -54,7 +54,7 @@ pub fn run_probe(
         cfg: &cfg,
         arch,
         topo,
-        accel: launcher::Accel::Tcg,
+        accel: crate::launcher::Accel::Tcg,
         auto_test: false,
         only_tests: Vec::new(),
         agent_socket: Some(sock_path.clone()),
@@ -66,7 +66,7 @@ pub fn run_probe(
     // KILL 进程组 → 串口与 socket 双双 EOF，两条线程自然汇合。
     let timed_out = Arc::new(AtomicBool::new(false));
     let watchdog =
-        launcher::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
+        crate::launcher::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
     let serial_log = run.path.join("serial.log");
     let stderr_log = run.path.join("qemu-stderr.log");
     let pump = std::thread::spawn(move || {
@@ -98,7 +98,7 @@ pub fn run_probe(
                 1
             }
         }
-        _ if timed_out_now => judge::exit::EXIT_TIMEOUT,
+        _ if timed_out_now => crate::judge::exit::EXIT_TIMEOUT,
         _ => 1,
     };
     // 与 test 同一分离呈现：失败时补看 QEMU stderr 尾部，成功保持安静。

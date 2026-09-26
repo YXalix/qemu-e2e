@@ -25,13 +25,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --workspace
+        run: cargo build
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Unit Tests
-        run: cargo test --workspace
+        run: cargo test
 
   # macOS（Apple Silicon）单元回归：代码全部走 Unix 可移植 API，单测即可
   # 把守平台分支（argv 双冻结基线 / cpio newc / HostOs）。brew 依赖对应
@@ -53,13 +53,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --workspace
+        run: cargo build
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Unit Tests
-        run: cargo test --workspace
+        run: cargo test
 
   # 内核 E2E（boot + 标记协议断言）需要内核树与 KVM/TCG 资源，
   # 放在自建 runner（openEuler 宿主，virtuoso.toml 指向内核树）上手动触发。

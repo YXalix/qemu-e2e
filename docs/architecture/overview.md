@@ -6,7 +6,7 @@
 
 | 原则 | 含义 |
 |---|---|
-| **Rust workspace 是唯一行为权威** | 构建与运行的全部逻辑在类型化 crate 中，CLI 是唯一操作面 |
+| **单包 Rust crate 是唯一行为权威** | 构建与运行的全部逻辑在类型化领域模块中，CLI 是唯一操作面 |
 | **类型安全** | 架构矩阵、NUMA 拓扑、组件依赖全部强类型化，非法配置解析期报错（而非运行时） |
 | **RAII 资源治理** | QEMU 进程组、临时目录在任何退出路径（错误、panic、Ctrl-C、看门狗）下被收割 |
 | **协议稳定** | 串口标记协议 v1 与退出码语义冻结（[冻结契约](contracts.md)），CI 与 AI 接口零感知演进 |
@@ -76,24 +76,24 @@ TEST_COMPLETE"。进程治理并入 launcher（guardian 模块）——启动与
 +-----------------------------------------------------------------------------------+
 ```
 
-各 crate 的内部设计见[核心 crate 设计](crates.md)。
+各模块的内部设计见[核心模块设计](modules.md)。
 
-## Workspace 目录结构
+## 目录结构
 
 ```text
 virtuoso/
-├── Cargo.toml                  # Root Workspace + virtuoso 根包（src/main.rs）
+├── Cargo.toml                  # 单包 crate（bin 名 virtuoso，src/main.rs；无 workspace 成员）
 ├── virtuoso.toml               # 唯一配置面（模板：活动行 = 缺省常规启动配置）
 ├── src/
-│   ├── main.rs                 # clap 子命令定义
+│   ├── main.rs                 # clap 子命令定义 + 模块声明（领域模块与工具模块的根）
 │   ├── config/                 # 类型化配置（schema/global/components/plan/busybox）
 │   ├── cli/                    # doctor / build / kernel / vm / probe / mod（分发+解析 helpers）/ diagnostics
-│   └── runs/                   # rundir（run 目录、输出泵、verdict 落盘）
-├── crates/
-│   ├── common/                 # 基础层（零依赖）：Arch 矩阵 / which / ELF / 内存单位 / 时间 / 人类可读大小
+│   ├── runs/                   # rundir（run 目录、输出泵、verdict 落盘）
 │   ├── builder/                # 构建器：镜像发现 / C+Rust 用例 / 模块清单 / busybox 供给 / cpio+ext4 组装 / verify 引擎
 │   ├── launcher/               # 启动 DSL（qemu/）+ NUMA（numa.rs）+ 进程治理（guardian/）
-│   └── judge/                  # 标记协议解析（parse.rs）+ 判定与类型（lib.rs）+ verdict schema（report.rs）+ 退出码语义（exit.rs）
+│   ├── judge/                  # 标记协议解析（parse.rs）+ 判定与类型（mod.rs）+ verdict schema（report.rs）+ 退出码语义（exit.rs）
+│   ├── forge/                  # 容器化内核供给：volume / clone / toolchain / state / devcontainer
+│   └── arch.rs … units.rs      # 顶层工具模块（原 common 摊平，零依赖）：Arch 矩阵 / HostOs / which / ELF / 内存单位 / 时间 / ui / 进度
 ├── infra/                      # VM 内源资产（构建时注入镜像，git 跟踪）
 │   ├── init                    # 测试 init（rootfs 的 PID 1）
 │   ├── init-initramfs          # stage-1 init（initramfs 的 PID 1：mount root= → switch_root）

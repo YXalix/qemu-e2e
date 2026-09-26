@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 
-use launcher::Arch;
+use crate::Arch;
 
 use super::{env_bool, scalar, Config};
 

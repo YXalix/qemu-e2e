@@ -5,7 +5,7 @@
 //! - kernel  → `cli::kernel`（容器化内核供给：clone/defconfig/build/cc*/卷管理；逻辑在 forge）
 //! - vm      → `cli::vm`（shell / test：启动、看门狗、判定接线）
 //!
-//! 行为基线（退出码语义）不变：0=通过、124=超时、其余=失败（单点在 judge::exit）。
+//! 行为基线（退出码语义）不变：0=通过、124=超时、其余=失败（单点在 crate::judge::exit）。
 
 mod build;
 mod diagnostics;
@@ -17,7 +17,8 @@ mod vm;
 
 use std::path::Path;
 
-use launcher::{Arch, NumaTopology};
+use crate::launcher::NumaTopology;
+use crate::Arch;
 
 use crate::config::Config;
 use crate::Command as CliCommand;
@@ -88,12 +89,12 @@ pub(crate) fn kernel_image_path(cfg: &Config, arch: Arch) -> anyhow::Result<std:
 /// tools.img 数据盘（tools 外挂 virtio-blk → guest 内 /dev/vdb 挂 /tools）。
 /// [components.tools_disk] enabled（段缺省 = true）且产物存在才附加——
 /// DSL 缺省 argv 保持基线（冻结不变量 3）。
-pub(crate) fn tools_disk_opt(cfg: &Config) -> Option<launcher::DataDisk> {
+pub(crate) fn tools_disk_opt(cfg: &Config) -> Option<crate::launcher::DataDisk> {
     if !cfg.tools_disk_enabled() {
         return None;
     }
     let p = cfg.artifacts_dir.join("tools.img");
-    p.is_file().then(|| launcher::DataDisk::new(p))
+    p.is_file().then(|| crate::launcher::DataDisk::new(p))
 }
 
 /// agent 通道 socket（[components.agent] enabled 才 Some）。
@@ -120,7 +121,7 @@ pub(crate) struct LaunchPlan<'a> {
     pub cfg: &'a Config,
     pub arch: Arch,
     pub topo: NumaTopology,
-    pub accel: launcher::Accel,
+    pub accel: crate::launcher::Accel,
     /// test 路径 = cfg.auto_test()；shell/probe 无自动测试语义（false）。
     pub auto_test: bool,
     /// 测例选择（`virtuoso test --only`；空 = 全跑）。shell/probe 恒空。
@@ -132,14 +133,14 @@ pub(crate) struct LaunchPlan<'a> {
 /// 单一 QemuInvocation 装配点：shell / test / probe 三份复制链合一，
 /// 成员赋值顺序统一（消除调用方漂移）。缺省成员保持冻结 argv 基线
 /// （无盘无 agent 无 pmem 时逐字等于平台基线）。
-pub(crate) fn build_invocation(plan: &LaunchPlan) -> anyhow::Result<launcher::QemuInvocation> {
+pub(crate) fn build_invocation(plan: &LaunchPlan) -> anyhow::Result<crate::launcher::QemuInvocation> {
     let cfg = plan.cfg;
     let kernel = kernel_image_path(cfg, plan.arch)?;
     // 全局透传兜底（QEMU_OPTS/qemu_opts）在前，组件增量（vfio 设备）在后；
     // 两类来源在装配点显式分清，config 层不混装。
     let mut extra = cfg.qemu_extra();
     extra.extend(cfg.vfio_opts());
-    let mut inv = launcher::QemuInvocation::new(
+    let mut inv = crate::launcher::QemuInvocation::new(
         plan.arch,
         &kernel,
         cfg.artifacts_dir.join("initrd.img"),

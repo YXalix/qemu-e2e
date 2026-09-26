@@ -1,0 +1,233 @@
+//! builder — 构建器。Phase 2 从 `build-initrd.sh` / `fetch-busybox.sh`
+//! 接管：BusyBox 供给、C 用例编译、initramfs/rootfs 组装（行为等价移植，
+//! 消息文本与退出码语义对齐 shell 基线）。
+
+pub(crate) mod busybox;
+pub(crate) mod cargo_install;
+pub(crate) mod cpio;
+pub(crate) mod cross;
+pub(crate) mod image;
+pub(crate) mod modconf;
+pub(crate) mod testcase;
+pub(crate) mod tools;
+pub(crate) mod verify;
+
+use std::path::Path;
+
+use anyhow::Context;
+
+use crate::progress::Progress;
+
+/// VM 内 init 的声明式注入钩子：片段插入 mount 之后、insmod 之前。
+/// 对应 rootfs 内的 `/init-hooks.sh`（缺省不存在，init 侧有守卫 source）。
+#[derive(Debug, Clone)]
+pub(crate) struct InitHook {
+    pub name: String,
+    pub script: String,
+}
+
+impl InitHook {
+    pub(crate) fn shell(name: impl Into<String>, script: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            script: script.into(),
+        }
+    }
+}
+
+/// tools.img 挂载 hook（rootfs 内 `/init-hooks.sh` 的生成片段）：init 在
+/// devtmpfs 挂载后、insmod/agent 拉起前 source——virtio_blk 已由 initramfs
+/// 的 modules-boot.conf 加载，此处直接挂 /dev/vdb 并把工具目录注入 PATH。
+const TOOLS_DISK_HOOK: &str = r#"mkdir -p /tools
+if mount -t ext4 /dev/vdb /tools 2>/dev/null; then
+    export PATH="/tools/bin:$PATH"
+else
+    LOG_WARN "tools disk not mounted (/dev/vdb missing or not ext4); tools unavailable"
+fi"#;
+
+/// 构建两段式引导对（build-initrd.sh 的 Rust 接管）：
+/// `target/artifacts/initrd.img`（initramfs：busybox + modules-boot.conf
+/// 基础集 + 组件 boot 附加 + init-initramfs）与 `target/artifacts/rootfs.img`
+/// （ext4：busybox + 组件 require 生成的 modules.conf + init + /tests）。
+/// 另产出 `target/artifacts/tools.img`（ext4：/bin 常驻工具，VM 内挂 /tools）——
+/// 工具被跳过时不产出。源资产读 `infra_dir`，暂存目录与 busybox 缓存放
+/// `build_dir`（target/build）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_boot_pair(
+    infra_dir: &Path,
+    build_dir: &Path,
+    artifacts_dir: &Path,
+    kernel_path: &Path,
+    arch: crate::Arch,
+    supply: &busybox::Supply,
+    hooks: &[InitHook],
+    modules: &modconf::Modules,
+    progress: &mut Progress,
+) -> anyhow::Result<()> {
+    // 与脚本一致的先决检查
+    if !kernel_path.join("arch").is_dir() {
+        anyhow::bail!(
+            "Cannot find kernel source directory at {}\nSet KERNEL_PATH environment variable to specify the location:\n  KERNEL_PATH=/path/to/kernel virtuoso build",
+            kernel_path.display()
+        );
+    }
+    if image::find_mke2fs().is_none() {
+        anyhow::bail!("mke2fs not found (Linux: e2fsprogs package; macOS: brew install e2fsprogs)");
+    }
+    std::fs::create_dir_all(build_dir)?;
+    std::fs::create_dir_all(artifacts_dir)?;
+
+    // 交叉接线（全宿主：CC 通道供 C 测试体；LINKER/rustflags 仅非 Linux）
+    let cross_setup = cross::setup(arch, build_dir)?;
+    if let Some(note) = &cross_setup.note {
+        progress.line(note);
+    }
+    let busybox_bin = busybox::ensure(build_dir, arch, supply, progress)?;
+    let version = supply
+        .version
+        .clone()
+        .unwrap_or_else(|| busybox::DEFAULT_VERSION.into());
+    let applets = busybox::applet_names(infra_dir, &version, &busybox_bin)?;
+
+    // ---------- initrd.img: minimal initramfs ----------
+    progress.line("Building initrd.img (minimal initramfs)...");
+    let initramfs_dir = build_dir.join("initramfs");
+    assemble_busybox_tree(&initramfs_dir, &busybox_bin, &applets)?;
+    std::fs::copy(infra_dir.join("init-initramfs"), initramfs_dir.join("init"))
+        .context("copy init-initramfs failed")?;
+    crate::fsutil::set_executable(&initramfs_dir.join("init"))?;
+    std::fs::create_dir_all(initramfs_dir.join("mnt"))?;
+    std::fs::create_dir_all(initramfs_dir.join("lib/modules"))?;
+    let (boot_names, boot_conf_text) =
+        modconf::boot_set(&infra_dir.join("modules-boot.conf"), &modules.boot_extra)?;
+    modconf::copy_module_list(
+        &initramfs_dir.join("lib/modules"),
+        &boot_names,
+        &boot_conf_text,
+        "modules-boot.conf",
+        kernel_path,
+        infra_dir,
+        progress,
+    )?;
+    cpio::pack_dir_gzip(&initramfs_dir, &artifacts_dir.join("initrd.img"))?;
+
+    // ---------- rootfs.img: ext4 rootfs with tests ----------
+    progress.line("Building rootfs.img (ext4 rootfs)...");
+    let rootfs_dir = build_dir.join("rootfs");
+    assemble_busybox_tree(&rootfs_dir, &busybox_bin, &applets)?;
+    std::fs::copy(infra_dir.join("init"), rootfs_dir.join("init")).context("copy init failed")?;
+    crate::fsutil::set_executable(&rootfs_dir.join("init"))?;
+    std::fs::create_dir_all(rootfs_dir.join("lib/modules"))?;
+    let (runtime_names, runtime_conf): (Vec<String>, String) = (
+        modules
+            .runtime
+            .iter()
+            .map(|l| modconf::module_name(l).to_string())
+            .filter(|n| !n.is_empty())
+            .collect(),
+        modconf::runtime_conf_text(&modules.runtime),
+    );
+    modconf::copy_module_list(
+        &rootfs_dir.join("lib/modules"),
+        &runtime_names,
+        &runtime_conf,
+        "modules.conf",
+        kernel_path,
+        infra_dir,
+        progress,
+    )?;
+    testcase::install_rust(
+        &infra_dir.join("testcases"),
+        &rootfs_dir.join("tests"),
+        arch,
+        &cross_setup,
+        progress,
+    )?;
+    // tools workspace（常驻工具）→ tools.img 的 /bin：与用例分类正交，见
+    // tools::install。装入成功才产出 tools.img 并注入挂载 hook（降级语义）。
+    let tools_dir = build_dir.join("tools");
+    let tools_installed = tools::install(
+        &infra_dir.join("tools"),
+        &tools_dir.join("bin"),
+        arch,
+        &cross_setup,
+        progress,
+    )?;
+    let mut hooks = hooks.to_vec();
+    if tools_installed {
+        image::make_ext4(&tools_dir, &artifacts_dir.join("tools.img"), "tools")?;
+        hooks.push(InitHook::shell("tools-disk", TOOLS_DISK_HOOK));
+    }
+    write_hooks(&rootfs_dir, &hooks)?;
+    image::make_ext4(&rootfs_dir, &artifacts_dir.join("rootfs.img"), "rootfs")?;
+
+    progress.line("");
+    progress.line("Done:");
+    let mut built = vec!["initrd.img", "rootfs.img"];
+    if tools_installed {
+        built.push("tools.img");
+    }
+    for f in built {
+        let p = artifacts_dir.join(f);
+        let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+        progress.line(&format!("  {} {}", f, crate::fmt::human_size_ls(size)));
+    }
+    Ok(())
+}
+
+/// busybox 用户land 组装：静态二进制 + applet 符号链接 + 骨架目录 + root 账户。
+/// 符号链接由名单驱动（`busybox::applet_names`），不执行 guest 二进制 ——
+/// 交叉组装（含 macOS 宿主）无需宿主同构。
+pub(crate) fn assemble_busybox_tree(
+    dest: &Path,
+    busybox_bin: &Path,
+    applets: &[String],
+) -> anyhow::Result<()> {
+    if dest.exists() {
+        std::fs::remove_dir_all(dest)?;
+    }
+    for d in [
+        "bin",
+        "sbin",
+        "usr/bin",
+        "usr/sbin",
+        "proc",
+        "sys",
+        "dev",
+        "tmp",
+        "mnt",
+        "etc/init.d",
+        "var/run",
+        "root",
+    ] {
+        std::fs::create_dir_all(dest.join(d))?;
+    }
+    std::fs::copy(busybox_bin, dest.join("bin/busybox"))?;
+    crate::fsutil::set_executable(&dest.join("bin/busybox"))?;
+
+    // applet → bin/<name> 相对符号链接（目标恒 "busybox"，无需事后改写）
+    for name in applets {
+        let link = dest.join("bin").join(name);
+        if link.exists() || link.is_symlink() {
+            continue;
+        }
+        std::os::unix::fs::symlink("busybox", &link)
+            .with_context(|| format!("symlink {} failed", link.display()))?;
+    }
+
+    std::fs::write(dest.join("etc/passwd"), "root:x:0:0:root:/root:/bin/sh\n")?;
+    std::fs::write(dest.join("etc/group"), "root:x:0:\n")?;
+    Ok(())
+}
+
+fn write_hooks(rootfs_dir: &Path, hooks: &[InitHook]) -> anyhow::Result<()> {
+    if hooks.is_empty() {
+        return Ok(());
+    }
+    let mut body = String::from("# generated by builder (InitHook)\n");
+    for h in hooks {
+        body.push_str(&format!("# --- hook: {} ---\n{}\n", h.name, h.script));
+    }
+    std::fs::write(rootfs_dir.join("init-hooks.sh"), body)?;
+    Ok(())
+}

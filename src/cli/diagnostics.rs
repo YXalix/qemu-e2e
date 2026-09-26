@@ -1,7 +1,8 @@
 //! 配置诊断呈现（`virtuoso doctor --verbose` 的全量输出）。
 //! 从 config 层拆出：config 只管解析与取值，本模块负责打印。
 
-use launcher::{Arch, NumaTopology};
+use crate::launcher::NumaTopology;
+use crate::Arch;
 
 use crate::config::Config;
 
@@ -110,8 +111,8 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
     if let Some(arch) = cfg.arch() {
         let override_q = cfg.qemu_override();
         let found = match &override_q {
-            Some(q) => common::fsutil::which(q),
-            None => common::fsutil::which(arch.qemu_bin()),
+            Some(q) => crate::fsutil::which(q),
+            None => crate::fsutil::which(arch.qemu_bin()),
         };
         let label = override_q.as_deref().unwrap_or(arch.qemu_bin());
         println!(

@@ -8,9 +8,9 @@
 
 use std::path::PathBuf;
 
-use launcher::Arch;
+use crate::Arch;
 
-use forge::Progress;
+use crate::progress::Progress;
 
 use super::resolve_arch;
 use crate::config::Config;
@@ -62,16 +62,16 @@ fn current_volume(cfg: &Config) -> anyhow::Result<String> {
             return Ok(v);
         }
     }
-    if let Some(cur) = forge::state::read(&cfg.project_root)? {
+    if let Some(cur) = crate::forge::state::read(&cfg.project_root)? {
         return Ok(cur.volume);
     }
-    Ok(forge::DEFAULT_VOLUME.to_string())
+    Ok(crate::forge::DEFAULT_VOLUME.to_string())
 }
 
 /// 工具链镜像：env KERNEL_TOOLCHAIN_IMAGE > ghcr 发布镜像（pull 失败回落本地
 /// 构建 devkit/docker/Dockerfile.kernel）。
 fn toolchain_image() -> String {
-    forge::toolchain::resolve_image()
+    crate::forge::toolchain::resolve_image()
 }
 
 /// clone ref：CLI --ref > env KERNEL_REF > 缺省 master。
@@ -83,7 +83,7 @@ fn clone_ref(cli_ref: Option<&str>) -> String {
                 .ok()
                 .filter(|v| !v.trim().is_empty())
         })
-        .unwrap_or_else(|| forge::DEFAULT_REF.to_string())
+        .unwrap_or_else(|| crate::forge::DEFAULT_REF.to_string())
 }
 
 fn dockerfile_dir(cfg: &Config) -> PathBuf {
@@ -106,12 +106,12 @@ fn run_clone(
                 .ok()
                 .filter(|v| !v.trim().is_empty())
         })
-        .unwrap_or_else(|| forge::DEFAULT_VOLUME.to_string());
+        .unwrap_or_else(|| crate::forge::DEFAULT_VOLUME.to_string());
     let arch = kernel_arch(&cfg, cli_arch)?;
     let ref_name = clone_ref(cli_ref);
     let mut progress = Progress::stdout();
-    let view = forge::clone::run(
-        &forge::clone::CloneJob {
+    let view = crate::forge::clone::run(
+        &crate::forge::clone::CloneJob {
             project_root: &cfg.project_root,
             volume_name: &volume,
             arch,
@@ -144,11 +144,11 @@ fn run_defconfig(name: Option<&str>, cli_arch: Option<&str>) -> anyhow::Result<i
         "Kernel: make {target}（volume {volume}，arch {}）",
         arch.name()
     );
-    forge::toolchain::run_streaming(
+    crate::forge::toolchain::run_streaming(
         &volume,
         &toolchain_image(),
-        &forge::toolchain::make_env(arch),
-        &format!("make {}", forge::toolchain::shell_quote(target)),
+        &crate::forge::toolchain::make_env(arch),
+        &format!("make {}", crate::forge::toolchain::shell_quote(target)),
     )?;
     Ok(0)
 }
@@ -162,18 +162,18 @@ fn run_build(jobs: Option<usize>, cli_arch: Option<&str>) -> anyhow::Result<i32>
             .map(|n| n.get())
             .unwrap_or(8)
     });
-    let image_target = forge::toolchain::make_image_target(arch);
+    let image_target = crate::forge::toolchain::make_image_target(arch);
     println!(
         "Kernel: make -j{jobs} {image_target} modules（volume {volume}，arch {}）",
         arch.name()
     );
-    forge::toolchain::run_streaming(
+    crate::forge::toolchain::run_streaming(
         &volume,
         &toolchain_image(),
-        &forge::toolchain::make_env(arch),
+        &crate::forge::toolchain::make_env(arch),
         &format!("make -j{jobs} {image_target} modules"),
     )?;
-    forge::toolchain::cdb_generate(&volume, &toolchain_image())?;
+    crate::forge::toolchain::cdb_generate(&volume, &toolchain_image())?;
     println!(
         "Kernel: built {image_target} + modules; compile_commands.json generated (raw form under /ksrc, consumed by clangd in the devcontainer)"
     );
@@ -186,7 +186,7 @@ fn run_path(volume_flag: Option<&str>) -> anyhow::Result<i32> {
         Some(v) => v.to_string(),
         None => current_volume(&cfg)?,
     };
-    let view = forge::volume::host_view(&volume)?;
+    let view = crate::forge::volume::host_view(&volume)?;
     if !view.is_dir() {
         if std::env::consts::OS == "macos" {
             anyhow::bail!(
@@ -204,10 +204,10 @@ fn run_shell(cli_arch: Option<&str>) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     let volume = current_volume(&cfg)?;
     let arch = kernel_arch(&cfg, cli_arch)?;
-    forge::toolchain::run_tty(
+    crate::forge::toolchain::run_tty(
         &volume,
         &toolchain_image(),
-        &forge::toolchain::make_env(arch),
+        &crate::forge::toolchain::make_env(arch),
         &["/bin/bash"],
     )
 }
@@ -216,15 +216,15 @@ fn run_shell(cli_arch: Option<&str>) -> anyhow::Result<i32> {
 
 fn run_list() -> anyhow::Result<i32> {
     let cfg = Config::load()?;
-    let volumes = forge::volume::list()?;
+    let volumes = crate::forge::volume::list()?;
     if volumes.is_empty() {
         println!("(no volumes yet — create one with `virtuoso kernel clone <git-url>`)");
         return Ok(0);
     }
-    let current = forge::state::read(&cfg.project_root)?;
+    let current = crate::forge::state::read(&cfg.project_root)?;
     for v in volumes {
-        let view = forge::volume::host_view(&v).ok();
-        let label = match view.as_ref().map(|p| forge::volume::status(p)) {
+        let view = crate::forge::volume::host_view(&v).ok();
+        let label = match view.as_ref().map(|p| crate::forge::volume::status(p)) {
             Some(s) => s.label(),
             None => "unreachable",
         };
@@ -245,14 +245,14 @@ fn run_list() -> anyhow::Result<i32> {
 fn run_use(volume: &str, cli_arch: Option<&str>) -> anyhow::Result<i32> {
     let cfg = Config::load()?;
     anyhow::ensure!(
-        forge::volume::exists(volume),
+        crate::forge::volume::exists(volume),
         "volume {volume} does not exist (see `virtuoso kernel list`, or create it with `virtuoso kernel clone <git-url> --as {volume}`)"
     );
     // --arch 覆盖记录的架构（KERNEL_ARCH/env/顶层 arch 由 kernel_arch 统一解析）
     let arch = kernel_arch(&cfg, cli_arch)?;
-    forge::state::write(
+    crate::forge::state::write(
         &cfg.project_root,
-        &forge::state::Current {
+        &crate::forge::state::Current {
             volume: volume.to_string(),
             arch: arch.name().to_string(),
         },

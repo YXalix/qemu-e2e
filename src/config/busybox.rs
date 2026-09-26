@@ -1,6 +1,6 @@
 //! BusyBox 供给配置（[busybox] 段 + BUSYBOX_* 环境变量）。
 
-use builder::busybox;
+use crate::builder::busybox;
 
 use super::{env_bool, scalar, Config};
 
