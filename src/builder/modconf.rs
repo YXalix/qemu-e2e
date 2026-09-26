@@ -10,7 +10,7 @@ use std::path::Path;
 
 use anyhow::Context;
 
-use crate::progress::Progress;
+use crate::util::Progress;
 
 /// 组件计划投影出的模块清单：`boot_extra` 追加在 modules-boot.conf 冻结
 /// 基础集之后（initramfs 阶段），`runtime` 生成 /lib/modules/modules.conf。

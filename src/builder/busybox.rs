@@ -14,7 +14,7 @@ use std::process::Command;
 use anyhow::Context;
 use crate::Arch;
 
-use crate::progress::Progress;
+use crate::util::Progress;
 
 pub(crate) const DEFAULT_VERSION: &str = "1.36.1";
 
@@ -64,12 +64,12 @@ pub(crate) fn ensure(
         // 2/3) release 下载
         if let Some(repo) = resolve_repo(build_dir, &supply.release_repo) {
             // 2) gh（认证可用时）
-            if crate::fsutil::which("gh") && gh_auth_ok() {
+            if crate::util::which("gh") && gh_auth_ok() {
                 progress.line(&format!("Fetching {asset} via gh from {repo} ({tag})"));
                 let tmp = bin.with_extension("tmp");
-                if gh_download_asset(&repo, &tag, &asset, &tmp) && crate::fsutil::is_elf(&tmp) {
+                if gh_download_asset(&repo, &tag, &asset, &tmp) && crate::util::is_elf(&tmp) {
                     std::fs::rename(&tmp, &bin)?;
-                    crate::fsutil::set_executable(&bin)?;
+                    crate::util::set_executable(&bin)?;
                     progress.line(&format!("BusyBox: downloaded via gh ({})", arch.name()));
                     return Ok(bin);
                 }
@@ -96,9 +96,9 @@ pub(crate) fn ensure(
 fn try_wget(url: &str, bin: &Path, asset: &str, progress: &mut Progress) -> bool {
     let tmp = bin.with_extension("tmp");
     progress.line(&format!("Fetching {asset} from {url}"));
-    let ok = fetch(url, &tmp) && crate::fsutil::is_elf(&tmp);
+    let ok = fetch(url, &tmp) && crate::util::is_elf(&tmp);
     if ok {
-        crate::fsutil::set_executable(&tmp).ok();
+        crate::util::set_executable(&tmp).ok();
         let _ = std::fs::rename(&tmp, bin);
         progress.line("BusyBox: downloaded");
         true
@@ -121,7 +121,7 @@ pub(crate) fn gh_download_asset(repo: &str, tag: &str, asset: &str, dest: &Path)
 
 /// 下载到 `tmp`：wget 优先，缺失回落 curl（macOS 无 wget 但自带 curl）。
 pub(crate) fn fetch(url: &str, tmp: &Path) -> bool {
-    let (bin, args) = if crate::fsutil::which("wget") {
+    let (bin, args) = if crate::util::which("wget") {
         ("wget", vec!["-q".to_string(), "-O".to_string()])
     } else {
         ("curl", vec!["-fsSL".to_string(), "-o".to_string()])
@@ -300,7 +300,7 @@ fn build_from_source(
 
     let bin = cache_bin(build_dir, arch);
     std::fs::copy(src_dir.join("busybox"), &bin)?;
-    crate::fsutil::set_executable(&bin)?;
+    crate::util::set_executable(&bin)?;
 
     if host_norm != arch.name() {
         progress.line(&format!(

@@ -40,7 +40,7 @@ impl NumaTopology {
     pub(crate) fn total_memory(&self) -> anyhow::Result<String> {
         // common 零依赖保留 String 错误面，此处上收为 anyhow
         let (n, unit) =
-            crate::units::parse_memory(&self.memory_per_node).map_err(anyhow::Error::msg)?;
+            crate::util::parse_memory(&self.memory_per_node).map_err(anyhow::Error::msg)?;
         let total = n.saturating_mul(self.nodes as u64);
         Ok(unit.render(total))
     }

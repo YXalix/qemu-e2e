@@ -11,7 +11,7 @@ use std::path::Path;
 use anyhow::Context;
 
 use crate::builder::cross::CrossSetup;
-use crate::progress::Progress;
+use crate::util::Progress;
 
 /// 一次装载任务的静态描述。
 pub(crate) struct CargoInstall<'a> {
@@ -33,7 +33,7 @@ impl CargoInstall<'_> {
         if !self.rust_dir.join("Cargo.toml").is_file() {
             return Ok(0);
         }
-        if !crate::fsutil::which("cargo") {
+        if !crate::util::which("cargo") {
             progress.line(&format!(
                 "  WARNING: {} skipped (cargo not found)",
                 self.label
@@ -89,7 +89,7 @@ impl CargoInstall<'_> {
                     .to_string();
                 std::fs::copy(&bin, self.dest.join(&name))
                     .with_context(|| format!("copy {} failed", bin.display()))?;
-                crate::fsutil::set_executable(&self.dest.join(&name))?;
+                crate::util::set_executable(&self.dest.join(&name))?;
                 progress.line(&format!("{} {name}", self.item_prefix));
                 installed += 1;
             }

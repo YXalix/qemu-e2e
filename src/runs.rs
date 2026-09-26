@@ -1,4 +1,13 @@
-//! 运行目录与工件 IO：目录生命周期、输出泵、verdict.json 落盘/回读。
+//! 运行工件（runs 领域）：运行目录（生命周期/保留策略）、输出泵、
+//! verdict.json 落盘/回读。
+//!
+//! 职责边界：
+//! - 本模块只做 **IO**；判定语义在 judge（标记协议解析 + verdict 判定 +
+//!   schema），本模块不重复实现；
+//! - verdict.json 的 schema 单点定义在 `crate::judge::VerdictReport`（此处
+//!   引用）；退出码语义单点在 `crate::judge`（EXIT_TIMEOUT/normalize）；
+//!   判定呈现单点在 `test` 收尾行 + `verdict.json`（机读唯一面），无第二
+//!   呈现命令。正常收尾与 Ctrl-C 兜底共用同一构造路径。
 
 use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
@@ -6,9 +15,9 @@ use std::process::{Child, ExitStatus};
 
 use anyhow::Context;
 
-use crate::time::unix_ms;
-use crate::judge::report::{Artifacts, RunMeta, VerdictReport};
-use crate::judge::{Audit, Event, EventKind};
+use crate::util::unix_ms;
+pub(crate) use crate::judge::RunMeta;
+use crate::judge::{Artifacts, Audit, Event, EventKind, VerdictReport};
 
 pub const RUNS_KEEP: usize = 20;
 
@@ -221,6 +230,8 @@ pub fn finalize_run(run: &RunDir, meta: &RunMeta) -> anyhow::Result<String> {
     )?;
     Ok(verdict.as_str().to_string())
 }
+
+// ---------------------------------------------------------------- 测试
 
 #[cfg(test)]
 mod tests {

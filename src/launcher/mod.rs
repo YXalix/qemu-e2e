@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::Arch;
-pub(crate) use guardian::registry::{install_ctrlc_guard, spawn_watchdog};
+pub(crate) use guardian::{install_ctrlc_guard, spawn_watchdog};
 pub(crate) use numa::NumaTopology;
 pub(crate) use qemu::{Accel, QemuInvocation};
 
@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn shell_quote_safe_chars_verbatim_spaces_quoted() {
         // 语义钉在 crate::shell（本 crate 经 re-export 消费）
-        assert_eq!(crate::shell::quote("/tmp/a b.img"), "'/tmp/a b.img'");
-        assert_eq!(crate::shell::quote("a'b"), "'a'\\''b'");
+        assert_eq!(crate::util::quote("/tmp/a b.img"), "'/tmp/a b.img'");
+        assert_eq!(crate::util::quote("a'b"), "'a'\\''b'");
     }
 }

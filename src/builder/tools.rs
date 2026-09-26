@@ -16,7 +16,7 @@
 use std::path::Path;
 
 use crate::builder::cross::CrossSetup;
-use crate::progress::Progress;
+use crate::util::Progress;
 
 pub(crate) fn install(
     rust_dir: &Path,

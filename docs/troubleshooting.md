@@ -106,5 +106,5 @@ volume（ext4）正确；自行 bind-mount APFS 目录会踩坑，别这么做�
 
 ## 工件占满磁盘
 
-**Solution**: 每次运行保留最近 20 次（`src/runs/rundir.rs` 的 `RUNS_KEEP`），
+**Solution**: 每次运行保留最近 20 次（`src/runs.rs` 的 `RUNS_KEEP`），
 `target/runs/` 在 `/target` 下随 `cargo clean` 一并清除；单次工件通常 < 1 MiB。

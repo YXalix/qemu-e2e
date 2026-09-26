@@ -68,10 +68,10 @@ fn render_memory(bytes: u64) -> String {
 
 /// "256M"/裸数字 → 字节数（QEMU 语义：裸数字 = 字节）。
 fn memory_bytes(s: &str, what: &str) -> anyhow::Result<u64> {
-    let (n, unit) = crate::units::parse_memory(s)
+    let (n, unit) = crate::util::parse_memory(s)
         .map_err(|e| anyhow::anyhow!("[components.pmem] invalid {what}: {e}"))?;
     Ok(match unit {
-        crate::units::MemUnit::Bare => n,
+        crate::util::MemUnit::Bare => n,
         _ => unit.to_mib(n) * 1024 * 1024,
     })
 }

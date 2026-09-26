@@ -5,7 +5,7 @@
 //! - kernel  → `cli::kernel`（容器化内核供给：clone/defconfig/build/cc*/卷管理；逻辑在 forge）
 //! - vm      → `cli::vm`（shell / test：启动、看门狗、判定接线）
 //!
-//! 行为基线（退出码语义）不变：0=通过、124=超时、其余=失败（单点在 crate::judge::exit）。
+//! 行为基线（退出码语义）不变：0=通过、124=超时、其余=失败（单点在 crate::judge）。
 
 mod build;
 mod diagnostics;

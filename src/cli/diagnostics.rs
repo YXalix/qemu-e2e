@@ -111,8 +111,8 @@ pub fn print_diagnostics(cfg: &Config, arch_override: Option<&str>) {
     if let Some(arch) = cfg.arch() {
         let override_q = cfg.qemu_override();
         let found = match &override_q {
-            Some(q) => crate::fsutil::which(q),
-            None => crate::fsutil::which(arch.qemu_bin()),
+            Some(q) => crate::util::which(q),
+            None => crate::util::which(arch.qemu_bin()),
         };
         let label = override_q.as_deref().unwrap_or(arch.qemu_bin());
         println!(

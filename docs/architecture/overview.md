@@ -86,14 +86,15 @@ virtuoso/
 ├── virtuoso.toml               # 唯一配置面（模板：活动行 = 缺省常规启动配置）
 ├── src/
 │   ├── main.rs                 # clap 子命令定义 + 模块声明（领域模块与工具模块的根）
-│   ├── config/                 # 类型化配置（schema/global/components/plan/busybox）
+│   ├── config.rs               # 类型化配置（schema → 全局/组件/BusyBox 访问器 → ComponentPlan）
 │   ├── cli/                    # doctor / build / kernel / vm / probe / mod（分发+解析 helpers）/ diagnostics
-│   ├── runs/                   # rundir（run 目录、输出泵、verdict 落盘）
-│   ├── builder/                # 构建器：镜像发现 / C+Rust 用例 / 模块清单 / busybox 供给 / cpio+ext4 组装 / verify 引擎
-│   ├── launcher/               # 启动 DSL（qemu/）+ NUMA（numa.rs）+ 进程治理（guardian/）
-│   ├── judge/                  # 标记协议解析（parse.rs）+ 判定与类型（mod.rs）+ verdict schema（report.rs）+ 退出码语义（exit.rs）
-│   ├── forge/                  # 容器化内核供给：volume / clone / toolchain / state / devcontainer
-│   └── arch.rs … units.rs      # 顶层工具模块（原 common 摊平，零依赖）：Arch 矩阵 / HostOs / which / ELF / 内存单位 / 时间 / ui / 进度
+│   ├── runs.rs                 # 运行工件 IO（run 目录、输出泵、verdict 落盘）
+│   ├── builder/                # 构建器：镜像发现 / C+Rust 用例 / 模块清单 / busybox 供给 / cpio+ext4 组装（verify.rs 引擎同层）
+│   ├── launcher/               # 启动 DSL（qemu/）+ NUMA（numa.rs）+ 进程治理（guardian.rs）
+│   ├── judge.rs                # 标记协议解析 + 判定与类型 + verdict schema + 退出码语义
+│   ├── forge.rs                # 容器化内核供给：volume / toolchain / clone / state / devcontainer
+│   ├── arch.rs                 # Arch 架构矩阵 + HostOs 宿主平台（零依赖）
+│   └── util.rs                 # 顶层工具集（原 common 摊平，零依赖）：which/ELF / 内存单位 / 时间 / ui / 进度 / shell 引用 / 退出码
 ├── infra/                      # VM 内源资产（构建时注入镜像，git 跟踪）
 │   ├── init                    # 测试 init（rootfs 的 PID 1）
 │   ├── init-initramfs          # stage-1 init（initramfs 的 PID 1：mount root= → switch_root）

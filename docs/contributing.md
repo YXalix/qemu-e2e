@@ -4,9 +4,9 @@
 
 - VM 内 shell 代码保持 POSIX 兼容（`init` / `init-initramfs` 跑在 BusyBox
   `sh`，不是 bash）；改完先 `busybox sh -n` 语法校验。
-- 新增前置条件 → 同步 `src/builder/verify/`（检查引擎：`mod.rs` 输入与
-  编排、`checks.rs` 逐项检查、`check.rs` 类型与渲染；doctor 的分组呈现自动跟随，
-  见 `src/cli/doctor/`）。
+- 新增前置条件 → 同步 `src/builder/verify.rs`（检查引擎单文件：类型与渲染、
+  `CheckInput`/`run_checks` 编排、逐项检查函数分节；doctor 的分组呈现自动跟随，
+  见 `src/cli/doctor.rs`）。
 - harness 暴露新行为 → 配一个对应测试用例。
 - 用户可见行为变化 → 更新本文档站（`docs/`）与 `devkit/skills/kernel-dev/SKILL.md`。
 - 冻结项不许动：标记协议 v1、test 退出码语义、`QemuInvocation::argv` 基线

@@ -3,22 +3,23 @@
 单包 crate 的内部模块设计。总体架构见[上一页](overview.md)；对外冻结的协议与
 契约见[冻结契约](contracts.md)。
 
-## 顶层工具模块（原 common 摊平）
+## 顶层：arch 与 util
 
-零依赖的横切类型直接住在 `src/` 顶层：`arch.rs`（`Arch` 矩阵唯一事实来源：
-QEMU 二进制 / 内核镜像路径 / console / machine / triple 系列）、`platform.rs`
-（`HostOs`）、`fsutil.rs`（`which` 与 ELF 探测）、`units.rs`（内存量解析）、
-`time.rs`（UTC 时间）、`fmt.rs`（人类可读大小）、`progress.rs` / `ui.rs` /
-`shell.rs` / `exit.rs`。领域模块与 cli 直接 `use crate::…`，无中间层。
+零依赖的横切类型住在 `src/` 顶层两个文件：`arch.rs`（`Arch` 架构矩阵唯一
+事实来源：QEMU 二进制 / 内核镜像路径 / console / machine / triple 系列；
+`HostOs` 宿主平台分类同文件）与 `util.rs`（原 common 基础层摊平后的单文件
+形态：fsutil 的 `which` 与 ELF 探测、内存量解析、UTC 时间、人类可读大小、
+进度输出、终端颜色、shell 引用、中断退出码常量，分节承载）。领域模块与
+cli 直接 `use crate::…`，无中间层。
 
-## src/config/ — 类型化配置
+## src/config.rs — 类型化配置
 
 `virtuoso.toml` 是唯一配置面：全局键 + `[components.*]` 组件段 +
 `[busybox]` 版本段。标量键优先级：进程环境变量 > `virtuoso.toml`
 （同名键 env 覆盖 toml，临时改参不动文件）；未知键 / 非法类型解析期报错
-（`deny_unknown_fields`，逐结构体显式声明而非 flatten）。模块按关注点拆分：
-`schema`（toml 结构与解析期防线）/ `global`（全局标量访问器）/
-`components`（组件开关与参数投影）/ `plan`（并集分区）/ `busybox`（供给配置）。
+（`deny_unknown_fields`，逐结构体显式声明而非 flatten）。单文件按关注点
+分节：toml schema（结构与解析期防线）→ 全局标量访问器 → 组件访问器 →
+BusyBox 供给配置 → ComponentPlan（并集分区）。
 
 `ComponentPlan` 把启用组件的 require 并集（schema 固定顺序
 tools_disk→agent→vfio→numa→pmem，按首 token 去重保首个）按 stage 分区：
@@ -65,11 +66,11 @@ dumpdtb 生成设备树 + fdtput 注入 `pmem-region` 节点（of_pmem 绑定，
 进程治理与启动是一体的生命周期，作为 launcher 的 `guardian` 子模块承载：
 
 * **`ProcessGroupGuard`（RAII）**：QEMU 进程组收割，Drop / 超时 / Ctrl-C 三路径统一 KILL；pgid=0 惰性登记防自杀。
-* **`registry`**：活动进程组全局注册表 + Ctrl-C 守护（`install_ctrlc_guard`，cli 入口装载）+ 墙钟看门狗。`Supervised` 是"登记 + 收割守卫"组合句柄，与 `spawn_supervised` 消除 spawn 样板。
+* **注册表与看门狗**：活动进程组全局注册表 + Ctrl-C 守护（`install_ctrlc_guard`，cli 入口装载）+ 墙钟看门狗。`Supervised` 是"登记 + 收割守卫"组合句柄，与 `spawn_supervised` 消除 spawn 样板。
 
 `virtuoso test` 中途被 Ctrl-C 打断时：收割 QEMU 进程组 → 落盘已产出的 run 工件 → 以 130 退出，宿主机不残留虚拟化进程。
 
-## src/judge/ — 判定引擎
+## src/judge.rs — 判定引擎
 
 **串口标记协议 v1（冻结）**：
 
@@ -92,5 +93,5 @@ dumpdtb 生成设备树 + fdtput 注入 `pmem-region` 节点（of_pmem 绑定，
 test_end / assert / summary / marker / panic / oops / run_end）、
 `verdict.json`（`VerdictReport`：汇总判定 + 运行指纹——内核 mtime/大小、QEMU
 版本、拓扑、超时；构造与回读共用同一 serde schema）。退出码语义唯一表在
-`judge::exit`（0=通过、124=超时、其余=失败）。工件详解见
+`judge`（`EXIT_TIMEOUT` / `normalize`：0=通过、124=超时、其余=失败）。工件详解见
 [运行工件与分诊](../guide/artifacts.md)。

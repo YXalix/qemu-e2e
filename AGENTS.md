@@ -10,8 +10,8 @@ Virtuoso 是 QEMU 内核 E2E 测试装置：供给内核 → 构建 BusyBox+musl
 QEMU 启动跑 `/tests/` → 串口标记协议判定 → verdict.json 落盘。**单包 Rust crate
 是唯一行为权威**（`src/` 下：`main` 子命令分发 + `cli` 命令实现 + `config` 类型化
 配置 + `runs` 运行工件 + 领域模块 `builder` 构建 / `launcher` 启动+进程治理 /
-`judge` 判定+跨 run 聚类 / `forge` 容器化内核供给；顶层工具模块 `arch` / `ui` /
-`fsutil` 等为原 common 摊平）；
+`judge` 判定 / `forge` 容器化内核供给；`arch`（Arch 矩阵 + HostOs）与
+`util`（顶层工具集）为原 common 摊平）；
 `infra/` 是 VM 内源资产（init、testcases、tools、busybox 名单——多为冻结数据）；
 `devkit/` 是内核开发容器与 AI skill 源；构建产物与运行工件落 `target/`（git 忽略）。
 

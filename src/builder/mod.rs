@@ -16,7 +16,7 @@ use std::path::Path;
 
 use anyhow::Context;
 
-use crate::progress::Progress;
+use crate::util::Progress;
 
 /// VM 内 init 的声明式注入钩子：片段插入 mount 之后、insmod 之前。
 /// 对应 rootfs 内的 `/init-hooks.sh`（缺省不存在，init 侧有守卫 source）。
@@ -95,7 +95,7 @@ pub(crate) fn build_boot_pair(
     assemble_busybox_tree(&initramfs_dir, &busybox_bin, &applets)?;
     std::fs::copy(infra_dir.join("init-initramfs"), initramfs_dir.join("init"))
         .context("copy init-initramfs failed")?;
-    crate::fsutil::set_executable(&initramfs_dir.join("init"))?;
+    crate::util::set_executable(&initramfs_dir.join("init"))?;
     std::fs::create_dir_all(initramfs_dir.join("mnt"))?;
     std::fs::create_dir_all(initramfs_dir.join("lib/modules"))?;
     let (boot_names, boot_conf_text) =
@@ -116,7 +116,7 @@ pub(crate) fn build_boot_pair(
     let rootfs_dir = build_dir.join("rootfs");
     assemble_busybox_tree(&rootfs_dir, &busybox_bin, &applets)?;
     std::fs::copy(infra_dir.join("init"), rootfs_dir.join("init")).context("copy init failed")?;
-    crate::fsutil::set_executable(&rootfs_dir.join("init"))?;
+    crate::util::set_executable(&rootfs_dir.join("init"))?;
     std::fs::create_dir_all(rootfs_dir.join("lib/modules"))?;
     let (runtime_names, runtime_conf): (Vec<String>, String) = (
         modules
@@ -170,7 +170,7 @@ pub(crate) fn build_boot_pair(
     for f in built {
         let p = artifacts_dir.join(f);
         let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-        progress.line(&format!("  {} {}", f, crate::fmt::human_size_ls(size)));
+        progress.line(&format!("  {} {}", f, crate::util::human_size_ls(size)));
     }
     Ok(())
 }
@@ -203,7 +203,7 @@ pub(crate) fn assemble_busybox_tree(
         std::fs::create_dir_all(dest.join(d))?;
     }
     std::fs::copy(busybox_bin, dest.join("bin/busybox"))?;
-    crate::fsutil::set_executable(&dest.join("bin/busybox"))?;
+    crate::util::set_executable(&dest.join("bin/busybox"))?;
 
     // applet → bin/<name> 相对符号链接（目标恒 "busybox"，无需事后改写）
     for name in applets {

@@ -72,7 +72,7 @@ pub(crate) fn setup(arch: Arch, build_dir: &Path) -> anyhow::Result<CrossSetup> 
             ..Default::default()
         });
     }
-    let Some(_zig) = crate::fsutil::which_path("zig") else {
+    let Some(_zig) = crate::util::which_path("zig") else {
         if non_linux {
             anyhow::bail!(
                 "非 Linux 宿主编译 guest 资产需要 zig（brew install zig）\n  \
@@ -96,7 +96,7 @@ pub(crate) fn setup(arch: Arch, build_dir: &Path) -> anyhow::Result<CrossSetup> 
     // rust 风格 --target=<rust triple>（zig 报 UnknownOperatingSystem，
     // zig 0.16 实测），追加式内嵌 target 把它稳稳盖掉。
     std::fs::write(&wrapper, render_wrapper(&triple))?;
-    crate::fsutil::set_executable(&wrapper)?;
+    crate::util::set_executable(&wrapper)?;
 
     let cc_env = if std::env::var_os(&cc_key).is_none() {
         Some((cc_key, wrapper.display().to_string()))

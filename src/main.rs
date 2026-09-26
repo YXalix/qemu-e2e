@@ -1,9 +1,9 @@
 //! Virtuoso — kernel E2E 虚拟化测试装置的 CLI 入口。
 //!
 //! 单包 crate（无 workspace 成员）：clap 定义与子命令分发在 `main`，命令
-//! 实现在 `cli`，运行工件与呈现命令在 `runs`，类型化配置在 `config`；
-//! 领域模块 `builder` / `launcher` / `judge` / `forge` 与顶层工具模块
-//! （arch/ui/fsutil/…，原 common 基础层摊平）同住 `src/`。
+//! 实现在 `cli`，运行工件在 `runs`，类型化配置在 `config`；领域模块
+//! `builder` / `launcher` / `judge` / `forge` 与顶层工具集 `util`、平台
+//! 类型 `arch` 同住 `src/`。
 //!
 //! 设计文档：docs/architecture/overview.md
 
@@ -11,22 +11,13 @@ mod arch;
 mod builder;
 mod cli;
 mod config;
-mod exit;
 mod forge;
-mod fmt;
-mod fsutil;
 mod judge;
 mod launcher;
-mod platform;
-mod progress;
 mod runs;
-mod shell;
-mod time;
-mod ui;
-mod units;
+mod util;
 
-pub(crate) use arch::Arch;
-pub(crate) use platform::HostOs;
+pub(crate) use arch::{Arch, HostOs};
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;

@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::builder::cross::CrossSetup;
-use crate::progress::Progress;
+use crate::util::Progress;
 
 /// 编译用例 workspace（`infra/testcases/`）并装入 `<rootfs>/tests/`。
 /// 返回装入的二进制名列表无必要——init 自动发现，这里只保证产物齐全。

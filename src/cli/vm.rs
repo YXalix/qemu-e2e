@@ -207,11 +207,11 @@ fn test_once(
     let _ = watchdog.join();
 
     // 退出码：超时 124；被信号杀死归一（137→124、信号死亡→130）；其余保留真实码。
-    // 语义表单点在 crate::judge::exit。
+    // 语义表单点在 crate::judge。
     let code = if timed_out_now {
-        crate::judge::exit::EXIT_TIMEOUT
+        crate::judge::EXIT_TIMEOUT
     } else {
-        let code = crate::judge::exit::normalize(status.code());
+        let code = crate::judge::normalize(status.code());
         if status.code().is_none() {
             sup.kill_now();
         }

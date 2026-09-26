@@ -13,7 +13,7 @@ pub fn run_build(busybox_only: bool) -> anyhow::Result<i32> {
         // 仅备当前架构静态 BusyBox（四层供给链，builder 接管）
         let arch = resolve_arch(&cfg, None)?;
         let supply = cfg.busybox_supply();
-        let mut progress = crate::progress::Progress::stdout();
+        let mut progress = crate::util::Progress::stdout();
         crate::builder::busybox::ensure(&cfg.build_dir, arch, &supply, &mut progress)?;
         return Ok(0);
     }
@@ -38,8 +38,8 @@ pub(crate) fn build_pair_for(
         }
     }
     let mut progress = match log_path {
-        Some(p) => crate::progress::Progress::with_log(p)?,
-        None => crate::progress::Progress::stdout(),
+        Some(p) => crate::util::Progress::with_log(p)?,
+        None => crate::util::Progress::stdout(),
     };
     progress.line("Rebuilding initrd.img + rootfs.img (two-stage boot pair)...");
     crate::builder::build_boot_pair(

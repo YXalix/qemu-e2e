@@ -9,7 +9,7 @@ use anyhow::Context;
 /// 定位 mke2fs：PATH → Homebrew e2fsprogs keg 路径（keg-only 不进 PATH，
 /// Apple Silicon = /opt/homebrew，Intel = /usr/local）。
 pub(crate) fn find_mke2fs() -> Option<PathBuf> {
-    if let Some(p) = crate::fsutil::which_path("mke2fs") {
+    if let Some(p) = crate::util::which_path("mke2fs") {
         return Some(p);
     }
     [
