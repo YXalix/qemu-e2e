@@ -34,7 +34,9 @@ virtuoso probe --cmd 'uname -a' [--cmd-file f] [--json] [--timeout s]
 virtuoso skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核树
 ```
 
-AI 的标准验证循环：`doctor → test`。**判定以 test 收尾的 verdict 行为准，
+AI 的标准验证循环：`clippy → doctor → test`。改 Rust 源码必须先跑
+`cargo clippy --workspace --all-targets -- -D warnings`（CI 同款门禁，本地不过别提交）；
+再 `doctor → test`。**判定以 test 收尾的 verdict 行为准，
 机读唯一面 = run 目录下的 `verdict.json`**；退出码只是接口契约；
 `verdict: passed` 才算通过。doctor 是体检唯一入口（一屏
 呈现 + `--verbose` 全量），与 builder::verify 检查引擎同源（新增前置条件只动
