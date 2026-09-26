@@ -4,8 +4,6 @@
 //! 实现在 `cli`，运行工件在 `runs`，类型化配置在 `config`；领域模块
 //! `builder` / `launcher` / `judge` / `forge` 与顶层工具集 `util`、平台
 //! 类型 `arch` 同住 `src/`。
-//!
-//! 设计文档：docs/architecture/overview.md
 
 mod arch;
 mod builder;

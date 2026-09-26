@@ -10,8 +10,8 @@
 - openEuler / Fedora：`sudo dnf install -y gcc make wget cpio gzip qemu-system-aarch64 qemu-img`，zig 从 [ziglang.org/download](https://ziglang.org/download/) 获取（发行版源一般不收录）
 - Debian / Ubuntu：`sudo apt install -y gcc make zig wget cpio gzip qemu-system-arm qemu-utils`
 
-> initrd 打包已 Rust 原生化（builder::cpio），`cpio` / `gzip` / `wget` 不再
-> 是硬依赖（下载层有 curl 回退）——装了更省事，没装 doctor 也不报 ✗。
+> initrd 打包已 Rust 原生化，`cpio` / `gzip` / `wget` 不再是硬依赖
+> （下载层有 curl 回退）——装了更省事，没装 doctor 也不报 ✗。
 
 ### macOS（Apple Silicon，M1–M5）前置
 
@@ -90,12 +90,11 @@ virtuoso test --timeout 60    # 构建 → 启动 → 判定 → 工件落盘（
 QEMU 以 exit 0 退出，只看退出码会假通过；`exit 0` 但
 `verdict: incomplete` = 标记协议没走完，同样按失败处理。
 
-Verdict 全集（`judge::Verdict`）：`passed` / `failed` / `timeout` / `panic` /
-`incomplete` / `interrupted` / `build_failed` / `unknown`。
+verdict 八态全集与语义见[运行工件与分诊](usage/artifacts.md)。
 
 ## 5. 下一步
 
-- 日常操作与全部命令：[CLI 参考](cli-reference.md)
-- 改配置 / 换架构 / 开组件：[配置参考](guide/configuration.md)
-- 写自己的测试用例：[编写测试用例](guide/writing-tests.md)
-- 出了问题：[Troubleshooting](troubleshooting.md)
+- 日常操作与全部命令：[CLI 参考](usage/cli.md)
+- 改配置 / 换架构 / 开组件：[配置参考](usage/configuration.md)
+- 写自己的测试用例：[编写测试用例](usage/writing-tests.md)
+- 出了问题：[故障排查](usage/troubleshooting.md)

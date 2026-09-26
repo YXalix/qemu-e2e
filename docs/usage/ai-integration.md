@@ -12,7 +12,8 @@ doctor → test
 **判定以 test 收尾的 verdict 行为准**（机读唯一面 = run 目录下的
 `verdict.json`）：`verdict: passed` 才算通过。退出码只是
 接口契约（0=通过、124=超时、其余=失败）——`-no-reboot` 下内核 panic 会让
-QEMU 以 exit 0 退出，只看退出码会假通过。
+QEMU 以 exit 0 退出，只看退出码会假通过。verdict 八态语义见
+[运行工件与分诊](artifacts.md)。
 
 ## 数据接口
 
@@ -36,12 +37,14 @@ virtuoso skill uninstall
 
 ## probe 通道
 
-`virtuoso probe` 恒开 [agent 组件](../components/agent.md)通道（不依赖组件
-开关），经 guest 侧 virtuoso-agent 下发命令批，结构化事件流回吐：
+`virtuoso probe` 恒开 agent 通道（不依赖组件开关），经 guest 侧
+virtuoso-agent 下发命令批，结构化事件流回吐：
 
 ```bash
 virtuoso probe --cmd 'uname -a' --cmd 'cat /proc/iomem' --json
 ```
+
+通道机制见[组件机制 agent 一节](../concepts/components.md#agent--ai-probe-通道)。
 
 ## 安全边界（架构约束）
 
@@ -49,5 +52,5 @@ virtuoso probe --cmd 'uname -a' --cmd 'cat /proc/iomem' --json
   开发者执行；
 - `events.jsonl` 是 AI 的唯一结构化事实源，串口原文仅作补充上下文，保证分诊
   可回溯；
-- skill 与 harness 的接口是[冻结契约](../architecture/contracts.md)：skill 只
+- skill 与 harness 的接口是[冻结契约](../concepts/contracts.md)：skill 只
   依赖协议与工件 schema，不依赖实现。

@@ -6,8 +6,8 @@
 | 维度 | 契约 |
 |---|---|
 | 串口标记协议 | v1 冻结（附录）：改动文本等于破坏所有下游解析 |
-| 退出码 | 0=通过、124=超时（137 归一）、其余=失败；唯一表在 `judge::exit` |
-| QEMU argv | 缺省（无数据盘、无 agent）输出与**宿主平台各自的冻结基线**逐字一致，`argv_*` 单测把守 |
+| 退出码 | 0=通过、124=超时（137 归一）、其余=失败 |
+| QEMU argv | 缺省（无数据盘、无 agent）输出与**宿主平台各自的冻结基线**逐字一致，由平台基线单测钉死 |
 | 静态链接 | 测试必须 `-static`；禁止 `\|\| true` 掩盖失败 |
 | 配置优先级 | 标量键：进程环境变量 > `virtuoso.toml`（同名键 env 覆盖） |
 | AI 接口 | skill 只依赖标记协议 v1 与工件 schema（verdict.json / events.jsonl），不依赖 harness 内部实现 |
@@ -26,10 +26,9 @@
 
 ## argv 冻结基线
 
-`QemuInvocation::argv` 在缺省形态（无数据盘、无 agent 通道）下的输出与既定
-基线**逐字一致**，由 `src/launcher/qemu/argv.rs` 的 `argv_*` 单测把守。
-**基线按宿主平台各持一份**（`common::HostOs`，单测显式钉死，不随编译目标
-漂移）：两平台的差异面收敛在两处——
+缺省形态（无数据盘、无 agent 通道）下 QEMU argv 与既定基线**逐字一致**，
+由平台基线单测显式钉死。**基线按宿主平台各持一份**（宿主平台类型钉死判定，
+不随编译目标漂移）：两平台的差异面收敛在两处——
 
 | 段 | Linux | macOS（Darwin） |
 |---|---|---|
@@ -67,6 +66,6 @@ TEST_COMPLETE: SOME TESTS FAILED    # → exit 1
 exit 124   # wallclock timeout（内核挂死 / runaway loop）
 ```
 
-judge 对以上标记逐行解析为结构化事件（`src/judge.rs` 解析器节）。
-用例侧只依赖 `[PASS]` 等断言宏，汇编层标记由 `infra/init` 输出。编写测试见
-[编写测试用例](../guide/writing-tests.md)。
+判定引擎对以上标记逐行解析为结构化事件。用例侧只依赖 `[PASS]` 等断言宏，
+汇编层标记由 `infra/init` 输出。编写测试见
+[编写测试用例](../usage/writing-tests.md)。

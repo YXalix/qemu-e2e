@@ -1,6 +1,6 @@
 //! judge — 判定者：串口标记协议 v1 断言引擎、verdict 判定与 verdict.json schema。
 //!
-//! 协议 v1（冻结文本，设计文档附录 A）：
+//! 协议 v1（冻结文本）：
 //! `[PASS]/[FAIL]/[SKIP]/[INFO]` 断言行、`--- Running: X ---` / `PASSED:/FAILED: X`
 //! （init 汇编层）、`Test Results: N/M passed` 汇总、`TEST_COMPLETE` 终止标记。
 //!
@@ -194,7 +194,7 @@ pub(crate) fn semantics(code: Option<i32>) -> &'static str {
 // ---------------------------------------------------------------- 标记协议解析器
 
 // 标记协议 v1 解析器：串口全文 → 结构化 Audit（tests/summary/marker/
-// panics/oops + events 事件流）。协议冻结文本见 docs/architecture/contracts.md。
+// panics/oops + events 事件流）。
 
 /// 解析串口全文。行号从 1 起；事件含 line_no 与出现顺序 seq。
 pub(crate) fn parse(text: &str) -> Audit {

@@ -29,7 +29,7 @@ virtuoso probe --cmd-file cmds.txt --json    # 机器可读事件流
 ```
 
 经 guest 侧 virtuoso-agent（JSON 行协议）下发命令批，事件流写 run 目录的
-`agent-events.jsonl`。通道详解见 [agent 组件](../components/agent.md)，
+`agent-events.jsonl`。通道详解见[组件机制 agent 一节](../concepts/components.md#agent--ai-probe-通道)，
 AI 工作流见 [AI 集成](ai-integration.md)。
 
 ## argv 人工复核
@@ -38,7 +38,6 @@ AI 工作流见 [AI 集成](ai-integration.md)。
 QEMU=echo virtuoso shell    # 只打印 QEMU argv，不启动
 ```
 
-## 离线判定回放
+---
 
-```bash
-```
+症状速查见[故障排查](troubleshooting.md)。

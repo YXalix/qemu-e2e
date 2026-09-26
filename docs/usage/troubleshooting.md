@@ -4,7 +4,7 @@ AI/人共用的故障速查。先看最近一次 `virtuoso test` 收尾的 verdi
 `target/runs/<id>/verdict.json`（机读判定唯一面），逐事件事实在
 `events.jsonl`，panic 行与串口原文在 `serial.log`；下文的每个症状都假设你已看过对应
 run 目录下的工件。调试手段（shell / GDB / probe）见
-[调试](guide/debugging.md)。
+[调试](debugging.md)。
 
 ## 超时（exit 124，verdict: timeout）
 
@@ -52,9 +52,10 @@ run 目录下的工件。调试手段（shell / GDB / probe）见
 ## 测试二进制没出现在 /tests/
 
 **Symptom**: `Test Results: 0/0 passed` 或根本没有 `--- Running:` 行。
-**Solution**: 用例 crate 是否加入了 `infra/testcases/Cargo.toml` 的
-`members`；确认静态链接（musl 目标缺省即静态，禁止改成动态）；`virtuoso
-clean && virtuoso build` 重建；查 `target/runs/<id>/build.log` 的编译告警。
+**Solution**: 用例 crate 目录名是否为 `test-<name>`（members 走 `test-*`
+glob，零接线，不用编辑 workspace 文件）；确认静态链接（musl 目标缺省即
+静态，禁止改成动态）；`virtuoso clean && virtuoso build` 重建；
+查 `target/runs/<id>/build.log` 的编译告警。
 
 ## kernel image not found / QEMU not found
 
@@ -72,13 +73,15 @@ clean && virtuoso build` 重建；查 `target/runs/<id>/build.log` 的编译告�
 **Solution**: 串口是逐行同步落盘的：直接看 `target/runs/` 下最新 id 的
 `serial.log`。verdict.json 缺失说明 run 未正常收尾（如 Ctrl-C 中断），按失败处理。
 
-## BusyBox 下载/构建失败
+## BusyBox 下载失败
 
-**Solution**: `virtuoso build --busybox-only` 走四级供应链（本地缓存 → release → 直链 →
-源码构建）。离线环境提前把对应架构的 busybox 放进 `target/build/busybox/bin/`；
-release 资产校验 ELF magic，损坏会自动回退源码构建。源码兜底仅 Linux 宿主；
-applet 符号链接由名单驱动（`infra/busybox/applets-<version>.txt`），自定义
-busybox 版本/配置时提供 `BUSYBOX_APPLETS_FILE`。
+**Solution**: `virtuoso build --busybox-only` 走四级供给链（本地缓存 →
+显式 URL → gh release download → 直链下载），**无源码编译兜底**，全部未命中
+即报错。离线环境提前把对应架构的 busybox 放进 `target/build/busybox/bin/`；
+release 资产校验 ELF magic，损坏视为未命中继续下一级。applet 符号链接由名单
+驱动（`infra/busybox/applets-<version>.txt`），自定义 busybox 版本/配置时
+提供 `BUSYBOX_APPLETS_FILE`。详见
+[供给与构建流水线](../concepts/pipeline.md)。
 
 ## macOS 专属
 
@@ -106,5 +109,5 @@ volume（ext4）正确；自行 bind-mount APFS 目录会踩坑，别这么做�
 
 ## 工件占满磁盘
 
-**Solution**: 每次运行保留最近 20 次（`src/runs.rs` 的 `RUNS_KEEP`），
-`target/runs/` 在 `/target` 下随 `cargo clean` 一并清除；单次工件通常 < 1 MiB。
+**Solution**: 每次运行保留最近 20 次，`target/runs/` 在 `/target` 下随
+`cargo clean` 一并清除；单次工件通常 < 1 MiB。

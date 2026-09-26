@@ -1,12 +1,19 @@
-# 总体架构
+# 设计与理念
 
 > *内核是乐器，Virtuoso 是演奏家——每个 patch 都值得一场完整的独奏。*
+
+## 定位
+
+Virtuoso 是 QEMU 内核 E2E 测试装置：把 freshly-built 内核直接启动在 QEMU 里
+跑真实测试程序，用一条命令回答 **"does my patch actually work?"**。它不是
+测试框架（断言与用例组织见[编写测试用例](../usage/writing-tests.md)），
+也不是 CI（但 CI 与 AI 都按它的判定接口消费结果）。
 
 ## 设计原则
 
 | 原则 | 含义 |
 |---|---|
-| **单包 Rust crate 是唯一行为权威** | 构建与运行的全部逻辑在类型化领域模块中，CLI 是唯一操作面 |
+| **单包 Rust crate 是唯一行为权威** | 全部构建与运行逻辑在一个 crate 里，`virtuoso` CLI 是唯一操作面 |
 | **类型安全** | 架构矩阵、NUMA 拓扑、组件依赖全部强类型化，非法配置解析期报错（而非运行时） |
 | **RAII 资源治理** | QEMU 进程组、临时目录在任何退出路径（错误、panic、Ctrl-C、看门狗）下被收割 |
 | **协议稳定** | 串口标记协议 v1 与退出码语义冻结（[冻结契约](contracts.md)），CI 与 AI 接口零感知演进 |
@@ -22,14 +29,11 @@
 * **大师** — AI 代理正是演奏家：开机器、读串口、判生死、写测试；
 * **通用词** — 国际通用、好记好念，内核测试领域无同名项目。
 
-crate 以角色名词命名（common / builder / launcher / judge / forge），
-名字与职责一一对应：可以直接说"让 builder 重建 initrd"、"judge 在等
-TEST_COMPLETE"。进程治理并入 launcher（guardian 模块）——启动与收割
-本是一体的生命周期。
+领域模块以角色命名：`builder`（构建镜像）、`launcher`（启动与进程治理）、
+`judge`（判定）、`forge`（内核供给）——名字与职责一一对应，可以直接说
+"让 builder 重建 initrd"、"judge 在等 TEST_COMPLETE"。
 
-规范二进制 virtuoso 是根包本体（`src/main.rs`）——指挥家本人：`cargo install --path .` 后，PATH 上的就是它。全部命令见 [CLI 参考](../cli-reference.md)。
-
-## 架构图
+## 架构总览
 
 ```text
                +-------------------------------------------------------------+
@@ -39,10 +43,10 @@ TEST_COMPLETE"。进程治理并入 launcher（guardian 模块）——启动与
                                               |
                                               v
 +-----------------------------------------------------------------------------------+
-| Host: Virtuoso Rust Workspace (Control Plane)                                     |
+| Host: Virtuoso（控制面，单包 Rust crate）                                          |
 |                                                                                   |
 |  +------------------------+      +------------------------+    +---------------+  |
-|  |      virtuoso       | ---> |        builder         | -->| target/bins   |  |
+|  |      virtuoso       | ---> |        builder         | -->| target/artifacts |  |
 |  |  (总编排 CLI)           |      | initrd/rootfs/tools.img |   | target/runs   |  |
 |  +------------------------+      +------------------------+    +---------------+  |
 |              |                                                                   |
@@ -76,36 +80,9 @@ TEST_COMPLETE"。进程治理并入 launcher（guardian 模块）——启动与
 +-----------------------------------------------------------------------------------+
 ```
 
-各模块的内部设计见[核心模块设计](modules.md)。
+## 文档与代码边界
 
-## 目录结构
-
-```text
-virtuoso/
-├── Cargo.toml                  # 单包 crate（bin 名 virtuoso，src/main.rs；无 workspace 成员）
-├── virtuoso.toml               # 唯一配置面（模板：活动行 = 缺省常规启动配置）
-├── src/
-│   ├── main.rs                 # clap 子命令定义 + 模块声明（领域模块与工具模块的根）
-│   ├── config.rs               # 类型化配置（schema → 全局/组件/BusyBox 访问器 → ComponentPlan）
-│   ├── cli/                    # doctor / build / kernel / vm / probe / mod（分发+解析 helpers）/ diagnostics
-│   ├── runs.rs                 # 运行工件 IO（run 目录、输出泵、verdict 落盘）
-│   ├── builder/                # 构建器：镜像发现 / C+Rust 用例 / 模块清单 / busybox 供给 / cpio+ext4 组装（verify.rs 引擎同层）
-│   ├── launcher/               # 启动 DSL（qemu/）+ NUMA（numa.rs）+ 进程治理（guardian.rs）
-│   ├── judge.rs                # 标记协议解析 + 判定与类型 + verdict schema + 退出码语义
-│   ├── forge.rs                # 容器化内核供给：volume / toolchain / clone / state / devcontainer
-│   ├── arch.rs                 # Arch 架构矩阵 + HostOs 宿主平台（零依赖）
-│   └── util.rs                 # 顶层工具集（原 common 摊平，零依赖）：which/ELF / 内存单位 / 时间 / ui / 进度 / shell 引用 / 退出码
-├── infra/                      # VM 内源资产（构建时注入镜像，git 跟踪）
-│   ├── init                    # 测试 init（rootfs 的 PID 1）
-│   ├── init-initramfs          # stage-1 init（initramfs 的 PID 1：mount root= → switch_root）
-│   ├── modules-boot.conf       # 冻结 boot 基础模块集（virtio + ext4 及依赖）
-│   ├── testcases/              # 用例 workspace（coda std 框架 + coda-scaffold 共享 build.rs + test-* 用例 crate，musl 静态）
-│   └── tools/                  # VM 内工具独立 workspace（std Rust + musl 静态；agent = virtuoso-agent）
-├── devkit/                     # 内核开发外围工具（非运行路径，均为源资产）
-│   ├── docker/                 # 容器化内核开发环境（macOS 内核供给，ghcr 镜像）
-│   └── skills/                 # kernel-dev + kernel-virtuoso（virtuoso skill install 装入内核树）
-└── docs/                       # 文档唯一事实来源（mdBook → gh-pages；book.toml 内嵌，书根 = docs/）
-```
-
-两段式引导（initramfs → rootfs）的逐行解读与构建流水线见
-[两段式引导与构建流水线](../internals/boot-pipeline.md)。
+本文档讲概念、契约与使用，不复述代码布局；文档与代码注释各自独立维护，
+互不引用。行为权威是仓库的单包 Rust crate；VM 内源资产在 `infra/`
+（init、testcases、tools，多为冻结数据）。对外冻结的接口见
+[冻结契约](contracts.md)；启动侧概念见[两段式引导](boot.md)。

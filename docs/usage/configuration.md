@@ -14,7 +14,7 @@
 |---|---|---|
 | `arch` | `ARCH` | `x86_64` \| `arm64` \| `riscv64`（缺省 = 宿主架构） |
 | `timeout_secs` | `QEMU_TIMEOUT` | 墙钟超时秒数；0 一律拒绝 |
-| `smp` | `SMP` | vCPU 总数；多节点 NUMA 时必须被节点数整除（启动期校验，`NumaTopology::parse`） |
+| `smp` | `SMP` | vCPU 总数；多节点 NUMA 时必须被节点数整除（解析期报错，启动期二次校验） |
 | `auto_test` | `AUTO_TEST` | true = 跑完 `/tests/` 自动关机；false = 落入交互 shell |
 | `kernel_path` | `KERNEL_PATH` | 内核树路径（装置在树内时可自动探测） |
 | `kernel_image` | `KERNEL_IMAGE` | 内核镜像覆盖（缺省 = 内核树内 arch 对应镜像） |
@@ -36,7 +36,7 @@
 ## `[components.*]` 组件段
 
 每个组件段的公共字段（`enabled` / `require` / `stage`）与逐组件的专属键见
-[组件机制](../components/overview.md)。
+[组件机制](../concepts/components.md)。
 
 ## `[tests]` 段
 
@@ -52,7 +52,8 @@
 | `release_repo` | 预编译 Release 仓库（缺省扫描 git remotes 找 github.com） |
 | `dl_url` | 显式下载 URL（供给链第一优先级） |
 
-供给链 = GitHub Release 拉取 + 本地缓存复用，无源码编译兜底（全部未命中即报错）。详解见[两段式引导与构建流水线](../internals/boot-pipeline.md)。
+供给链 = GitHub Release 拉取 + 本地缓存复用，无源码编译兜底（全部未命中即报错）。
+详见[供给与构建流水线](../concepts/pipeline.md)。
 
 ## 架构矩阵
 

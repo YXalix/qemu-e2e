@@ -46,7 +46,7 @@ AI 的标准验证循环：`clippy → doctor → test`。改 Rust 源码必须�
 
 ## 冻结的不变量（不要破坏）
 
-1. **标记协议 v1**（`infra/init` 输出，`docs/architecture/contracts.md` 冻结文本）：
+1. **标记协议 v1**（`infra/init` 输出，`docs/concepts/contracts.md` 冻结文本）：
    `--- Running: X ---`、`PASSED:/FAILED: X`、`Test Results: N/M passed`、
    `TEST_COMPLETE: ALL TESTS PASSED|SOME TESTS FAILED`。改文本等于破坏所有下游解析。
 2. **test 退出码**：0=通过、124=超时、其余=失败。
@@ -63,18 +63,17 @@ AI 的标准验证循环：`clippy → doctor → test`。改 Rust 源码必须�
 
 - **文档唯一事实来源**：`docs/`（mdBook 书根 = `docs/`，`mdbook build docs`
   构建，push main 自动发布 gh-pages）。改动文档只动 `docs/`，别处引用不复制内容。
-  入口：`docs/architecture/`（架构/crate/契约）、`docs/components/`（组件机制）、
-  `docs/guide/`（配置/工件/测试编写/AI 集成）、`docs/internals/boot-pipeline.md`、
-  `docs/cli-reference.md`。
+  入口：`docs/concepts/`（理念/流水线/引导/契约/组件）、`docs/usage/`（CLI/配置/
+  测试编写/调试/工件/AI 集成/故障排查）、`docs/quick-start.md`、`docs/contributing.md`。
 - **组件化配置**：`virtuoso.toml` 唯一配置面（env > toml），`[components.*]`
   段声明 VM 能力；builder 按启用组件 require 并集生成模块清单。全键与语义见
-  `docs/guide/configuration.md`，模板见仓库根 `virtuoso.toml` 注释。
+  `docs/usage/configuration.md`，模板见仓库根 `virtuoso.toml` 注释。
 - **运行工件**：`virtuoso test` 写 `target/runs/<unix_ms>-<arch>/`（保留 20 次），
   `verdict.json` 是判定唯一机读面、`events.jsonl` 是逐事件结构化事实源。
-  文件表与 Verdict 八态语义见 `docs/guide/artifacts.md`。
+  文件表与 Verdict 八态语义见 `docs/usage/artifacts.md`。
 - **内核开发容器**：源码权威在 named volume，宿主经 `virtuoso kernel path` 的
   平台视图编辑（视图大小写保真，严禁在 APFS checkout 内核树、严禁双 make
-  并行）。详见 `devkit/skills/kernel-dev/SKILL.md` 与 `docs/components/`。
-- **已知环境怪癖（勿"修复"）**：见 `docs/internals/boot-pipeline.md` 怪癖表——
+  并行）。详见 `devkit/skills/kernel-dev/SKILL.md` 与 `docs/quick-start.md`。
+- **已知环境怪癖（勿"修复"）**：见 `docs/concepts/boot.md` 怪癖表——
   空 `/dev` 回退 mknod、virtio/ext4 必须 `=m` 进 initramfs 等都是 openEuler
   内核实测行为，删掉对应 fallback 会重新踩坑。
