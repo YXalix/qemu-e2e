@@ -167,6 +167,10 @@ pub(crate) struct LaunchPlan<'a> {
 pub(crate) fn build_invocation(plan: &LaunchPlan) -> anyhow::Result<launcher::QemuInvocation> {
     let cfg = plan.cfg;
     let kernel = kernel_image_path(cfg, plan.arch)?;
+    // 全局透传兜底（QEMU_OPTS/qemu_opts）在前，组件增量（vfio 设备）在后；
+    // 两类来源在装配点显式分清，config 层不混装。
+    let mut extra = cfg.qemu_extra();
+    extra.extend(cfg.vfio_opts());
     let mut inv = launcher::QemuInvocation::new(
         plan.arch,
         &kernel,
@@ -179,7 +183,7 @@ pub(crate) fn build_invocation(plan: &LaunchPlan) -> anyhow::Result<launcher::Qe
     .virtio_disks(tools_disk_opt(cfg))
     .qemu_override(cfg.qemu_override().as_deref())
     .auto_test(plan.auto_test)
-    .extra_opts(&cfg.qemu_extra());
+    .extra_opts(&extra);
     if let Some(sock) = &plan.agent_socket {
         inv = inv.agent_serial(sock);
     }
