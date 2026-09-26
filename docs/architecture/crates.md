@@ -9,7 +9,7 @@
 console / machine / 交叉前缀）、`which` 与 ELF 探测、内存量解析、UTC 时间、
 人类可读大小。所有 crate 只依赖 common，不互相倒挂。
 
-## cli/src/config.rs — 类型化配置
+## src/config.rs — 类型化配置
 
 `virtuoso.toml` 是唯一配置面：全局键 + `[components.*]` 组件段 +
 `[busybox]` 版本段。标量键优先级：进程环境变量 > `virtuoso.toml`

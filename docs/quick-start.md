@@ -85,7 +85,7 @@ virtuoso test --timeout 300   # 直接开跑
 ## 3. 安装与体检
 
 ```bash
-cargo install --path cli      # 规范二进制 virtuoso 装入 PATH（一次）
+cargo install --path .      # 规范二进制 virtuoso 装入 PATH（一次）
 virtuoso doctor               # 一屏体检：✓/✗/! 组件行，最快确认接线
 ```
 

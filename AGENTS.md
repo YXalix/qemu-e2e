@@ -18,7 +18,7 @@ tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools �
 
 ## 快速命令（复制即用）
 
-`virtuoso` = 规范二进制（`cargo install --path cli` 装入 PATH）；改完 CLI 源码
+`virtuoso` = 规范二进制（`cargo install --path .` 装入 PATH）；改完 CLI 源码
 重跑一次安装即可保持最新。
 
 ```bash
@@ -56,10 +56,10 @@ AI 的标准验证循环：`doctor → test → triage`。**判定以 triage 的
 
 | 领域 | 入口 | 说明 |
 |---|---|---|
-| CLI 入口 | `cli/src/main.rs` | 包名 = bin 名 = `virtuoso`：clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
-| CLI 命令组 | `cli/src/cli/` | `doctor.rs`（体检唯一入口：一屏分组呈现 + `--verbose` 全量；`engine_report` 引擎投影同文件）/ `build.rs`（build/clean/skill；`--busybox-only` 仅备 BusyBox）/ `vm.rs`（shell/test/matrix；accel 解析：macOS 同构缺省 HVF、`--tcg` 强制、Linux 恒 TCG；shell `--gdb` 挂起等 GDB）/ `probe.rs`（AI 交互通道）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
-| 类型化配置 | `cli/src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `cli/diagnostics.rs` |
-| 运行工件与分诊 | `cli/src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
+| CLI 入口 | `src/main.rs` | 包名 = bin 名 = `virtuoso`：clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
+| CLI 命令组 | `src/cli/` | `doctor.rs`（体检唯一入口：一屏分组呈现 + `--verbose` 全量；`engine_report` 引擎投影同文件）/ `build.rs`（build/clean/skill；`--busybox-only` 仅备 BusyBox）/ `vm.rs`（shell/test/matrix；accel 解析：macOS 同构缺省 HVF、`--tcg` 强制、Linux 恒 TCG；shell `--gdb` 挂起等 GDB）/ `probe.rs`（AI 交互通道）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
+| 类型化配置 | `src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `src/cli/diagnostics.rs` |
+| 运行工件与分诊 | `src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
 | 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `platform.rs`（**`HostOs` = QEMU 平台分支唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
 | 构建器 | `crates/builder/src/` | busybox 四层供给（applet 符号链接由 `infra/busybox/applets-<ver>.txt` 名单驱动，不执行 guest ELF）/ **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / **用例编译（C over Rust：testfw std 框架 + 用例 crate 的 build.rs cc 编 C，恒 `--target <musl triple>`）** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / `cpio.rs`（**initrd 原生 newc+gzip**，无 GNU 工具依赖、确定性输出）/ `preset.rs`（**kernel_preset 预编内核供给**：pin/release 版本解析 + gh/直链下载 + SHA256 校验；供给端 = kernel-release.yml）/ `cross.rs`（**全宿主交叉接线**：zig cc 包装（`-target` 追加式覆盖外部 rust 风格 target）→ `CC_<TRIPLE>`（C 测试体，全宿主）/ `CARGO_TARGET_*_LINKER`（仅非 Linux 宿主））/ `image.rs`（mke2fs 探测含 brew keg 路径） / verify 检查引擎（host_tools 按平台分表，zig 替位 cmake；preset 激活时源码树/.ko 检查降级为 preset 语义） |
 | 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 冻结在**按宿主平台的双基线**：Linux=memfd+KVM、macOS=ram+HVF，accel×平台错配在 argv 构造期报错；`QEMU=echo` 可打印对照；`data_disks` = 多 virtio-blk 数据盘，缺省空；`agent_serial` = AI 通道，缺省关）/ `numa.rs` / `lib.rs`（`DataDisk` 块设备抽象） |
@@ -72,7 +72,7 @@ AI 的标准验证循环：`doctor → test → triage`。**判定以 triage 的
 | VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 tools.img 的 `/bin/`（VM 内挂 `/tools`，init-hooks 注入 PATH），不进 `/tests/` 不参与判定 |
 | skill | `devkit/skills/kernel-dev/`、`devkit/skills/kernel-virtuoso/` | `virtuoso skill install` 装入内核树（后者 = AI 数据接口集成） |
 | 内核开发容器 | `devkit/docker/` + `crates/forge/` | **双平台内核供给链**（`virtuoso kernel` 命令组）：Dockerfile.kernel（钉死工具链+clangd，CI 发 ghcr）+ devcontainer（源码编辑标准入口，容器内 clangd；`state::write` 随 current 渲染 git 忽略的 `.devcontainer/devcontainer.json`——落点满足 VS Code 自动发现契约，workspaceMount 指活动卷 + image 钉死工具链镜像，打开仓库「Reopen in Container」即进 current 卷，静态模板 devkit/docker/devcontainer.json 仅缺省卷形态）；源码权威在 named volume，宿主经 `virtuoso kernel path` 的平台视图读构建产物——macOS=OrbStack 视图（engine_guard 守卫端点）、Linux=volume 本体；**视图是 ext4 直通、大小写保真**：AI 源码编辑直接在视图上用文件工具（git 需 `-c safe.directory`），严禁在大小写不敏感 FS（macOS APFS /tmp 等）checkout 内核树（openEuler 有 ipt_ECN.h/ipt_ecn.h 碰撞对会静默折叠）、严禁双 make 并行（增量状态无锁）；CDB 由 build 产出 /ksrc 原始形态（.clangd 模板唯一来源 devkit/docker/.clangd）；多内核切换 = `kernel list/use`（current 状态文件 `.virtuoso/kernel-current.json`，git 忽略；KERNEL_VOLUME env 可临时覆盖） |
-| 文档站 | `docs/`（含 `book.toml`） | **docs/ 是文档唯一事实来源**且文档站自包含其内（书根 = docs/，book.toml 的 src 指向自身）；`cli/docs.rs` 接线 `virtuoso docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
+| 文档站 | `docs/`（含 `book.toml`） | **docs/ 是文档唯一事实来源**且文档站自包含其内（书根 = docs/，book.toml 的 src 指向自身）；`src/cli/docs.rs` 接线 `virtuoso docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
 
 ## 运行工件（AI 分诊数据源）
 

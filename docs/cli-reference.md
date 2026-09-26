@@ -1,6 +1,6 @@
 # CLI 参考
 
-`virtuoso` 是唯一 CLI 入口（`cargo install --path cli` 装入 PATH）。
+`virtuoso` 是唯一 CLI 入口（`cargo install --path .` 装入 PATH）。
 
 ## 命令一览
 

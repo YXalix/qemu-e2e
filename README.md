@@ -16,7 +16,7 @@ CLI 入口。
 `virtuoso.toml` 设 `kernel_path`。
 
 ```bash
-cargo install --path cli      # 规范二进制 virtuoso 装入 PATH
+cargo install --path .      # 规范二进制 virtuoso 装入 PATH
 virtuoso doctor             # 一屏环境体检（✓/✗ 组件行；--verbose 全量）
 virtuoso test --timeout 60  # 构建 → 启动 → 判定 → 工件落盘
 virtuoso triage             # 分诊报告（判定以 verdict 为准）

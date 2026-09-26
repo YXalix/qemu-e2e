@@ -1,7 +1,27 @@
+[package]
+# bin 名 = 包名 virtuoso（src/main.rs 自动识别）；cargo install --path . 装入 PATH。
+name = "virtuoso"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+clap = { version = "4", features = ["derive"] }
+serde.workspace = true
+serde_json.workspace = true
+toml = "0.8"
+common.workspace = true
+judge.workspace = true
+guardian.workspace = true
+launcher.workspace = true
+builder.workspace = true
+tracker.workspace = true
+forge.workspace = true
+
 [workspace]
 resolver = "2"
 members = [
-    "cli",
     "crates/builder",
     "crates/launcher",
     "crates/judge",

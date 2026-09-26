@@ -22,11 +22,11 @@
 * **大师** — AI 代理正是演奏家：开机器、读串口、判生死、写测试；
 * **通用词** — 国际通用、好记好念，内核测试领域无同名项目。
 
-crate 以角色名词命名（common / builder / launcher / judge / guardian / tracker /
-cli），名字与职责一一对应：可以直接说"让 builder 重建 initrd"、"judge 在等
+crate 以角色名词命名（common / builder / launcher / judge / guardian / tracker），
+名字与职责一一对应：可以直接说"让 builder 重建 initrd"、"judge 在等
 TEST_COMPLETE"。
 
-入口 crate 是 cli，包名即规范二进制名 virtuoso——指挥家本人：`cargo install --path cli` 后，PATH 上的就是它。全部命令见 [CLI 参考](../cli-reference.md)。
+规范二进制 virtuoso 是根包本体（`src/main.rs`）——指挥家本人：`cargo install --path .` 后，PATH 上的就是它。全部命令见 [CLI 参考](../cli-reference.md)。
 
 ## 架构图
 
@@ -81,14 +81,13 @@ TEST_COMPLETE"。
 
 ```text
 virtuoso/
-├── Cargo.toml                  # Root Workspace
+├── Cargo.toml                  # Root Workspace + virtuoso 根包（src/main.rs）
 ├── virtuoso.toml               # 唯一配置面（模板：活动行 = 缺省常规启动配置）
-├── cli/
-│   └── src/
-│       ├── main.rs             # clap 子命令定义
-│       ├── config.rs           # 类型化配置（virtuoso.toml 唯一配置面）
-│       ├── cli/                # verify / doctor / build / vm / probe / docs / mod（分发+解析 helpers）/ diagnostics
-│       └── runs/               # rundir（run 目录、输出泵、verdict 落盘回读）+ render（triage/runs/cluster/suggest/replay 呈现）
+├── src/
+│   ├── main.rs                 # clap 子命令定义
+│   ├── config.rs               # 类型化配置（virtuoso.toml 唯一配置面）
+│   ├── cli/                    # verify / doctor / build / vm / probe / docs / mod（分发+解析 helpers）/ diagnostics
+│   └── runs/                   # rundir（run 目录、输出泵、verdict 落盘回读）+ render（triage/runs/cluster/suggest/replay 呈现）
 ├── crates/
 │   ├── common/                 # 基础层（零依赖）：Arch 矩阵 / which / ELF / 内存单位 / 时间 / 人类可读大小
 │   ├── builder/                # 构建器：镜像发现 / C+Rust 用例 / 模块清单 / busybox 供给 / cpio+ext4 组装 / verify 引擎
