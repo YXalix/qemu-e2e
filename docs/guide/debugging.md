@@ -41,5 +41,4 @@ QEMU=echo virtuoso shell    # 只打印 QEMU argv，不启动
 ## 离线判定回放
 
 ```bash
-virtuoso replay --log <serial.log>    # 对任意串口日志做标记协议断言，不启动 QEMU
 ```

@@ -3,8 +3,8 @@
 内核 E2E 虚拟化测试装置：把 freshly-built 内核直接启动在 QEMU 里跑真实测试
 程序，一条命令回答 *"does my patch actually work?"*。
 
-构建（builder）、启动（launcher）、判定（judge）、进程治理（guardian）、
-跨 run 聚类（tracker）全部在类型化的 Rust workspace 中，`virtuoso` 是唯一
+构建（builder）、启动与进程治理（launcher）、判定与跨 run 聚类（judge）、
+容器化内核供给（forge）全部在类型化的 Rust workspace 中，`virtuoso` 是唯一
 CLI 入口。
 
 **📖 在线文档：<https://yxalix.github.io/virtuoso/>**

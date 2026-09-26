@@ -54,7 +54,6 @@ preset 激活时的语义变化（与源码树路径的差异全在这里）：
 | 模块供给 | 树内 `.ko` 拷入 rootfs（缺则构建报错） | 全 `=y` 内建，`.ko` 查找整体跳过 |
 | doctor 检查 | KERNEL_PATH / Kernel source FAIL 门 | 单一 Info 行（`Kernel preset: mainline …`） |
 | init 引导日志 | insmod openEuler `=m` 模块 | 模块清单为空占位，零 insmod 噪音 |
-| `suggest` 内核 diff | 对内核树 `git diff` | 需显式 `--diff`（无树可 diff） |
 
 ## 自己构建 preset 内核
 

@@ -68,7 +68,7 @@ clean && virtuoso build` 重建；查 `target/runs/<id>/build.log` 的编译告�
 
 ## Ctrl-C 中断后想看已输出的日志
 
-**Solution**: 串口是逐行同步落盘的：直接看最新 `target/runs/`（`virtuoso runs`
+**Solution**: 串口是逐行同步落盘的：直接看最新 `target/runs/`（`virtuoso triage`
 找最新 id）下的 `serial.log`。verdict.json 缺失时 `triage` 会自动降级为现场解析
 serial.log（`verdict: unknown`）。
 
@@ -98,7 +98,7 @@ ELF）：`brew install zig`，或自带工具链 `CC=<cross-gcc>` +
 
 **Symptom**: macOS 上跑 x86_64 / riscv64 guest 极慢或超时
 **Solution**: 交叉 guest 只能 TCG（HVF 仅同构 arm64）。放大
-`timeout_secs`，或回到 Linux 宿主跑全矩阵（`virtuoso matrix`）。
+`timeout_secs`（TCG 纯模拟更慢，属预期）。
 
 **Symptom**: `virtuoso kernel build` 报 git clone 后构建大小写冲突 / 内核树行为诡异
 **Solution**: 内核源码必须在大小写敏感文件系统——`virtuoso kernel` 的 named

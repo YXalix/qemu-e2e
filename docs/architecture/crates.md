@@ -9,12 +9,14 @@
 console / machine / 交叉前缀）、`which` 与 ELF 探测、内存量解析、UTC 时间、
 人类可读大小。所有 crate 只依赖 common，不互相倒挂。
 
-## src/config.rs — 类型化配置
+## src/config/ — 类型化配置
 
 `virtuoso.toml` 是唯一配置面：全局键 + `[components.*]` 组件段 +
 `[busybox]` 版本段。标量键优先级：进程环境变量 > `virtuoso.toml`
 （同名键 env 覆盖 toml，临时改参不动文件）；未知键 / 非法类型解析期报错
-（`deny_unknown_fields`，逐结构体显式声明而非 flatten）。
+（`deny_unknown_fields`，逐结构体显式声明而非 flatten）。模块按关注点拆分：
+`schema`（toml 结构与解析期防线）/ `global`（全局标量访问器）/
+`components`（组件开关与参数投影）/ `plan`（并集分区）/ `busybox`（供给配置）。
 
 `ComponentPlan` 把启用组件的 require 并集（schema 固定顺序
 tools_disk→agent→vfio→numa→pmem，按首 token 去重保首个）按 stage 分区：
@@ -35,7 +37,7 @@ virtio_console，不依赖组件开关）。
 * **InitHook 注入点**：builder 生成 rootfs 内 `/init-hooks.sh`（init 侧守卫 source，位于 devtmpfs 挂载后、insmod/agent 拉起前），tools 盘挂载 + PATH 注入即走此通道；VM 内定制（如 hugetlbfs 预分配）写 hook 片段即可。
 * **verify 检查引擎**：前置检查 + 类型化配置诊断（工具链 / 内核镜像 / QEMU / 模块 / BusyBox 缓存 / 组件状态）；doctor 与 verify 共用，两侧呈现自动跟随。
 
-## launcher — 启动 DSL 与双后端
+## launcher — 启动 DSL、进程治理与双后端
 
 `QemuInvocation`（`launcher::qemu`）强类型封装全部启动形态：machine（virt/q35）、
 kernel、`-smp` + NUMA 拓扑（每节点一个 socket，单节点不传 `-numa`）、加速
@@ -55,6 +57,15 @@ dumpdtb 生成设备树 + fdtput 注入 `pmem-region` 节点（of_pmem 绑定，
 `devm_memremap_pages` 才能建 ZONE_DEVICE；主内存后端换宿主文件
 （memory-backend-file，guest 写入持久落盘）。三件套落 `target/build/pmem/`。
 详见 [pmem 组件页](../components/pmem.md)。
+
+### 进程治理（launcher::guardian）
+
+进程治理与启动是一体的生命周期，作为 launcher 的 `guardian` 模块承载：
+
+* **`ProcessGroupGuard`（RAII）**：QEMU 进程组收割，Drop / 超时 / Ctrl-C 三路径统一 KILL；pgid=0 惰性登记防自杀。
+* **`registry`**：活动进程组全局注册表 + Ctrl-C 守护（`install_ctrlc_guard`，cli 入口装载）+ 墙钟看门狗。`Supervised` 是"登记 + 收割守卫"组合句柄，与 `spawn_supervised` 消除 spawn 样板。
+
+`virtuoso test` 中途被 Ctrl-C 打断时：收割 QEMU 进程组 → 落盘已产出的 run 工件 → 以 130 退出，宿主机不残留虚拟化进程。
 
 ## judge — 判定引擎
 
@@ -82,18 +93,10 @@ test_end / assert / summary / marker / panic / oops / run_end）、
 `judge::exit`（0=通过、124=超时、其余=失败）。工件详解见
 [运行工件与跨 run 分析](../guide/artifacts.md)。
 
-## guardian — 进程治理
+## judge::tracker — 跨 run 语义
 
-* **`ProcessGroupGuard`（RAII）**：QEMU 进程组收割，Drop / 超时 / Ctrl-C 三路径统一 KILL；pgid=0 惰性登记防自杀。
-* **`registry`**：活动进程组全局注册表 + Ctrl-C 守护（`install_ctrlc_guard`，cli 入口装载）+ 墙钟看门狗。`Supervised` 是"登记 + 收割守卫"组合句柄，与 launcher 的 `spawn_supervised` 消除 spawn 样板。
-
-`virtuoso test` 中途被 Ctrl-C 打断时：收割 QEMU 进程组 → 落盘已产出的 run 工件 → 以 130 退出，宿主机不残留虚拟化进程。
-
-## tracker — 跨 run 语义
-
-输入是最小摘要 `RunSummary`（`From<VerdictReport>` 投影，verdict schema 演进不外溢），IO 留在 runs 层：
+跨 run 分诊语义并入 judge（`tracker` 模块）：输入是本 crate verdict schema 的最小摘要 `RunSummary`（`From<VerdictReport>` 投影，schema 演进不外溢），IO 留在 runs 层：
 
 * **失败指纹** = verdict 类 + 归一化证据（剥离内核时间戳、数字折叠为 `N`；panic/oops 优先 → timeout → 失败测试集）；
 * **聚类**（`cluster`）：跨 run 指纹分组，输出 flaky 用例清单（flaky 判定只信 passed/failed 的 run）与每类失败首现 run；
-* **补丁↔测试映射**（`suggest`）：git diff 的子系统路径前缀 → 最小测试集（缺省规则表 `DEFAULT_RULES`，可由 diff 输入覆盖）；
 * **返场**（`test --replay-until-fail N`）：对可疑 flaky 场景自动返场，首个非 passed verdict 即停。

@@ -1,20 +1,17 @@
 # Virtuoso Agent Guide
 
-Virtuoso 是 QEMU 内核 E2E 测试装置。**Rust workspace 是唯一行为权威**，crate 以
-角色名词命名——
-common（基础层）、builder（构建）、launcher（启动 DSL）、
-judge（判定 + verdict.json schema）、guardian（进程治理）、tracker（跨 run 聚类/返场）、
-forge（容器化内核供给：named volume + 工具链镜像 + 活动卷状态）
-接管全部实际逻辑；`infra/` 只保留源资产（init、
-init-initramfs、modules-boot.conf（冻结基础集）、testcases/、tools/、
-busybox/applets-*.txt（applet 名单冻结数据）、kernel/（preset 内核
-fragment/pin/构建脚本）），git 跟踪
-（rootfs 的 modules.conf 由组件 require 并集生成）；`devkit/` 收纳内核开发外围工具
-（`devkit/docker/` 容器化内核开发环境 = 双平台内核供给 + clangd、`devkit/skills/`
-AI skill 源，见 Code Map）；构建产物与缓存一律落
-`target/`（数据面，git 忽略）：`target/artifacts/`（initrd.img / rootfs.img /
-tools.img）+ `target/build/`（busybox 供给缓存、initramfs/rootfs/tools 暂存目录）
-+ `target/kernel/preset/`（fetch 下来的预编内核缓存）。
+本文件只写**规则与共识**：AI 在本仓库工作必须遵守的契约、命令面与验证循环。
+设计叙事、组件机制、配置全键、工件详解等**一律以 `docs/` 为唯一事实来源**
+（[在线站点](https://yxalix.github.io/virtuoso/)），本文件不复制其内容。
+
+## 定位与权威
+
+Virtuoso 是 QEMU 内核 E2E 测试装置：供给内核 → 构建 BusyBox+musl 静态测试固件 →
+QEMU 启动跑 `/tests/` → 串口标记协议判定 → verdict.json 落盘。**Rust workspace
+是唯一行为权威**（根包 `src/` CLI 编排 + crates：common 基础层 / builder 构建 /
+launcher 启动+进程治理 / judge 判定+跨 run 聚类 / forge 容器化内核供给）；
+`infra/` 是 VM 内源资产（init、testcases、tools、busybox 名单——多为冻结数据）；
+`devkit/` 是内核开发容器与 AI skill 源；构建产物与运行工件落 `target/`（git 忽略）。
 
 ## 快速命令（复制即用）
 
@@ -32,19 +29,13 @@ virtuoso kernel build       # forge：容器 make Image/modules + CDB（/ksrc �
                             #   （另有 defconfig/path/shell/list/use；源码编辑走 devkit/docker devcontainer）
 virtuoso test --timeout 60  # 测试：launcher 启动 → judge 判定 → 工件落盘
 virtuoso test --replay-until-fail 5   # flaky 返场：首个非 passed 即停
-virtuoso matrix [--arch a] [--kvm|--tcg]
-                            # 多架构矩阵（缺省三架构，串行）；失败 exit 1
 virtuoso triage [--json]    # 最近一次运行的分诊报告
-virtuoso runs [--json]      # 历史运行列表
-virtuoso cluster [--json]   # 跨 run 失败指纹聚类 + flaky 清单 + 首现 run（tracker）；有失败 exit 1
-virtuoso suggest [--diff f] # 补丁↔测试映射：git diff → 最小测试集（tracker）
-virtuoso replay --log <f>   # 任意串口日志的离线标记协议断言
+virtuoso cluster [--json]   # 跨 run 失败指纹聚类 + flaky 清单 + 首现 run；有失败 exit 1
 virtuoso shell [--kvm|--tcg] [--gdb]
                             # 交互式 VM；--gdb = 挂起等 GDB :1234（恒 TCG）
 virtuoso probe --cmd 'uname -a' [--cmd-file f] [--json] [--timeout s]
                                # AI 交互通道：virtio-serial agent 命令批（结构化事件流；--timeout 缺省 300）
 virtuoso skill install      # 装 kernel-dev + kernel-virtuoso skill 到内核树
-virtuoso docs [--serve]     # mdBook 文档构建到 target/book / 本地预览
 ```
 
 AI 的标准验证循环：`doctor → test → triage`。**判定以 triage 的 verdict 为准**，
@@ -52,123 +43,37 @@ AI 的标准验证循环：`doctor → test → triage`。**判定以 triage 的
 呈现 + `--verbose` 全量），与 builder::verify 检查引擎同源（新增前置条件只动
 引擎，呈现自动跟随）。
 
-## Code Map
-
-| 领域 | 入口 | 说明 |
-|---|---|---|
-| CLI 入口 | `src/main.rs` | 包名 = bin 名 = `virtuoso`：clap 子命令定义 + `cli::dispatch` 分发；Ctrl-C 守护装自 `guardian::registry` |
-| CLI 命令组 | `src/cli/` | `doctor.rs`（体检唯一入口：一屏分组呈现 + `--verbose` 全量；`engine_report` 引擎投影同文件）/ `build.rs`（build/clean/skill；`--busybox-only` 仅备 BusyBox）/ `vm.rs`（shell/test/matrix；accel 解析：macOS 同构缺省 HVF、`--tcg` 强制、Linux 恒 TCG；shell `--gdb` 挂起等 GDB）/ `probe.rs`（AI 交互通道）/ `mod.rs`（分发 + 配置解析 helpers，含 `tools_disk_opt`） |
-| 类型化配置 | `src/config.rs` | **`virtuoso.toml` 唯一配置面**：全局键 + `[components.*]` 组件化（`require` = KO 依赖，`ComponentPlan` 并集分区 boot/runtime）；标量键优先级 进程环境变量 > toml，诊断呈现在 `src/cli/diagnostics.rs` |
-| 运行工件与分诊 | `src/runs/` | `rundir.rs`（run 目录、输出泵、verdict.json 落盘/回读）+ `render.rs`（triage/runs/cluster/suggest/replay 呈现） |
-| 基础层 | `crates/common/src/` | `arch.rs`（**`Arch` 矩阵唯一事实来源**）/ `platform.rs`（**`HostOs` = QEMU 平台分支唯一事实来源**）/ `fsutil.rs`（which/ELF/可执行位）/ `units.rs`（内存量解析）/ `time.rs` / `fmt.rs`；零依赖 |
-| 构建器 | `crates/builder/src/` | busybox 四层供给（applet 符号链接由 `infra/busybox/applets-<ver>.txt` 名单驱动，不执行 guest ELF）/ **模块清单生成（modconf：boot 基础集 + 组件 require 并集）** / **用例编译（C over Rust：testfw std 框架 + 用例 crate 的 build.rs cc 编 C，恒 `--target <musl triple>`）** / **tools 装载（musl 静态 → tools.img，外挂数据盘）** / `cpio.rs`（**initrd 原生 newc+gzip**，无 GNU 工具依赖、确定性输出）/ `preset.rs`（**kernel_preset 预编内核供给**：pin/release 版本解析 + gh/直链下载 + SHA256 校验；供给端 = kernel-release.yml）/ `cross.rs`（**全宿主交叉接线**：zig cc 包装（`-target` 追加式覆盖外部 rust 风格 target）→ `CC_<TRIPLE>`（C 测试体，全宿主）/ `CARGO_TARGET_*_LINKER`（仅非 Linux 宿主））/ `image.rs`（mke2fs 探测含 brew keg 路径） / verify 检查引擎（host_tools 按平台分表，zig 替位 cmake；preset 激活时源码树/.ko 检查降级为 preset 语义） |
-| 启动 DSL | `crates/launcher/src/` | `qemu.rs`（`QemuInvocation`，argv 冻结在**按宿主平台的双基线**：Linux=memfd+KVM、macOS=ram+HVF，accel×平台错配在 argv 构造期报错；`QEMU=echo` 可打印对照；`data_disks` = 多 virtio-blk 数据盘，缺省空；`agent_serial` = AI 通道，缺省关）/ `numa.rs` / `lib.rs`（`DataDisk` 块设备抽象） |
-| 判定引擎 | `crates/judge/src/` | `lib.rs`（标记协议 v1 解析 + `judge` 对账，panic 假通过防护）/ `report.rs`（verdict.json schema + `RunMeta`）/ `exit.rs`（**退出码语义唯一表**） |
-| 跨 run 语义 | `crates/tracker/src/lib.rs` | 失败指纹归一化/聚类/flaky/补丁映射/diff→路径；输入是最小摘要 `RunSummary`（`From<VerdictReport>` 投影），IO 在 runs 层 |
-| 报告 schema | `crates/judge/src/report.rs::VerdictReport` | verdict.json 唯一 schema（serde 结构体）：构造（`VerdictReport::build`）与回读共用 |
-| 进程治理 | `crates/guardian/src/` | `lib.rs`（`ProcessGroupGuard` RAII + `Supervised` 组合句柄）/ `registry.rs`（活动进程组注册表 + Ctrl-C 守护 + 墙钟看门狗） |
-| VM 内 init | `infra/init`、`infra/init-initramfs` | PID 1 脚本；`/init-hooks.sh` 为 builder 注入点 |
-| 测试用例 | `infra/testcases/` | 独立 workspace（`Cargo.toml` 在目录根）：`testfw`（std）框架 + 用例 crate（C 测试体在 crate 的 `c/`，经 build.rs+cc 编入同一二进制；C 侧宏在 `framework/include/testfw.h`，FFI 落回 testfw 计数）；musl 静态 ELF（零 rustflags，与 tools 同配方）；`/tests/` 自动发现 |
-| VM 内工具 | `infra/tools/` | 独立 workspace（std Rust + **musl 静态**，与 testcases 分类正交）：`agent/` = virtuoso-agent（virtio-serial JSON 行协议，AI probe 的 guest 侧）；装 tools.img 的 `/bin/`（VM 内挂 `/tools`，init-hooks 注入 PATH），不进 `/tests/` 不参与判定 |
-| skill | `devkit/skills/kernel-dev/`、`devkit/skills/kernel-virtuoso/` | `virtuoso skill install` 装入内核树（后者 = AI 数据接口集成） |
-| 内核开发容器 | `devkit/docker/` + `crates/forge/` | **双平台内核供给链**（`virtuoso kernel` 命令组）：Dockerfile.kernel（钉死工具链+clangd，CI 发 ghcr）+ devcontainer（源码编辑标准入口，容器内 clangd；`state::write` 随 current 渲染 git 忽略的 `.devcontainer/devcontainer.json`——落点满足 VS Code 自动发现契约，workspaceMount 指活动卷 + image 钉死工具链镜像，打开仓库「Reopen in Container」即进 current 卷，静态模板 devkit/docker/devcontainer.json 仅缺省卷形态）；源码权威在 named volume，宿主经 `virtuoso kernel path` 的平台视图读构建产物——macOS=OrbStack 视图（engine_guard 守卫端点）、Linux=volume 本体；**视图是 ext4 直通、大小写保真**：AI 源码编辑直接在视图上用文件工具（git 需 `-c safe.directory`），严禁在大小写不敏感 FS（macOS APFS /tmp 等）checkout 内核树（openEuler 有 ipt_ECN.h/ipt_ecn.h 碰撞对会静默折叠）、严禁双 make 并行（增量状态无锁）；CDB 由 build 产出 /ksrc 原始形态（.clangd 模板唯一来源 devkit/docker/.clangd）；多内核切换 = `kernel list/use`（current 状态文件 `.virtuoso/kernel-current.json`，git 忽略；KERNEL_VOLUME env 可临时覆盖） |
-| 文档站 | `docs/`（含 `book.toml`） | **docs/ 是文档唯一事实来源**且文档站自包含其内（书根 = docs/，book.toml 的 src 指向自身）；`src/cli/docs.rs` 接线 `virtuoso docs`；push main 由 `.github/workflows/docs.yml` 构建发布 gh-pages（https://yxalix.github.io/virtuoso/），产物落 `target/book` |
-
-## 运行工件（AI 分诊数据源）
-
-每次 `virtuoso test` / `matrix` 写入 `target/runs/<unix_ms>-<arch>/`（保留最近 20 次；
-`probe` 也写 run 目录，内容为 `serial.log` + `qemu-stderr.log` + `agent-events.jsonl`，无 verdict）：
-
-| 文件 | 内容 |
-|---|---|
-| `serial.log` | QEMU stdout：内核串口 + 测试标记（含 panic 栈） |
-| `qemu-stderr.log` | QEMU 自身告警 |
-| `build.log` | 本次构建输出（成功也保留） |
-| `events.jsonl` | judge 逐行解析的结构化事件（test_start/test_end/assert/summary/marker/panic/oops/run_end） |
-| `verdict.json` | 汇总判定 + 运行指纹（kernel mtime/大小、QEMU 版本、拓扑、超时） |
-
-**Verdict 语义**（`judge::Verdict`）：`passed` / `failed` / `timeout` / `panic` /
-`incomplete` / `interrupted` / `build_failed`。注意：`-no-reboot` 下内核 panic 会让
-QEMU 以 **exit 0** 退出 —— 只看退出码会假通过；verdict 用 `TEST_COMPLETE` 标记与
-退出码对账，panic/oops 独立成档。`exit 0` 但 `verdict: incomplete` = 标记协议没走完，
-按失败处理。
-
-## 配置（组件化）
-
-`virtuoso.toml` 是唯一配置面；标量键优先级：**进程环境变量 > `virtuoso.toml`**
-（同名键 env 覆盖 toml，便于临时改参不动文件）；未知键/非法类型解析期报错。
-**未配置项以注释形式存在于仓库根的
-`virtuoso.toml` 模板**（活动行 = 默认常规启动配置）。VM 能力按组件配置，每个
-`[components.*]` 段可用 `enabled` / `require`（KO 依赖，条目 = conf 行
-`"<module> [key=val ...]"`）/ `stage`（`boot`｜`runtime`，缺省 runtime）：
-
-```toml
-# virtuoso.toml 示例（完整注释模板见仓库根）
-arch = "arm64"           # x86_64 | arm64 | riscv64
-timeout_secs = 60        # 0 一律拒绝
-smp = 8                  # 多节点 NUMA 时须被 nodes 整除（解析期校验）
-auto_test = true
-qemu_opts = ["-device ivshmem-plain,memdev=hostmem"]   # 透传兜底
-# kernel_preset = "mainline"   # 预编 mainline mini 内核（fetch 后免内核树；与 kernel_path 互斥，preset 优先）
-
-[components.tools_disk]  # tools.img → /dev/vdb 挂 /tools；段缺省 = 启用
-enabled = true
-# [components.agent]     # AI probe 通道（virtio-serial）；段缺省 = 关闭
-# enabled = true
-# require = ["virtio_console"]
-# [components.vfio]      # 直通：devices 逐条生成 -device vfio-pci,host=<bdf>
-# enabled = true
-# devices = ["0000:01:00.0"]
-# [components.numa]      # 多节点拓扑；缺省单节点
-# enabled = true
-# nodes = 2
-# memory_per_node = "1G"
-# [components.pmem]      # 持久内存（DT 途径 → /dev/pmem0 + DAX）；段缺省 = 关闭
-# enabled = true
-# size = "256M"          # 从 guest RAM 顶部挖出；cmdline 加 mem= 排除；主内存后端换宿主文件（持久）
-# require = ["libnvdimm", "nd_btt", "of_pmem", "nd_pmem"]   # 内核 =m 时声明（含顺序）
-# [busybox]
-# version = "1.36.1"
-```
-
-builder 把启用组件的 require 并集（schema 固定顺序
-tools_disk→agent→vfio→numa→pmem，去重保首个）生成 rootfs
-`/lib/modules/modules.conf`；`stage = "boot"` 的条目追加到
-initramfs 的 modules-boot.conf 冻结基础集之后。`virtuoso probe` 恒开 agent 通道
-（强制并入 virtio_console，不依赖组件开关）。
-
 ## 冻结的不变量（不要破坏）
 
-1. **标记协议 v1**（`infra/init` 输出，架构文档附录 A）：
+1. **标记协议 v1**（`infra/init` 输出，`docs/architecture/contracts.md` 冻结文本）：
    `--- Running: X ---`、`PASSED:/FAILED: X`、`Test Results: N/M passed`、
    `TEST_COMPLETE: ALL TESTS PASSED|SOME TESTS FAILED`。改文本等于破坏所有下游解析。
 2. **test 退出码**：0=通过、124=超时、其余=失败。
 3. **argv 冻结**：`QemuInvocation::argv` 的输出冻结在**按宿主平台的双基线**上
-   （`common::HostOs`；Linux=memfd 后端、macOS=ram 后端、HVF→`-accel hvf`），
-   由 `crates/launcher/src/qemu.rs` 的 `argv_*` 单测显式钉死平台把守；
-   人工复核用 `QEMU=echo virtuoso shell` 打印 argv。数据盘（tools.img 等，
-   追加 `-drive …,if=virtio` → `/dev/vdb` 起）与 agent 通道属调用方增量：
-   **缺省（无盘无 agent）argv 与所属平台的基线逐字一致**；块设备抽象统一为
-   `DataDisk`（多 virtio-blk 数据盘）。
+   （Linux=memfd 后端、macOS=ram 后端、HVF→`-accel hvf`），由
+   `crates/launcher/src/qemu.rs` 的 `argv_*` 单测显式钉死平台把守；
+   人工复核用 `QEMU=echo virtuoso shell` 打印 argv。数据盘与 agent 通道属调用方
+   增量：**缺省（无盘无 agent）argv 与所属平台的基线逐字一致**。
 4. 测试必须静态链接（`-static`），禁止用 `|| true` 掩盖失败。
 5. **配置优先级：进程环境变量 > `virtuoso.toml`**：同名标量键以进程环境变量
    为准（CI/命令行临时改参不动文件）；持久配置只写 `virtuoso.toml`。
 
-## 详细文档
+## 共识
 
-`docs/` 是文档唯一事实来源（mdBook 书根 = `docs/`：`docs/book.toml` 的 src 指向
-自身，`virtuoso docs` 构建，push main 自动发布 gh-pages）；改动文档只动 `docs/`，
-别处引用不复制内容。
-
-- `docs/quick-start.md` —— 从零到第一个 verdict: passed（装依赖 → 构建内核 → 体检 → 首跑）
-- `docs/architecture/` —— `overview.md`（总体架构/目录结构）、`crates.md`（核心 crate 设计）、`contracts.md`（冻结契约 + 标记协议 v1 冻结文本）
-- `docs/components/` —— 组件机制 `overview.md` + 逐组件页（tools-disk / agent / vfio / numa / pmem）
-- `docs/guide/` —— `configuration.md`（virtuoso.toml 全键）、`kernel-preset.md`（预编内核开箱路径与供给链）、`writing-tests.md`（用例编写：Rust 入口 + C 体 FFI）、`debugging.md`、`artifacts.md`（运行工件与跨 run 分析）、`ai-integration.md`（skill + probe）
-- `docs/internals/boot-pipeline.md` —— 两段式引导逐行解读、资产供给链、"改哪个文件"手册
-- `docs/cli-reference.md` —— 命令一览；`docs/troubleshooting.md` —— Symptom → Solution 速查；`docs/contributing.md` —— 贡献约定 + CI
-
-## 已知环境怪癖（勿"修复"）
-
-见 `docs/internals/boot-pipeline.md` 的怪癖表：空 `/dev` 回退 mknod、sysfs dev 属性
-为空、virtio/ext4 必须 `=m` 进 initramfs、BusyBox 裁掉 `CONFIG_TC` 等——都是
-openEuler 内核的实测行为，删掉对应 fallback 会重新踩坑。
+- **文档唯一事实来源**：`docs/`（mdBook 书根 = `docs/`，`mdbook build docs`
+  构建，push main 自动发布 gh-pages）。改动文档只动 `docs/`，别处引用不复制内容。
+  入口：`docs/architecture/`（架构/crate/契约）、`docs/components/`（组件机制）、
+  `docs/guide/`（配置/工件/测试编写/AI 集成）、`docs/internals/boot-pipeline.md`、
+  `docs/cli-reference.md`。
+- **组件化配置**：`virtuoso.toml` 唯一配置面（env > toml），`[components.*]`
+  段声明 VM 能力；builder 按启用组件 require 并集生成模块清单。全键与语义见
+  `docs/guide/configuration.md`，模板见仓库根 `virtuoso.toml` 注释。
+- **运行工件**：`virtuoso test` 写 `target/runs/<unix_ms>-<arch>/`（保留 20 次），
+  `verdict.json` 是判定唯一机读面、`events.jsonl` 是逐事件结构化事实源。
+  文件表与 Verdict 八态语义见 `docs/guide/artifacts.md`。
+- **内核开发容器**：源码权威在 named volume，宿主经 `virtuoso kernel path` 的
+  平台视图编辑（视图大小写保真，严禁在 APFS checkout 内核树、严禁双 make
+  并行）。详见 `devkit/skills/kernel-dev/SKILL.md` 与 `docs/components/`。
+- **已知环境怪癖（勿"修复"）**：见 `docs/internals/boot-pipeline.md` 怪癖表——
+  空 `/dev` 回退 mknod、virtio/ext4 必须 `=m` 进 initramfs 等都是 openEuler
+  内核实测行为，删掉对应 fallback 会重新踩坑。
