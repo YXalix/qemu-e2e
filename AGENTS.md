@@ -48,7 +48,7 @@ AI 的标准验证循环：`doctor → test`。**判定以 test 收尾的 verdic
 2. **test 退出码**：0=通过、124=超时、其余=失败。
 3. **argv 冻结**：`QemuInvocation::argv` 的输出冻结在**按宿主平台的双基线**上
    （Linux=memfd 后端、macOS=ram 后端、HVF→`-accel hvf`），由
-   `crates/launcher/src/qemu.rs` 的 `argv_*` 单测显式钉死平台把守；
+   `crates/launcher/src/qemu/argv.rs` 的 `argv_*` 单测显式钉死平台把守；
    人工复核用 `QEMU=echo virtuoso shell` 打印 argv。数据盘与 agent 通道属调用方
    增量：**缺省（无盘无 agent）argv 与所属平台的基线逐字一致**。
 4. 测试必须静态链接（`-static`），禁止用 `|| true` 掩盖失败。

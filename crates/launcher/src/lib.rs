@@ -2,7 +2,7 @@
 //!
 //! `QemuInvocation` 强类型封装全部启动形态（KVM/TCG、NUMA、GDB stub、
 //! 多 virtio-blk 数据盘、vfio-pci 透传），argv 冻结在原 `infra/run-qemu.sh`
-//! （已删除的 shell 基线）上，由 qemu.rs 的 `argv_*` 单测把守；
+//! （已删除的 shell 基线）上，由 qemu/argv.rs 的 `argv_*` 单测把守；
 //! `QEMU=echo virtuoso shell` 可打印 argv 人工对照。架构矩阵定义在
 //! common::Arch —— builder（交叉前缀）与 cli 共同复用。
 //!

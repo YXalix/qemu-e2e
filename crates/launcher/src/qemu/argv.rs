@@ -1,194 +1,12 @@
-//! QEMU 启动参数 DSL —— run-qemu.sh 的强类型等价物。
+//! argv 装配：完整 argv 与 run-qemu.sh 的展开顺序逐字对齐
+//! （machine, memory-backend, numa, kvm, cpu, smp, m, kernel, initrd,
+//! append, rootfs drive, data disks, extra, console, options, debug）。
 
-use anyhow::Context;
-use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use common::HostOs;
 
-use common::{Arch, HostOs};
-
-use crate::guardian::Supervised;
-use crate::numa::NumaTopology;
-pub use crate::{DataDisk, PmemSpec};
-
-/// 加速器：KVM（Linux）/ HVF（macOS）仅宿主与目标同构时可用（调用方校验），
-/// 交叉架构回退 TCG。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Accel {
-    Tcg,
-    Kvm,
-    Hvf,
-}
-
-impl Accel {
-    /// verdict.json 运行指纹里的呈现名。
-    pub fn label(self) -> &'static str {
-        match self {
-            Accel::Tcg => "TCG",
-            Accel::Kvm => "KVM",
-            Accel::Hvf => "HVF",
-        }
-    }
-
-    /// 平台缺省加速器：macOS 上宿主架构与目标同构 → HVF（Apple Silicon 近
-    /// 原生），其余（含 Linux 全部场景）→ TCG。Linux 的 KVM 仍由 `shell
-    /// --kvm` 显式开启；macOS 想强制纯模拟用 `--tcg`。宿主架构显式传参
-    /// （运行时取 `Arch::host_default()`）而非函数内自查——编译目标推断会让
-    /// 钉死他平台行为的单测在 CI 的另一架构上必红。
-    pub fn default_for(arch: Arch, host: HostOs, host_arch: Option<Arch>) -> Accel {
-        if host == HostOs::Darwin && host_arch == Some(arch) {
-            Accel::Hvf
-        } else {
-            Accel::Tcg
-        }
-    }
-}
-
-/// QEMU 启动参数。
-#[derive(Debug, Clone)]
-pub struct QemuInvocation {
-    pub arch: Arch,
-    pub qemu_override: Option<String>,
-    pub kernel: PathBuf,
-    pub initrd: PathBuf,
-    pub rootfs: PathBuf,
-    /// 额外数据盘（virtio-blk，追加于 rootfs 之后 → /dev/vdb 起），
-    /// 如 tools.img（挂到 /tools 供 PATH 引用）。
-    pub data_disks: Vec<DataDisk>,
-    pub accel: Accel,
-    /// 宿主平台：决定内存后端形态（Linux=memfd、macOS=ram）与 accel 合法性。
-    /// 缺省取编译目标；argv_* 单测显式钉死以冻结双基线。
-    pub host: HostOs,
-    pub topo: NumaTopology,
-    /// kernel cmdline 的 auto_test 开关
-    pub auto_test: bool,
-    /// `-s -S`：挂起等待 GDB 连接 :1234
-    pub gdb_stub: bool,
-    /// AI agent 通道：virtio-serial 端口，宿主侧 unix socket（chardev）。
-    /// Some 时追加 chardev + virtio-serial-pci + virtserialport；None（缺省）
-    /// argv 与 run-qemu.sh 基线逐字不变（冻结不变量 3）。
-    pub agent_serial: Option<PathBuf>,
-    /// 持久内存组件（DT 途径）：Some 时主内存后端换成宿主文件（share=on，
-    /// pmem 区写入持久落盘）并追加 -dtb（补丁后的设备树，含 pmem-region
-    /// 节点）；None（缺省）argv 与基线逐字不变（冻结不变量 3）。
-    /// 仅单节点 NUMA 支持；x86_64 无 DT 由调用方拒绝。
-    pub pmem: Option<PmemSpec>,
-    /// 原样透传（shell 展开语义：按空白切分）
-    pub extra_opts: Vec<String>,
-}
+use super::{Accel, QemuInvocation};
 
 impl QemuInvocation {
-    pub fn new(
-        arch: Arch,
-        kernel: impl Into<PathBuf>,
-        initrd: impl Into<PathBuf>,
-        rootfs: impl Into<PathBuf>,
-    ) -> Self {
-        Self {
-            arch,
-            qemu_override: None,
-            kernel: kernel.into(),
-            initrd: initrd.into(),
-            rootfs: rootfs.into(),
-            data_disks: Vec::new(),
-            accel: Accel::Tcg,
-            host: HostOs::current(),
-            topo: NumaTopology {
-                smp: 1,
-                nodes: 1,
-                memory_per_node: "1G".into(),
-            },
-            auto_test: false,
-            gdb_stub: false,
-            agent_serial: None,
-            pmem: None,
-            extra_opts: Vec::new(),
-        }
-    }
-
-    pub fn accel(mut self, accel: Accel) -> Self {
-        self.accel = accel;
-        self
-    }
-
-    /// 钉死宿主平台（argv 冻结单测用；运行路径缺省取编译目标）。
-    pub fn host_os(mut self, host: HostOs) -> Self {
-        self.host = host;
-        self
-    }
-
-    pub fn topo(mut self, topo: NumaTopology) -> Self {
-        self.topo = topo;
-        self
-    }
-
-    pub fn qemu_override(mut self, qemu: Option<&str>) -> Self {
-        self.qemu_override = qemu.filter(|s| !s.is_empty()).map(str::to_string);
-        self
-    }
-
-    /// 附加一个 virtio-blk 数据盘（按调用顺序出现在 /dev/vdb、/dev/vdc…）。
-    pub fn virtio_disk(mut self, disk: DataDisk) -> Self {
-        self.data_disks.push(disk);
-        self
-    }
-
-    /// 批量附加数据盘（接受 Option / 迭代器，空缺省不变）。
-    pub fn virtio_disks(mut self, disks: impl IntoIterator<Item = DataDisk>) -> Self {
-        self.data_disks.extend(disks);
-        self
-    }
-
-    pub fn auto_test(mut self, on: bool) -> Self {
-        self.auto_test = on;
-        self
-    }
-
-    pub fn gdb_stub(mut self, on: bool) -> Self {
-        self.gdb_stub = on;
-        self
-    }
-
-    /// 启用 AI agent 通道（virtio-serial；宿主通过该 unix socket 与 guest
-    /// 内 virtuoso-agent 通信）。socket 文件须不存在（QEMU 不会清理旧路径）。
-    pub fn agent_serial(mut self, sock: impl Into<PathBuf>) -> Self {
-        self.agent_serial = Some(sock.into());
-        self
-    }
-
-    /// 附加持久内存设备（None = 缺省，argv 保持基线）。
-    pub fn pmem(mut self, spec: Option<PmemSpec>) -> Self {
-        self.pmem = spec;
-        self
-    }
-
-    pub fn extra_opts(mut self, opts: &[String]) -> Self {
-        self.extra_opts = opts.to_vec();
-        self
-    }
-
-    pub fn qemu_bin(&self) -> String {
-        self.qemu_override
-            .clone()
-            .unwrap_or_else(|| self.arch.qemu_bin().to_string())
-    }
-
-    /// 内核 cmdline（run-qemu.sh 冻结文本；pmem 组件追加 mem= 把 pmem 区
-    /// 从内核线性内存模型中排除，等价 x86 memmap= 语义）。
-    pub fn cmdline(&self) -> String {
-        let mut cmd = format!(
-            "console={} root=/dev/vda rw init=/init loglevel=8",
-            self.arch.console()
-        );
-        if self.auto_test {
-            cmd.push_str(" auto_test");
-        }
-        if let Some(pmem) = &self.pmem {
-            cmd.push_str(&format!(" mem={}", pmem.mem_limit));
-        }
-        cmd
-    }
-
     /// 完整 argv，与 run-qemu.sh 的展开顺序逐字对齐：
     /// machine, memory-backend, numa, kvm, cpu, smp, m, kernel, initrd,
     /// append, rootfs drive, data disks, extra, console, options, debug。
@@ -208,18 +26,32 @@ impl QemuInvocation {
             _ => {}
         }
         let total_mem = self.topo.total_memory()?;
-        // Linux 基线冻结用 memfd 后端；macOS QEMU 无 memfd_create，换 ram
-        //（形态等价：同为普通匿名内存，share 语义 ram 恒 off 不需显式声明）
-        let mem_backend = |id: &str, size: &str| -> String {
-            match self.host {
-                HostOs::Linux => {
-                    format!("memory-backend-memfd,id={id},size={size},share=off")
-                }
-                HostOs::Darwin => format!("memory-backend-ram,id={id},size={size}"),
-            }
-        };
         let mut args: Vec<String> = Vec::new();
 
+        self.push_machine_and_memory(&mut args, &total_mem)?;
+        self.push_accel_cpu_smp(&mut args);
+        self.push_boot_and_drives(&mut args, &total_mem);
+        self.push_agent_channel(&mut args);
+        self.push_tail(&mut args);
+        Ok(args)
+    }
+
+    /// -machine + 内存后端（单节点 memory-backend=mem 关联 / 多节点逐节点
+    /// -object+-numa / pmem 换文件后端 share=on）。Linux 基线冻结用 memfd
+    /// 后端；macOS QEMU 无 memfd_create，换 ram（形态等价：同为普通匿名
+    /// 内存，share 语义 ram 恒 off 不需显式声明）。
+    fn mem_backend(&self, id: &str, size: &str) -> String {
+        match self.host {
+            HostOs::Linux => format!("memory-backend-memfd,id={id},size={size},share=off"),
+            HostOs::Darwin => format!("memory-backend-ram,id={id},size={size}"),
+        }
+    }
+
+    fn push_machine_and_memory(
+        &self,
+        args: &mut Vec<String>,
+        total_mem: &str,
+    ) -> anyhow::Result<()> {
         args.push("-machine".into());
         if self.topo.nodes > 1 {
             if self.pmem.is_some() {
@@ -234,7 +66,7 @@ impl QemuInvocation {
             let per_node = self.topo.smp / self.topo.nodes;
             for i in 0..self.topo.nodes {
                 args.push("-object".into());
-                args.push(mem_backend(&format!("mem{i}"), &self.topo.memory_per_node));
+                args.push(self.mem_backend(&format!("mem{i}"), &self.topo.memory_per_node));
                 let start = i * per_node;
                 let end = start + per_node - 1;
                 args.push("-numa".into());
@@ -250,9 +82,13 @@ impl QemuInvocation {
             ));
         } else {
             args.push("-object".into());
-            args.push(mem_backend("mem", &total_mem));
+            args.push(self.mem_backend("mem", total_mem));
         }
+        Ok(())
+    }
 
+    /// 加速器开关 + -cpu + -smp。
+    fn push_accel_cpu_smp(&self, args: &mut Vec<String>) {
         match self.accel {
             Accel::Kvm => args.push("-enable-kvm".into()),
             Accel::Hvf => {
@@ -277,9 +113,12 @@ impl QemuInvocation {
         } else {
             args.push(self.topo.smp.to_string());
         }
+    }
 
+    /// -m / -kernel / -initrd / -append /（pmem -dtb）/ rootfs drive / 数据盘。
+    fn push_boot_and_drives(&self, args: &mut Vec<String>, total_mem: &str) {
         args.push("-m".into());
-        args.push(total_mem);
+        args.push(total_mem.to_string());
         args.push("-kernel".into());
         args.push(self.kernel.display().to_string());
         args.push("-initrd".into());
@@ -304,7 +143,10 @@ impl QemuInvocation {
             args.push("-drive".into());
             args.push(format!("file={},format=raw,if=virtio", disk.path.display()));
         }
+    }
 
+    /// AI agent 通道（virtio-serial chardev + 端口设备）。
+    fn push_agent_channel(&self, args: &mut Vec<String>) {
         if let Some(sock) = &self.agent_serial {
             args.push("-chardev".into());
             args.push(format!(
@@ -316,7 +158,10 @@ impl QemuInvocation {
             args.push("-device".into());
             args.push("virtserialport,chardev=agentch,id=agentport,name=virtuoso-agent".into());
         }
+    }
 
+    /// extra_opts 透传与收尾参数（console / -no-reboot / gdb stub）。
+    fn push_tail(&self, args: &mut Vec<String>) {
         for opt in &self.extra_opts {
             args.extend(opt.split_whitespace().map(str::to_string));
         }
@@ -330,65 +175,15 @@ impl QemuInvocation {
             args.push("-s".into());
             args.push("-S".into());
         }
-        Ok(args)
-    }
-
-    /// 单行可复制启动命令（shell 引用；spawn 前展示 / 手动复现用）。
-    pub fn command_line(&self) -> anyhow::Result<String> {
-        let mut parts = vec![self.qemu_bin()];
-        parts.extend(self.argv()?.iter().map(|a| common::shell::quote(a)));
-        Ok(parts.join(" "))
-    }
-
-    /// spawn QEMU：独立进程组（pgid = 返回的 child pid，交给 guardian 模块收割）。
-    /// `piped` = true 时 stdout/stderr 管道化（test 路径捕获串口），
-    /// false 时继承宿主 stdio（交互 shell / debug）。
-    pub fn spawn(self, piped: bool) -> anyhow::Result<(Child, u32)> {
-        for (what, path) in [
-            ("Kernel image", &self.kernel),
-            ("Initramfs", &self.initrd),
-            ("Rootfs image", &self.rootfs),
-        ]
-        .into_iter()
-        .chain(self.data_disks.iter().map(|d| ("Data disk image", &d.path)))
-        {
-            if !path.is_file() {
-                anyhow::bail!(
-                    "{what} not found at {} (build the kernel / run `virtuoso build` first)",
-                    path.display()
-                );
-            }
-        }
-        let args = self.argv()?;
-        let mut cmd = Command::new(self.qemu_bin());
-        cmd.args(&args).process_group(0);
-        if piped {
-            cmd.stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .stdin(Stdio::null());
-        }
-        let child = cmd.spawn().with_context(|| {
-            format!(
-                "{} not found; run `virtuoso doctor --verbose` for install hints",
-                self.qemu_bin()
-            )
-        })?;
-        let pgid = child.id();
-        Ok((child, pgid))
-    }
-
-    /// spawn 并登记监管：注册表 + 收割守卫一步到位（取代调用方四步样板）。
-    pub fn spawn_supervised(self, piped: bool) -> anyhow::Result<(Child, Supervised)> {
-        let (child, pgid) = self.spawn(piped)?;
-        Ok((child, Supervised::adopt(pgid)))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{DataDisk, PmemSpec};
     use crate::numa::NumaTopology;
-    use common::HostOs;
+    use common::{Arch, HostOs};
 
     fn base_inv() -> QemuInvocation {
         QemuInvocation::new(
@@ -499,30 +294,6 @@ mod tests {
     }
 
     #[test]
-    fn default_accel_only_hvf_on_darwin_same_arch() {
-        assert_eq!(
-            Accel::default_for(Arch::Arm64, HostOs::Darwin, Some(Arch::Arm64)),
-            Accel::Hvf,
-            "Apple Silicon 宿主跑 arm64 guest 缺省 HVF"
-        );
-        assert_eq!(
-            Accel::default_for(Arch::X86_64, HostOs::Darwin, Some(Arch::Arm64)),
-            Accel::Tcg,
-            "Apple Silicon 宿主交叉 x86_64 guest 回落 TCG"
-        );
-        assert_eq!(
-            Accel::default_for(Arch::Arm64, HostOs::Darwin, None),
-            Accel::Tcg,
-            "宿主架构未知回落 TCG"
-        );
-        assert_eq!(
-            Accel::default_for(Arch::Arm64, HostOs::Linux, Some(Arch::Arm64)),
-            Accel::Tcg,
-            "Linux 全场景缺省 TCG（KVM 仍由 --kvm 显式开启）"
-        );
-    }
-
-    #[test]
     fn virtio_disk_and_gdb_and_extra_opts() {
         let args = base_inv()
             .virtio_disk(DataDisk::new("/tmp/tools.img"))
@@ -620,15 +391,6 @@ mod tests {
     }
 
     #[test]
-    fn cmdline_without_auto_test_has_no_trailing_space() {
-        let inv = QemuInvocation::new(Arch::Riscv64, "k", "i", "r");
-        assert_eq!(
-            inv.cmdline(),
-            "console=ttyS0 root=/dev/vda rw init=/init loglevel=8"
-        );
-    }
-
-    #[test]
     fn agent_serial_off_by_default_keeps_baseline_argv() {
         // 冻结不变量 3：未启用 agent 通道时 argv 与基线逐字一致
         let joined = base_inv().argv().unwrap().join(" ");
@@ -653,14 +415,5 @@ mod tests {
         let pos = |p: &str| args.iter().position(|a| a.contains(p)).unwrap();
         assert!(pos("-drive") < pos("-chardev"));
         assert!(pos("virtserialport") < pos("-nographic"));
-    }
-
-    #[test]
-    fn command_line_quotes_append_value() {
-        let args = base_inv().command_line().unwrap();
-        // 路径与逗号安全字符原样；含空格的 -append 值整体单引号
-        assert!(args.contains("-drive file=/tmp/rootfs.img,format=raw,if=virtio"));
-        assert!(args.contains("-append 'console=ttyAMA0 root=/dev/vda rw init=/init loglevel=8'"));
-        assert!(args.starts_with("qemu-system-aarch64 -machine virt"));
     }
 }

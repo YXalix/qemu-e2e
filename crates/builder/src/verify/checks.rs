@@ -1,15 +1,13 @@
-//! 前置检查引擎（verify.sh 的 Rust 接管）。输出文本与退出码语义对齐 shell
-//! 基线：critical FAIL → exit 1；WARN/INFO 不影响退出码。
-//!
-//! doctor 的两种呈现（一屏分组 / --verbose 全量）都消费本模块的 Report：
-//! 每条 Check 自带 `kind`（分组）与 `summary`（一屏紧凑短语，None = 不进
-//! 一屏）——新增前置条件只动引擎，呈现自动跟随，doctor 不做消息文本反解。
+//! 逐项检查函数（verify.sh 的 11 项 + 组件平台门 + docker 供给组）。
 
 use std::path::Path;
 
-use common::{Arch, HostOs};
+use common::HostOs;
 
 use crate::modconf;
+
+use super::check::{fail, info, pass, warn};
+use super::check::{Check, CheckKind};
 
 /// 宿主工具表（按平台）。initrd 打包已原生化（builder::cpio），cpio/gzip/
 /// wget/nproc/timeout 不再是硬需求；下载层 wget 缺失时有 curl 回退。
@@ -48,146 +46,8 @@ pub fn module_presence(
         .collect()
 }
 
-/// 检查主题（doctor 一屏分组的唯一依据；grouping 与 label 同源，无文本反解）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CheckKind {
-    Config,
-    HostTools,
-    CrossCompile,
-    KernelPath,
-    KernelSource,
-    KernelImage,
-    KernelDocker,
-    QemuBinary,
-    QemuImg,
-    Modules,
-    Components,
-    BusyBox,
-    ToolsImage,
-    Initrd,
-}
-
-impl CheckKind {
-    /// 消息标签（msg 以 "<label>: " 开头；doctor 剥前缀取正文）。
-    pub fn label(self) -> &'static str {
-        match self {
-            CheckKind::Config => "Configuration",
-            CheckKind::HostTools => "Host tools",
-            CheckKind::CrossCompile => "Cross-compile",
-            CheckKind::KernelPath => "KERNEL_PATH",
-            CheckKind::KernelSource => "Kernel source",
-            CheckKind::KernelImage => "Kernel image",
-            CheckKind::KernelDocker => "Kernel docker",
-            CheckKind::QemuBinary => "QEMU binary",
-            CheckKind::QemuImg => "qemu-img",
-            CheckKind::Modules => "Kernel modules",
-            CheckKind::Components => "Components",
-            CheckKind::BusyBox => "BusyBox",
-            CheckKind::ToolsImage => "Tools image",
-            CheckKind::Initrd => "Initrd",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Level {
-    Pass,
-    Fail,
-    Warn,
-    Info,
-}
-
-#[derive(Debug)]
-pub struct Check {
-    pub level: Level,
-    pub kind: CheckKind,
-    pub msg: String,
-    /// 一屏紧凑短语（Pass/Info 用；None = 不进一屏，如纯可选信息行）。
-    pub summary: Option<String>,
-}
-
-/// msg 的 "<label>: " 前缀之后正文（Fail/Warn 逐行修复提示）。
-pub fn detail(kind: CheckKind, msg: &str) -> &str {
-    msg.strip_prefix(kind.label())
-        .map(|r| r.trim_start_matches([':', ' ']))
-        .unwrap_or(msg)
-}
-
-fn check(level: Level, kind: CheckKind, msg: impl Into<String>, summary: Option<String>) -> Check {
-    Check {
-        level,
-        kind,
-        msg: msg.into(),
-        summary,
-    }
-}
-fn pass(kind: CheckKind, msg: impl Into<String>, summary: Option<String>) -> Check {
-    check(Level::Pass, kind, msg, summary)
-}
-fn fail(kind: CheckKind, msg: impl Into<String>) -> Check {
-    check(Level::Fail, kind, msg, None)
-}
-fn warn(kind: CheckKind, msg: impl Into<String>) -> Check {
-    check(Level::Warn, kind, msg, None)
-}
-fn info(kind: CheckKind, msg: impl Into<String>, summary: Option<String>) -> Check {
-    check(Level::Info, kind, msg, summary)
-}
-
-pub struct Report {
-    pub checks: Vec<Check>,
-    pub critical_pass: u32,
-    pub critical_fail: u32,
-    pub warnings: u32,
-}
-
-/// 检查引擎输入（doctor / engine_report 投影；一次装配，免长参数表）。
-pub struct CheckInput<'a> {
-    pub config_file_exists: bool,
-    pub kernel_path: Option<&'a Path>,
-    pub arch: Arch,
-    pub host: HostOs,
-    pub host_is_cross: bool,
-    pub kernel_image: Option<&'a Path>,
-    pub qemu_bin: Option<&'a str>,
-    pub qemu_override: Option<&'a str>,
-    /// (模块名, .ko 是否找到)
-    pub modules: &'a [(String, bool)],
-    pub busybox_cached: bool,
-    pub tools_img_exists: bool,
-    pub initrd: Option<&'a Path>,
-    pub vfio_enabled: bool,
-    pub pmem_enabled: bool,
-}
-
-/// 运行全部检查（verify.sh 的 11 项 + 组件平台门），逐项独立成函数。
-pub fn run_checks(input: &CheckInput) -> Report {
-    let mut checks = Vec::new();
-    check_config(input, &mut checks);
-    check_host_tools(input, &mut checks);
-    check_kernel_source(input, &mut checks);
-    check_kernel_image(input, &mut checks);
-    check_qemu(input, &mut checks);
-    check_modules(input, &mut checks);
-    check_busybox(input, &mut checks);
-    check_cross(input, &mut checks);
-    check_tools_image(input, &mut checks);
-    check_initrd(input, &mut checks);
-    check_components(input, &mut checks);
-
-    let critical_pass = checks.iter().filter(|c| c.level == Level::Pass).count() as u32;
-    let critical_fail = checks.iter().filter(|c| c.level == Level::Fail).count() as u32;
-    let warnings = checks.iter().filter(|c| c.level == Level::Warn).count() as u32;
-    Report {
-        checks,
-        critical_pass,
-        critical_fail,
-        warnings,
-    }
-}
-
 // 1. Configuration
-fn check_config(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_config(input: &super::CheckInput, checks: &mut Vec<Check>) {
     if input.config_file_exists {
         checks.push(pass(
             CheckKind::Config,
@@ -203,7 +63,7 @@ fn check_config(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 2. Host tools（按宿主平台分表 + 下载/镜像/交叉工具链）
-fn check_host_tools(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_host_tools(input: &super::CheckInput, checks: &mut Vec<Check>) {
     let host = input.host;
     let tools = host_tools(host);
     let mut missing: Vec<String> = tools
@@ -254,7 +114,7 @@ fn check_host_tools(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 3/4. 内核来源：KERNEL_PATH 源码树
-fn check_kernel_source(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_kernel_source(input: &super::CheckInput, checks: &mut Vec<Check>) {
     match input.kernel_path.filter(|p| !p.as_os_str().is_empty()) {
         Some(p) => checks.push(pass(
             CheckKind::KernelPath,
@@ -303,7 +163,7 @@ fn check_kernel_source(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 5. Kernel image
-fn check_kernel_image(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_kernel_image(input: &super::CheckInput, checks: &mut Vec<Check>) {
     let summary = |p: &Path| {
         let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
         format!(
@@ -332,7 +192,7 @@ fn check_kernel_image(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 6. QEMU binary
-fn check_qemu(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_qemu(input: &super::CheckInput, checks: &mut Vec<Check>) {
     let qemu_found = input.qemu_bin.is_some_and(common::fsutil::which);
     let qemu_override = input.qemu_override.filter(|s| !s.is_empty());
     if let Some(q) = qemu_override {
@@ -376,7 +236,7 @@ fn check_qemu(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 7. Kernel modules（WARN，不判死；清单 = 启用组件 require 并集 + boot 基础集附加）
-fn check_modules(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_modules(input: &super::CheckInput, checks: &mut Vec<Check>) {
     if input.modules.is_empty() {
         checks.push(info(
             CheckKind::Modules,
@@ -411,7 +271,7 @@ fn check_modules(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 8. BusyBox
-fn check_busybox(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_busybox(input: &super::CheckInput, checks: &mut Vec<Check>) {
     if input.busybox_cached {
         checks.push(pass(
             CheckKind::BusyBox,
@@ -431,7 +291,7 @@ fn check_busybox(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 9. Cross-compile
-fn check_cross(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_cross(input: &super::CheckInput, checks: &mut Vec<Check>) {
     if input.host_is_cross {
         checks.push(warn(
             CheckKind::CrossCompile,
@@ -445,7 +305,7 @@ fn check_cross(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 10. Tools image
-fn check_tools_image(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_tools_image(input: &super::CheckInput, checks: &mut Vec<Check>) {
     checks.push(if input.tools_img_exists {
         info(
             CheckKind::ToolsImage,
@@ -462,7 +322,7 @@ fn check_tools_image(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 11. initrd
-fn check_initrd(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_initrd(input: &super::CheckInput, checks: &mut Vec<Check>) {
     match input.initrd.filter(|p| p.is_file()) {
         Some(p) => {
             let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
@@ -487,7 +347,7 @@ fn check_initrd(input: &CheckInput, checks: &mut Vec<Check>) {
 
 // 12. 组件平台门：vfio 架构性依赖 Linux（IOMMU + vfio-pci）；pmem 的
 // memory-backend-file/dumpdtb 链路在 macOS 上未经实测（brew dtc 可得）
-fn check_components(input: &CheckInput, checks: &mut Vec<Check>) {
+pub(super) fn check_components(input: &super::CheckInput, checks: &mut Vec<Check>) {
     if input.vfio_enabled {
         if input.host == HostOs::Darwin {
             checks.push(fail(
@@ -574,52 +434,4 @@ fn kernel_version(kernel: &Path) -> Option<String> {
         }
     }
     (!parts.is_empty()).then(|| parts.join("."))
-}
-
-impl Report {
-    /// 追加检查并重算计数（doctor 附加 docker 供给组用）。
-    pub fn extend(&mut self, extra: Vec<Check>) {
-        self.checks.extend(extra);
-        self.recount();
-    }
-
-    fn recount(&mut self) {
-        self.critical_pass = self
-            .checks
-            .iter()
-            .filter(|c| c.level == Level::Pass)
-            .count() as u32;
-        self.critical_fail = self
-            .checks
-            .iter()
-            .filter(|c| c.level == Level::Fail)
-            .count() as u32;
-        self.warnings = self
-            .checks
-            .iter()
-            .filter(|c| c.level == Level::Warn)
-            .count() as u32;
-    }
-
-    /// 渲染（tty 下着色；--verbose 全量清单）。
-    pub fn render(&self) -> String {
-        let mut out = String::new();
-        out.push_str(&common::ui::bold("[DOCTOR] QEMU E2E Prerequisites Check"));
-        out.push_str("\n========================================\n");
-        for chk in &self.checks {
-            let (tag, code) = match chk.level {
-                Level::Pass => ("[PASS]", "0;32"),
-                Level::Fail => ("[FAIL]", "0;31"),
-                Level::Warn => ("[WARN]", "0;33"),
-                Level::Info => ("[INFO]", "0;36"),
-            };
-            out.push_str(&format!("  {} {}\n", common::ui::paint(code, tag), chk.msg));
-        }
-        out
-    }
-}
-
-/// 仅影响颜色，不影响判定（doctor 呈现层共用同一 NO_COLOR 语义）。
-pub fn is_stdout_tty() -> bool {
-    common::ui::tty()
 }

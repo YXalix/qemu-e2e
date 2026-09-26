@@ -92,8 +92,8 @@ virtuoso/
 ├── crates/
 │   ├── common/                 # 基础层（零依赖）：Arch 矩阵 / which / ELF / 内存单位 / 时间 / 人类可读大小
 │   ├── builder/                # 构建器：镜像发现 / C+Rust 用例 / 模块清单 / busybox 供给 / cpio+ext4 组装 / verify 引擎
-│   ├── launcher/               # 启动 DSL（qemu.rs）+ NUMA（numa.rs）+ 进程治理（guardian/）
-│   └── judge/                  # 标记协议解析与判定（lib.rs）+ verdict schema（report.rs）+ 退出码语义（exit.rs）
+│   ├── launcher/               # 启动 DSL（qemu/）+ NUMA（numa.rs）+ 进程治理（guardian/）
+│   └── judge/                  # 标记协议解析（parse.rs）+ 判定与类型（lib.rs）+ verdict schema（report.rs）+ 退出码语义（exit.rs）
 ├── infra/                      # VM 内源资产（构建时注入镜像，git 跟踪）
 │   ├── init                    # 测试 init（rootfs 的 PID 1）
 │   ├── init-initramfs          # stage-1 init（initramfs 的 PID 1：mount root= → switch_root）

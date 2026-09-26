@@ -27,7 +27,7 @@
 ## argv 冻结基线
 
 `QemuInvocation::argv` 在缺省形态（无数据盘、无 agent 通道）下的输出与既定
-基线**逐字一致**，由 `crates/launcher/src/qemu.rs` 的 `argv_*` 单测把守。
+基线**逐字一致**，由 `crates/launcher/src/qemu/argv.rs` 的 `argv_*` 单测把守。
 **基线按宿主平台各持一份**（`common::HostOs`，单测显式钉死，不随编译目标
 漂移）：两平台的差异面收敛在两处——
 
@@ -67,6 +67,6 @@ TEST_COMPLETE: SOME TESTS FAILED    # → exit 1
 exit 124   # wallclock timeout（内核挂死 / runaway loop）
 ```
 
-judge 对以上标记逐行解析为结构化事件（见 `crates/judge/src/lib.rs`）。
+judge 对以上标记逐行解析为结构化事件（见 `crates/judge/src/parse.rs`）。
 用例侧只依赖 `[PASS]` 等断言宏，汇编层标记由 `infra/init` 输出。编写测试见
 [编写测试用例](../guide/writing-tests.md)。
