@@ -31,7 +31,7 @@ virtuoso triage             # 分诊报告（判定以 verdict 为准）
 | `virtuoso shell [--kvm] [--gdb]` | 交互式 VM（BusyBox shell）；`--gdb` GDB stub `:1234` 挂起启动 |
 | `virtuoso test [--arch a] [--replay-until-fail N]` | 构建 → 启动 → 判定；`--replay-until-fail` flaky 返场 |
 | `virtuoso probe --cmd '…'` | AI 交互通道（virtio-serial agent 命令批） |
-| `virtuoso triage` / `cluster` | 单次分诊报告 / 跨 run 失败指纹聚类 + flaky 清单 |
+| `virtuoso triage` | 单次运行分诊报告 |
 
 ## 文档
 

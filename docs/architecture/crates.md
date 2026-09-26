@@ -91,12 +91,4 @@ test_end / assert / summary / marker / panic / oops / run_end）、
 `verdict.json`（`VerdictReport`：汇总判定 + 运行指纹——内核 mtime/大小、QEMU
 版本、拓扑、超时；构造与回读共用同一 serde schema）。退出码语义唯一表在
 `judge::exit`（0=通过、124=超时、其余=失败）。工件详解见
-[运行工件与跨 run 分析](../guide/artifacts.md)。
-
-## judge::tracker — 跨 run 语义
-
-跨 run 分诊语义并入 judge（`tracker` 模块）：输入是本 crate verdict schema 的最小摘要 `RunSummary`（`From<VerdictReport>` 投影，schema 演进不外溢），IO 留在 runs 层：
-
-* **失败指纹** = verdict 类 + 归一化证据（剥离内核时间戳、数字折叠为 `N`；panic/oops 优先 → timeout → 失败测试集）；
-* **聚类**（`cluster`）：跨 run 指纹分组，输出 flaky 用例清单（flaky 判定只信 passed/failed 的 run）与每类失败首现 run；
-* **返场**（`test --replay-until-fail N`）：对可疑 flaky 场景自动返场，首个非 passed verdict 即停。
+[运行工件与分诊](../guide/artifacts.md)。

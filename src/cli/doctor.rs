@@ -9,7 +9,7 @@ use launcher::Arch;
 
 use builder::verify::{Level, Report};
 
-use super::{preset_kind, resolve_arch};
+use super::resolve_arch;
 use crate::config::Config;
 
 // ---------------------------------------------------------------- 引擎输入投影
@@ -19,28 +19,11 @@ use crate::config::Config;
 fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
     let host_arch = Arch::parse(std::env::consts::ARCH);
     let kernel_path = cfg.kernel_path().ok().map(|(kp, _)| kp);
-    let preset = preset_kind(cfg)?;
-    let preset_active = preset.is_some();
 
-    // preset 激活：内核镜像 = fetch 缓存（离线呈现钉定版本，未钉定留空）；
-    // 源码树 .ko 查找整体跳过（预编内核全 =y 内建，无怪癖前置）
-    let kernel_img = if preset_active {
-        Some(super::preset_dir(cfg).join(builder::preset::image_name(arch)))
-    } else {
-        kernel_path.as_ref().map(|p| p.join(arch.kernel_img()))
-    };
-    let modules = if preset_active {
-        Vec::new()
-    } else {
-        let plan = cfg.component_plan();
-        let module_lines: Vec<String> = plan.all().cloned().collect();
-        builder::verify::module_presence(&module_lines, kernel_path.as_deref(), &cfg.infra_dir)
-    };
-    let preset_version = if preset_active {
-        builder::preset::pin_version(&cfg.infra_dir).unwrap_or_default()
-    } else {
-        String::new()
-    };
+    let kernel_img = kernel_path.as_ref().map(|p| p.join(arch.kernel_img()));
+    let plan = cfg.component_plan();
+    let module_lines: Vec<String> = plan.all().cloned().collect();
+    let modules = builder::verify::module_presence(&module_lines, kernel_path.as_deref(), &cfg.infra_dir);
 
     Ok(builder::verify::run_checks(&builder::verify::CheckInput {
         config_file_exists: cfg.toml.is_some(),
@@ -61,12 +44,11 @@ fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
         initrd: Some(&cfg.artifacts_dir.join("initrd.img")),
         vfio_enabled: cfg.vfio().is_some(),
         pmem_enabled: cfg.pmem_size().is_some(),
-        preset_version: preset.as_deref().map(|_| preset_version.as_str()),
     }))
 }
 
 /// docker 供给模式附加检查（forge 活动卷）：状态文件存在 = 活动卷开启，
-/// 才投影 forge 检查——raw/preset 用户无状态文件，零打扰。
+/// 才投影 forge 检查——raw 用户无状态文件，零打扰。
 fn docker_report(cfg: &Config, report: &mut Report) {
     let Ok(Some(current)) = forge::state::read(&cfg.project_root) else {
         return;
@@ -137,8 +119,7 @@ fn group_of(kind: CheckKind) -> Group {
     match kind {
         CheckKind::Config => Group::Config,
         CheckKind::HostTools | CheckKind::CrossCompile => Group::Toolchain,
-        CheckKind::KernelPreset
-        | CheckKind::KernelPath
+        CheckKind::KernelPath
         | CheckKind::KernelSource
         | CheckKind::KernelImage
         | CheckKind::KernelDocker => Group::Kernel,
@@ -366,7 +347,6 @@ mod tests {
             (CheckKind::Config, Group::Config),
             (CheckKind::HostTools, Group::Toolchain),
             (CheckKind::CrossCompile, Group::Toolchain),
-            (CheckKind::KernelPreset, Group::Kernel),
             (CheckKind::KernelPath, Group::Kernel),
             (CheckKind::KernelSource, Group::Kernel),
             (CheckKind::KernelImage, Group::Kernel),

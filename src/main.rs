@@ -1,6 +1,6 @@
 //! Virtuoso — kernel E2E 虚拟化测试装置的 CLI 入口。
 //!
-//! 本 crate 只保留 clap 定义与子命令分发：命令实现在 `cli`（kernel/fetch/
+//! 本 crate 只保留 clap 定义与子命令分发：命令实现在 `cli`（kernel/
 //! build/vm/doctor），运行工件与呈现命令在 `runs`（rundir/render），类型化
 //! 配置在 `config`。领域逻辑全部在库 crate（common/builder/launcher/judge/
 //! forge）。
@@ -45,16 +45,6 @@ enum Command {
         /// Only provision the static BusyBox for the current arch (release download first, source fallback)
         #[arg(long = "busybox-only")]
         busybox_only: bool,
-    },
-    /// Fetch the preset prebuilt kernel (mainline mini Image) into
-    /// target/kernel/preset — the out-of-the-box supply for kernel_preset = "mainline"
-    Fetch {
-        /// Override version (X.Y[.Z]); default = infra/kernel/pin pin, else latest release
-        #[arg(long)]
-        version: Option<String>,
-        /// Fetch only this arch (default: all three arches)
-        #[arg(long)]
-        arch: Option<String>,
     },
     /// Containerized kernel supply (forge): named-volume sources + pinned
     /// toolchain image. Volume management and current switching
@@ -124,12 +114,6 @@ enum Command {
         /// Specific run (directory name under target/runs); default = latest
         #[arg(long)]
         run: Option<String>,
-        /// Machine-readable JSON output
-        #[arg(long)]
-        json: bool,
-    },
-    /// Cluster cross-run failure fingerprints (judge::tracker): flaky tests + first-seen run
-    Cluster {
         /// Machine-readable JSON output
         #[arg(long)]
         json: bool,

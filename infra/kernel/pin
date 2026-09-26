@@ -1,3 +1,0 @@
-# mainline preset 内核钉定版本 —— virtuoso fetch 缺省拉取的版本。
-# 留空 = 跟随最新已发布 release（kernel-v* tag）；写入版本号（如 6.12.8）即钉定。
-# kernel-release 工作流发布新版本后会开 bump PR 更新本文件，合并即采用。

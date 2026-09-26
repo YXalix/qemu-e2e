@@ -1,4 +1,4 @@
-# 运行工件与跨 run 分析
+# 运行工件与分诊
 
 每次 `virtuoso test` 写入 `target/runs/<unix_ms>-<arch>/`（保留最近
 20 次）；`probe` 也写 run 目录（内容为 `serial.log` + `qemu-stderr.log` +
@@ -35,14 +35,10 @@ QEMU 以 exit 0 退出——只看退出码会假通过；verdict 用 `TEST_COMP
 ```bash
 virtuoso triage [--run <id>] [--json]    # 最近（或指定）run 的分诊报告
 virtuoso test --replay-until-fail 5      # flaky 返场：首个非 passed 即停
-virtuoso cluster [--json]                # 跨 run 失败指纹聚类 + flaky 清单
 ```
 
-`triage` / `cluster` 都支持 `--json`，可直接进管道。语义细节：
+`triage` 支持 `--json`，可直接进管道。语义细节：
 
-- **cluster**：失败指纹 = verdict 类 + 归一化证据（剥离内核时间戳、数字折叠为
-  `N`；panic/oops 优先 → timeout → 失败测试集）；flaky 判定只信
-  passed/failed 的 run，并给出每类失败的首现 run；
 - Ctrl-C 中断的 run：工件已落盘，`triage` 对缺失的 verdict.json 自动降级为
   现场解析 serial.log（`verdict: unknown`）。
 

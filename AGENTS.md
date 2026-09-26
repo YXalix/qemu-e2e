@@ -21,8 +21,6 @@ launcher 启动+进程治理 / judge 判定+跨 run 聚类 / forge 容器化内�
 ```bash
 virtuoso doctor             # 环境体检（✓/✗ 组件行；--verbose 全量诊断；--json）
 virtuoso build              # builder：重建 initrd.img / rootfs.img / tools.img（--busybox-only 仅备 BusyBox）
-virtuoso fetch [--version v] [--arch a]
-                            # 拉 preset 预编内核（mainline mini Image）→ target/kernel/preset
 virtuoso kernel clone <url> [--ref r] [--as vol] [--arch a]
                             # forge：内核源码进 named volume（+ .clangd 渲染 + 写 current）
 virtuoso kernel build       # forge：容器 make Image/modules + CDB（/ksrc 原始形态）
@@ -30,7 +28,6 @@ virtuoso kernel build       # forge：容器 make Image/modules + CDB（/ksrc �
 virtuoso test --timeout 60  # 测试：launcher 启动 → judge 判定 → 工件落盘
 virtuoso test --replay-until-fail 5   # flaky 返场：首个非 passed 即停
 virtuoso triage [--json]    # 最近一次运行的分诊报告
-virtuoso cluster [--json]   # 跨 run 失败指纹聚类 + flaky 清单 + 首现 run；有失败 exit 1
 virtuoso shell [--kvm|--tcg] [--gdb]
                             # 交互式 VM；--gdb = 挂起等 GDB :1234（恒 TCG）
 virtuoso probe --cmd 'uname -a' [--cmd-file f] [--json] [--timeout s]

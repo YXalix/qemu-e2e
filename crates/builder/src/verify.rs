@@ -54,7 +54,6 @@ pub enum CheckKind {
     Config,
     HostTools,
     CrossCompile,
-    KernelPreset,
     KernelPath,
     KernelSource,
     KernelImage,
@@ -75,7 +74,6 @@ impl CheckKind {
             CheckKind::Config => "Configuration",
             CheckKind::HostTools => "Host tools",
             CheckKind::CrossCompile => "Cross-compile",
-            CheckKind::KernelPreset => "Kernel preset",
             CheckKind::KernelPath => "KERNEL_PATH",
             CheckKind::KernelSource => "Kernel source",
             CheckKind::KernelImage => "Kernel image",
@@ -160,9 +158,6 @@ pub struct CheckInput<'a> {
     pub initrd: Option<&'a Path>,
     pub vfio_enabled: bool,
     pub pmem_enabled: bool,
-    /// kernel_preset 预编内核钉定/解析出的版本：源码树与 .ko 查找类检查
-    /// 整体降级为 preset 语义（内建内核无怪癖前置）。
-    pub preset_version: Option<&'a str>,
 }
 
 /// 运行全部检查（verify.sh 的 11 项 + 组件平台门），逐项独立成函数。
@@ -258,70 +253,52 @@ fn check_host_tools(input: &CheckInput, checks: &mut Vec<Check>) {
     }
 }
 
-// 3/4. 内核来源二选一：preset 预编（免内核树）或 KERNEL_PATH 源码树
+// 3/4. 内核来源：KERNEL_PATH 源码树
 fn check_kernel_source(input: &CheckInput, checks: &mut Vec<Check>) {
-    match input.preset_version {
-        Some(v) => {
-            let ver = if v.is_empty() {
-                String::new()
-            } else {
-                format!(" v{v}")
-            };
-            checks.push(info(
-                CheckKind::KernelPreset,
+    match input.kernel_path.filter(|p| !p.as_os_str().is_empty()) {
+        Some(p) => checks.push(pass(
+            CheckKind::KernelPath,
+            format!("KERNEL_PATH: {}", p.display()),
+            None,
+        )),
+        None => checks.push(fail(
+            CheckKind::KernelPath,
+            "KERNEL_PATH not set (set kernel_path in virtuoso.toml or KERNEL_PATH env var)",
+        )),
+    }
+
+    let kernel_ok = input
+        .kernel_path
+        .map(|p| p.join("arch").is_dir())
+        .unwrap_or(false);
+    match (
+        input.kernel_path.filter(|p| !p.as_os_str().is_empty()),
+        kernel_ok,
+    ) {
+        (Some(p), true) => {
+            let kver = kernel_version(p);
+            let summary = kver
+                .as_ref()
+                .map(|v| format!("v{v}"))
+                .unwrap_or_else(|| p.display().to_string());
+            checks.push(pass(
+                CheckKind::KernelSource,
                 format!(
-                    "Kernel preset: mainline{ver} (预编内核已启用，源码树检查跳过；未就位时运行 `virtuoso fetch`)"
+                    "Kernel source: {}{}",
+                    p.display(),
+                    kver.map(|v| format!(" (v{v})")).unwrap_or_default()
                 ),
-                Some(format!("mainline{ver}")),
+                Some(summary),
             ));
         }
-        None => {
-            match input.kernel_path.filter(|p| !p.as_os_str().is_empty()) {
-                Some(p) => checks.push(pass(
-                    CheckKind::KernelPath,
-                    format!("KERNEL_PATH: {}", p.display()),
-                    None,
-                )),
-                None => checks.push(fail(
-                    CheckKind::KernelPath,
-                    "KERNEL_PATH not set (set kernel_path in virtuoso.toml or KERNEL_PATH env var; or enable kernel_preset = \"mainline\" + `virtuoso fetch`)",
-                )),
-            }
-
-            let kernel_ok = input
-                .kernel_path
-                .map(|p| p.join("arch").is_dir())
-                .unwrap_or(false);
-            match (
-                input.kernel_path.filter(|p| !p.as_os_str().is_empty()),
-                kernel_ok,
-            ) {
-                (Some(p), true) => {
-                    let kver = kernel_version(p);
-                    let summary = kver
-                        .as_ref()
-                        .map(|v| format!("v{v}"))
-                        .unwrap_or_else(|| p.display().to_string());
-                    checks.push(pass(
-                        CheckKind::KernelSource,
-                        format!(
-                            "Kernel source: {}{}",
-                            p.display(),
-                            kver.map(|v| format!(" (v{v})")).unwrap_or_default()
-                        ),
-                        Some(summary),
-                    ));
-                }
-                (Some(p), false) => checks.push(fail(
-                    CheckKind::KernelSource,
-                    format!(
-                        "Kernel source: {}/arch not found (set KERNEL_PATH)",
-                        p.display()
-                    ),
-                )),
-                (None, _) => {}
-            }
-        }
+        (Some(p), false) => checks.push(fail(
+            CheckKind::KernelSource,
+            format!(
+                "Kernel source: {}/arch not found (set KERNEL_PATH)",
+                p.display()
+            ),
+        )),
+        (None, _) => {}
     }
 }
 
@@ -342,11 +319,7 @@ fn check_kernel_image(input: &CheckInput, checks: &mut Vec<Check>) {
             Some(summary(img)),
         )),
         None => {
-            let hint = if input.preset_version.is_some() {
-                "run `virtuoso fetch`"
-            } else {
-                "build the kernel first"
-            };
+            let hint = "build the kernel first";
             checks.push(fail(
                 CheckKind::KernelImage,
                 format!(
@@ -403,15 +376,8 @@ fn check_qemu(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 // 7. Kernel modules（WARN，不判死；清单 = 启用组件 require 并集 + boot 基础集附加）
-// preset 内核全 =y 内建：.ko 查找整体无意义，单一 Info 行降噪
 fn check_modules(input: &CheckInput, checks: &mut Vec<Check>) {
-    if input.preset_version.is_some() {
-        checks.push(info(
-            CheckKind::Modules,
-            "Kernel modules: preset kernel builds required features in (no .ko lookup)",
-            Some("modules built-in".into()),
-        ));
-    } else if input.modules.is_empty() {
+    if input.modules.is_empty() {
         checks.push(info(
             CheckKind::Modules,
             "Kernel modules: none required (no enabled component declares require)",
@@ -545,7 +511,7 @@ fn check_components(input: &CheckInput, checks: &mut Vec<Check>) {
 }
 
 /// docker 供给模式（forge 活动卷）检查：仅在状态文件存在（活动卷开启）时
-/// 由 doctor 投影附加——raw/preset 用户无状态文件，零打扰。
+/// 由 doctor 投影附加——raw 用户无状态文件，零打扰。
 pub fn kernel_docker_checks(
     volume: &str,
     arch: &str,

@@ -41,13 +41,6 @@ impl Config {
         scalar(self.tv(|t| &t.kernel_image), "KERNEL_IMAGE")
     }
 
-    /// kernel_preset（"mainline" = 预编 mainline mini 内核）：激活后内核镜像
-    /// 走 `virtuoso fetch` 的缓存（target/kernel/preset），源码树不再是前置。
-    /// env KERNEL_PRESET 覆盖 toml（冻结的标量优先级）。
-    pub fn kernel_preset(&self) -> Option<String> {
-        scalar(self.tv(|t| &t.kernel_preset), "KERNEL_PRESET")
-    }
-
     /// QEMU_TIMEOUT 原始字符串（"0" 由 test 命令拒绝）。
     pub fn timeout_raw(&self) -> String {
         scalar(self.tv(|t| &t.timeout_secs), "QEMU_TIMEOUT").unwrap_or_else(|| "0".into())

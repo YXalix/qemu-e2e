@@ -42,22 +42,13 @@ virtuoso triage [--run <id>] [--json]     # verdict + 测试条目 + panic/oops 
 首个 fail/panic 事件 → 用 serial.log 对应行号看上下文 → 输出：根因假设 +
 建议复现命令（verdict.json 的 `repro` 字段）。
 
-### 2. 跨 run 聚类 / flaky 猎捕
-
-```
-virtuoso cluster [--json]     # 失败指纹桶（归一化 panic 行 / 失败测试集）+ flaky 清单 + 首现 run
-virtuoso triage --run <first_run_id>   # 从首现 run 回溯引入点
-```
-
-指纹归一化规则（judge::tracker）：剥离内核时间戳 `[ 1.2345]`、数字折叠为 `N`。同桶 = 同根因假设。
-
-### 3. 可疑 flaky 返场
+### 2. 可疑 flaky 返场
 
 ```
 virtuoso test --replay-until-fail N    # 最多 N 轮，首个非 passed 即停
 ```
 
-### 4. 测试脚手架生成
+### 3. 测试脚手架生成
 
 **新用例 = 一个 crate**：复制 `infra/testcases/test-example/` 为
 `test-<name>/`，加入 workspace `members`。Rust 测试在 `TESTS` 注册

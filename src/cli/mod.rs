@@ -4,14 +4,13 @@
 //! - build   → `cli::build`（build / clean / skill）
 //! - kernel  → `cli::kernel`（容器化内核供给：clone/defconfig/build/cc*/卷管理；逻辑在 forge）
 //! - vm      → `cli::vm`（shell / test：启动、看门狗、判定接线）
-//! - 呈现命令 → `runs::render`（triage / cluster）
+//! - 呈现命令 → `runs::render`（triage）
 //!
 //! 行为基线（退出码语义）不变：0=通过、124=超时、其余=失败（单点在 judge::exit）。
 
 mod build;
 mod diagnostics;
 mod doctor;
-mod fetch;
 mod kernel;
 mod pmem;
 mod probe;
@@ -38,9 +37,6 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
             json,
             verbose,
         } => doctor::run_doctor(arch.as_deref(), json, verbose),
-        CliCommand::Fetch { version, arch } => {
-            fetch::run_fetch(version.as_deref(), arch.as_deref())
-        }
         CliCommand::Build { busybox_only } => build::run_build(busybox_only),
         CliCommand::Kernel { action } => kernel::run_kernel(action),
         CliCommand::Shell { kvm, tcg, gdb } => vm::run_shell(kvm, tcg, gdb),
@@ -62,10 +58,6 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
         CliCommand::Triage { run, json } => {
             let cfg = Config::load()?;
             runs::run_triage(&cfg, run.as_deref(), json)
-        }
-        CliCommand::Cluster { json } => {
-            let cfg = Config::load()?;
-            runs::run_cluster(&cfg, json)
         }
     }
 }
@@ -89,29 +81,8 @@ pub(crate) fn resolve_topology(cfg: &Config) -> anyhow::Result<NumaTopology> {
     })
 }
 
-/// kernel_preset 的缓存目录（fetch 落这里，Image-<arch> 平铺 + version 记录）。
-pub(crate) fn preset_dir(cfg: &Config) -> std::path::PathBuf {
-    cfg.target_dir.join("kernel").join("preset")
-}
-
-/// kernel_preset 取值校验：None = 未启用（源码树路径）；Some(preset 名)。
-/// 未知值解析期即报错（与 toml 其余键的严格性一致）。
-pub(crate) fn preset_kind(cfg: &Config) -> anyhow::Result<Option<String>> {
-    match cfg.kernel_preset() {
-        None => Ok(None),
-        Some(v) if v == "mainline" => Ok(Some(v)),
-        Some(v) => Err(anyhow::anyhow!(
-            "unknown kernel_preset: {v} (supported: mainline)"
-        )),
-    }
-}
-
-/// 启动内核镜像路径：preset 激活 → fetch 缓存；否则优先 kernel_image 覆盖，
-/// 再回落内核树内 arch 对应镜像。
+/// 启动内核镜像路径：优先 kernel_image 覆盖，再回落内核树内 arch 对应镜像。
 pub(crate) fn kernel_image_path(cfg: &Config, arch: Arch) -> anyhow::Result<std::path::PathBuf> {
-    if preset_kind(cfg)?.is_some() {
-        return Ok(preset_dir(cfg).join(builder::preset::image_name(arch)));
-    }
     let (kernel_path, _) = cfg.kernel_path()?;
     Ok(cfg
         .kernel_image()

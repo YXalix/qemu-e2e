@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::{preset_kind, resolve_arch};
+use super::resolve_arch;
 use crate::config::Config;
 use crate::SkillAction;
 
@@ -30,7 +30,6 @@ pub(crate) fn build_pair_for(
 ) -> anyhow::Result<()> {
     let arch = resolve_arch(cfg, None)?;
     let (kernel_path, _) = cfg.kernel_path()?;
-    let preset = preset_kind(cfg)?.is_some();
     let supply = cfg.busybox_supply();
     let mut plan = cfg.component_plan();
     for line in extra_runtime {
@@ -56,7 +55,6 @@ pub(crate) fn build_pair_for(
             runtime: plan.runtime,
         },
         &mut progress,
-        preset,
     )
 }
 

@@ -24,8 +24,8 @@
 
 crate 以角色名词命名（common / builder / launcher / judge / forge），
 名字与职责一一对应：可以直接说"让 builder 重建 initrd"、"judge 在等
-TEST_COMPLETE"。进程治理并入 launcher（guardian 模块）、跨 run 聚类并入
-judge（tracker 模块）——启动与收割、判定与聚类本是一体的生命周期。
+TEST_COMPLETE"。进程治理并入 launcher（guardian 模块）——启动与收割
+本是一体的生命周期。
 
 规范二进制 virtuoso 是根包本体（`src/main.rs`）——指挥家本人：`cargo install --path .` 后，PATH 上的就是它。全部命令见 [CLI 参考](../cli-reference.md)。
 
@@ -87,13 +87,13 @@ virtuoso/
 ├── src/
 │   ├── main.rs                 # clap 子命令定义
 │   ├── config/                 # 类型化配置（schema/global/components/plan/busybox）
-│   ├── cli/                    # doctor / build / fetch / kernel / vm / probe / mod（分发+解析 helpers）/ diagnostics
-│   └── runs/                   # rundir（run 目录、输出泵、verdict 落盘回读）+ render（triage/cluster 呈现）
+│   ├── cli/                    # doctor / build / kernel / vm / probe / mod（分发+解析 helpers）/ diagnostics
+│   └── runs/                   # rundir（run 目录、输出泵、verdict 落盘回读）+ render（triage 呈现）
 ├── crates/
 │   ├── common/                 # 基础层（零依赖）：Arch 矩阵 / which / ELF / 内存单位 / 时间 / 人类可读大小
 │   ├── builder/                # 构建器：镜像发现 / C+Rust 用例 / 模块清单 / busybox 供给 / cpio+ext4 组装 / verify 引擎
 │   ├── launcher/               # 启动 DSL（qemu.rs）+ NUMA（numa.rs）+ 进程治理（guardian/）
-│   └── judge/                  # 标记协议解析与判定（lib.rs）+ verdict schema（report.rs）+ 退出码语义（exit.rs）+ 跨 run 聚类（tracker.rs）
+│   └── judge/                  # 标记协议解析与判定（lib.rs）+ verdict schema（report.rs）+ 退出码语义（exit.rs）
 ├── infra/                      # VM 内源资产（构建时注入镜像，git 跟踪）
 │   ├── init                    # 测试 init（rootfs 的 PID 1）
 │   ├── init-initramfs          # stage-1 init（initramfs 的 PID 1：mount root= → switch_root）

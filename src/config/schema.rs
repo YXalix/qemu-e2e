@@ -64,8 +64,6 @@ impl<'de> serde::Deserialize<'de> for Stage {
 pub struct VirtuosoToml {
     pub(crate) kernel_path: Option<StrVal>,
     pub(crate) kernel_image: Option<StrVal>,
-    /// kernel_preset = "mainline"：内核走预编供给（virtuoso fetch），免内核树
-    pub(crate) kernel_preset: Option<StrVal>,
     pub(crate) arch: Option<StrVal>,
     pub(crate) timeout_secs: Option<StrVal>,
     pub(crate) smp: Option<StrVal>,

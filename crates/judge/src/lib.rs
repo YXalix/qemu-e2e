@@ -1,6 +1,4 @@
 //! judge — 判定者：串口标记协议 v1 断言引擎、verdict 判定与 verdict.json schema。
-//! 跨 run 分诊语义（失败指纹聚类、flaky 识别，原 tracker crate）并入本 crate
-//! 的 `tracker` 模块：输入是本 crate verdict schema 的最小投影，判定与聚类同源。
 //!
 //! 协议 v1（冻结文本，设计文档附录 A）：
 //! `[PASS]/[FAIL]/[SKIP]/[INFO]` 断言行、`--- Running: X ---` / `PASSED:/FAILED: X`
@@ -12,7 +10,6 @@
 
 pub mod exit;
 pub mod report;
-pub mod tracker;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
