@@ -124,6 +124,7 @@ pub fn run_probe(
         started.elapsed().as_secs_f32(),
         run.path.display()
     );
+    crate::runs::prune(&cfg.project_root, crate::runs::RUNS_KEEP);
     Ok(exit_code)
 }
 

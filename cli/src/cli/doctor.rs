@@ -409,11 +409,11 @@ pub fn run_doctor(arch_override: Option<&str>, json: bool, verbose: bool) -> any
                 report.warnings
             );
         } else {
-            println!(
-                "\n  {} Ready — virtuoso test --timeout {}",
-                (if tty { "\x1b[0;32m✓\x1b[0m" } else { "✓" }),
-                cfg.timeout_raw()
-            );
+            let suggest = match cfg.timeout_raw() {
+                t if t.trim() == "0" => "virtuoso test --timeout 60".to_string(),
+                t => format!("virtuoso test --timeout {}", t.trim()),
+            };
+            println!("\n  {} Ready — {suggest}", (if tty { "\x1b[0;32m✓\x1b[0m" } else { "✓" }));
         }
     }
     Ok(i32::from(fail_total > 0))

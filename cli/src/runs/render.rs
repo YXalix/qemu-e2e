@@ -152,7 +152,7 @@ pub fn run_runs(cfg: &Config, json: bool) -> anyhow::Result<i32> {
         let (arch, verdict, exit, dur, tests) = match load_verdict_or_parse(d) {
             Ok(r) => (
                 r.arch,
-                r.verdict.as_str().to_string(),
+                r.verdict.as_str().to_uppercase(),
                 r.exit_code
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "-".into()),
@@ -163,13 +163,7 @@ pub fn run_runs(cfg: &Config, json: bool) -> anyhow::Result<i32> {
                     r.summary.reported_total.unwrap_or(0)
                 ),
             ),
-            Err(_) => (
-                "?".into(),
-                "?".into(),
-                "-".into(),
-                "-".into(),
-                "0/0 passed".into(),
-            ),
+            Err(_) => ("?".into(), "?".into(), "-".into(), "-".into(), "-".into()),
         };
         println!(
             "{:<22} {:<8} {:<12} {:>5} {:>8}  {}",

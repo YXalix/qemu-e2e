@@ -59,6 +59,10 @@ pub fn run_fetch(version: Option<&str>, arch_cli: Option<&str>) -> anyhow::Resul
         dir.display(),
         got.join(" · ")
     );
-    println!("next: virtuoso test --timeout 300");
+    let hint = match cfg.timeout_raw() {
+        t if t.trim() == "0" => "virtuoso test --timeout 300".to_string(),
+        t => format!("virtuoso test --timeout {}", t.trim()),
+    };
+    println!("next: {hint}");
     Ok(0)
 }
