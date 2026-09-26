@@ -64,21 +64,6 @@ pub enum EventKind {
     RunEnd,
 }
 
-impl EventKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            EventKind::TestStart => "test_start",
-            EventKind::TestEnd => "test_end",
-            EventKind::Assert => "assert",
-            EventKind::Summary => "summary",
-            EventKind::Marker => "marker",
-            EventKind::Panic => "panic",
-            EventKind::Oops => "oops",
-            EventKind::RunEnd => "run_end",
-        }
-    }
-}
-
 /// 一次串口流的整体解析结果。
 #[derive(Debug, Default)]
 pub struct Audit {

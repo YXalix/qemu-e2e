@@ -217,7 +217,10 @@ pub fn run_cluster(cfg: &Config, json: bool) -> anyhow::Result<i32> {
         return Ok(0);
     }
 
-    let failed_runs = summaries.iter().filter(|s| s.verdict != "passed").count();
+    let failed_runs = summaries
+        .iter()
+        .filter(|s| s.verdict != Verdict::Passed)
+        .count();
     println!(
         "[CLUSTER] {} runs scanned, {} failed, {} fingerprint bucket(s)",
         summaries.len(),
@@ -232,7 +235,7 @@ pub fn run_cluster(cfg: &Config, json: bool) -> anyhow::Result<i32> {
             "  #{} x{} [{}] {}",
             i + 1,
             c.count,
-            c.verdict,
+            c.verdict.as_str(),
             if c.key.len() > 120 {
                 format!("{}…", &c.key[..120])
             } else {

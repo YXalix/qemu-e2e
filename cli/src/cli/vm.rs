@@ -86,7 +86,7 @@ fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
 
     println!(
         "[LAUNCH] {}",
-        inv.command_line().map_err(anyhow::Error::msg)?
+        inv.command_line()?
     );
     let (mut child, mut sup) = inv.spawn_supervised(false)?;
     let st = child.wait().context("等待 QEMU 退出失败")?;
@@ -190,7 +190,7 @@ fn test_once(
     };
     println!(
         "[LAUNCH] {}",
-        inv.command_line().map_err(anyhow::Error::msg)?
+        inv.command_line()?
     );
     println!("Running QEMU test with {timeout_secs}s timeout...");
     let (mut child, mut sup) = inv.spawn_supervised(true)?;

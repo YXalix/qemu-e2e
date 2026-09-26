@@ -191,14 +191,14 @@ impl QemuInvocation {
     /// 完整 argv，与 run-qemu.sh 的展开顺序逐字对齐：
     /// machine, memory-backend, numa, kvm, cpu, smp, m, kernel, initrd,
     /// append, rootfs drive, data disks, extra, console, options, debug。
-    pub fn argv(&self) -> Result<Vec<String>, String> {
+    pub fn argv(&self) -> anyhow::Result<Vec<String>> {
         // accel × 宿主平台合法性（错误前置到 argv 构造期，而非留给 QEMU 报）
         match (self.accel, self.host) {
             (Accel::Kvm, HostOs::Darwin) => {
-                return Err("KVM 需要 Linux 宿主（macOS 硬件加速是 HVF）".into());
+                anyhow::bail!("KVM 需要 Linux 宿主（macOS 硬件加速是 HVF）");
             }
             (Accel::Hvf, HostOs::Linux) => {
-                return Err("HVF 需要 macOS 宿主（Linux 硬件加速是 KVM）".into());
+                anyhow::bail!("HVF 需要 macOS 宿主（Linux 硬件加速是 KVM）");
             }
             _ => {}
         }
@@ -218,7 +218,7 @@ impl QemuInvocation {
         args.push("-machine".into());
         if self.topo.nodes > 1 {
             if self.pmem.is_some() {
-                return Err("pmem 组件暂不支持 NUMA 多节点（保留单节点拓扑）".into());
+                anyhow::bail!("pmem 组件暂不支持 NUMA 多节点（保留单节点拓扑）");
             }
             args.push(self.arch.machine().into());
         } else {
@@ -329,7 +329,7 @@ impl QemuInvocation {
     }
 
     /// 单行可复制启动命令（shell 引用；spawn 前展示 / 手动复现用）。
-    pub fn command_line(&self) -> Result<String, String> {
+    pub fn command_line(&self) -> anyhow::Result<String> {
         let mut parts = vec![self.qemu_bin()];
         parts.extend(self.argv()?.iter().map(|a| common::shell::quote(a)));
         Ok(parts.join(" "))
@@ -354,7 +354,7 @@ impl QemuInvocation {
                 );
             }
         }
-        let args = self.argv().map_err(anyhow::Error::msg)?;
+        let args = self.argv()?;
         let mut cmd = Command::new(self.qemu_bin());
         cmd.args(&args).process_group(0);
         if piped {
@@ -488,9 +488,9 @@ mod tests {
             .accel(Accel::Kvm)
             .argv()
             .unwrap_err();
-        assert!(kvm_on_mac.contains("HVF"));
+        assert!(kvm_on_mac.to_string().contains("HVF"));
         let hvf_on_linux = base_inv().accel(Accel::Hvf).argv().unwrap_err();
-        assert!(hvf_on_linux.contains("KVM"));
+        assert!(hvf_on_linux.to_string().contains("KVM"));
     }
 
     #[test]
@@ -611,7 +611,7 @@ mod tests {
             )))
             .argv()
             .unwrap_err();
-        assert!(err.contains("NUMA"));
+        assert!(err.to_string().contains("NUMA"));
     }
 
     #[test]

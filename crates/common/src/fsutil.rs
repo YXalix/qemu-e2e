@@ -26,7 +26,7 @@ pub fn set_executable(p: &Path) -> std::io::Result<()> {
 }
 
 /// 读取文件前 4 字节（ELF 魔数校验的共用原语）。
-pub fn read_magic(p: &Path) -> std::io::Result<[u8; 4]> {
+fn read_magic(p: &Path) -> std::io::Result<[u8; 4]> {
     use std::io::Read;
     let mut magic = [0u8; 4];
     std::fs::File::open(p)?.read_exact(&mut magic)?;

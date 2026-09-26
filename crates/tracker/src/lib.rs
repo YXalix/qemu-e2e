@@ -13,14 +13,15 @@ use serde::Serialize;
 // ---------------------------------------------------------------- 输入摘要
 
 /// 一次运行的最小摘要（由 `judge::report::VerdictReport` 投影而来）。
+/// verdict/status 直接复用 judge 的类型化枚举（serde 形状 = 冻结字符串），
+/// 魔法串比较在编译期对齐 judge 语义。
 #[derive(Debug, Clone, Serialize)]
 pub struct RunSummary {
     pub run_id: String,
     pub arch: String,
-    /// verdict 字符串（judge::Verdict::as_str）
-    pub verdict: String,
-    /// (test_name, status) — status 为 "pass"/"fail"
-    pub tests: Vec<(String, String)>,
+    pub verdict: judge::Verdict,
+    /// (test_name, status)
+    pub tests: Vec<(String, judge::TestStatus)>,
     pub panics: Vec<String>,
     pub oops: Vec<String>,
 }
@@ -30,12 +31,8 @@ impl From<judge::report::VerdictReport> for RunSummary {
         RunSummary {
             run_id: report.run_id,
             arch: report.arch,
-            verdict: report.verdict.as_str().to_string(),
-            tests: report
-                .tests
-                .into_iter()
-                .map(|t| (t.name, t.status.as_str().to_string()))
-                .collect(),
+            verdict: report.verdict,
+            tests: report.tests.into_iter().map(|t| (t.name, t.status)).collect(),
             panics: report.panics,
             oops: report.oops,
         }
@@ -63,7 +60,7 @@ pub fn paths_from_unified_diff(text: &str) -> Vec<String> {
 /// 失败指纹：verdict 类 + 归一化证据。`None` = 通过/未知结果的运行（无需指纹）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Fingerprint {
-    pub verdict: String,
+    pub verdict: judge::Verdict,
     pub key: String,
 }
 
@@ -113,20 +110,21 @@ pub fn normalize_line(line: &str) -> String {
 /// - failed → 归一化失败的测试名集合（排序，跨 run 可比）；
 /// - 其余（incomplete/interrupted/build_failed）→ 仅 verdict 类。
 pub fn fingerprint_of(run: &RunSummary) -> Option<Fingerprint> {
-    if run.verdict == "passed" || run.verdict == "unknown" {
+    use judge::Verdict;
+    if run.verdict == Verdict::Passed || run.verdict == Verdict::Unknown {
         return None;
     }
     let key = if let Some(p) = run.panics.first() {
         format!("panic: {}", normalize_line(p))
     } else if let Some(o) = run.oops.first() {
         format!("oops: {}", normalize_line(o))
-    } else if run.verdict == "timeout" {
+    } else if run.verdict == Verdict::Timeout {
         "timeout".to_string()
-    } else if run.verdict == "failed" {
+    } else if run.verdict == Verdict::Failed {
         let mut names: Vec<String> = run
             .tests
             .iter()
-            .filter(|(_, s)| s == "fail")
+            .filter(|(_, s)| *s == judge::TestStatus::Fail)
             .map(|(n, _)| normalize_line(n))
             .collect();
         if names.is_empty() {
@@ -135,10 +133,10 @@ pub fn fingerprint_of(run: &RunSummary) -> Option<Fingerprint> {
         names.sort();
         format!("failed tests: {}", names.join(", "))
     } else {
-        run.verdict.clone()
+        run.verdict.as_str().to_string()
     };
     Some(Fingerprint {
-        verdict: run.verdict.clone(),
+        verdict: run.verdict,
         key,
     })
 }
@@ -148,7 +146,7 @@ pub fn fingerprint_of(run: &RunSummary) -> Option<Fingerprint> {
 /// 同一指纹的历史聚合桶。
 #[derive(Debug, Clone, Serialize)]
 pub struct Cluster {
-    pub verdict: String,
+    pub verdict: judge::Verdict,
     pub key: String,
     /// 指纹首现（run_id 前缀是定宽 unix_ms，min/max 即首现/末现）
     pub first_run_id: String,
@@ -205,16 +203,17 @@ pub struct Flaky {
 }
 
 pub fn flaky_tests(runs: &[RunSummary]) -> Vec<Flaky> {
+    use judge::{TestStatus, Verdict};
     let mut passed: Vec<(String, Vec<String>)> = Vec::new();
     let mut failed: Vec<(String, Vec<String>)> = Vec::new();
     for run in runs {
         // 只有协议走完的 run 才可信：incomplete 的测试条目不参与 flaky 判定
-        let trustworthy = run.verdict == "passed" || run.verdict == "failed";
+        let trustworthy = run.verdict == Verdict::Passed || run.verdict == Verdict::Failed;
         if !trustworthy {
             continue;
         }
         for (name, status) in &run.tests {
-            let bucket = if status == "pass" {
+            let bucket = if *status == TestStatus::Pass {
                 &mut passed
             } else {
                 &mut failed
@@ -345,19 +344,18 @@ pub fn suggest_tests(changed_files: &[String], rules: &[Rule]) -> Vec<Suggestion
 mod tests {
     use super::*;
 
-    fn run(id: &str, verdict: &str, tests: &[(&str, &str)]) -> RunSummary {
+    fn run(id: &str, verdict: judge::Verdict, tests: &[(&str, judge::TestStatus)]) -> RunSummary {
         RunSummary {
             run_id: id.into(),
             arch: "arm64".into(),
-            verdict: verdict.into(),
-            tests: tests
-                .iter()
-                .map(|(n, s)| (n.to_string(), s.to_string()))
-                .collect(),
+            verdict,
+            tests: tests.to_vec().iter().map(|(n, s)| (n.to_string(), *s)).collect(),
             panics: vec![],
             oops: vec![],
         }
     }
+
+    use judge::{TestStatus as TS, Verdict as V};
 
     #[test]
     fn normalize_strips_timestamps_and_folds_numbers() {
@@ -375,19 +373,19 @@ mod tests {
 
     #[test]
     fn fingerprint_ignores_passing_runs() {
-        assert!(fingerprint_of(&run("1", "passed", &[("t", "pass")])).is_none());
-        assert!(fingerprint_of(&run("1", "unknown", &[])).is_none());
+        assert!(fingerprint_of(&run("1", V::Passed, &[("t", TS::Pass)])).is_none());
+        assert!(fingerprint_of(&run("1", V::Unknown, &[])).is_none());
     }
 
     #[test]
     fn fingerprint_timeout_and_failed_tests() {
-        let fp = fingerprint_of(&run("r1", "timeout", &[])).unwrap();
+        let fp = fingerprint_of(&run("r1", V::Timeout, &[])).unwrap();
         assert_eq!(fp.key, "timeout");
 
         let fp = fingerprint_of(&run(
             "r2",
-            "failed",
-            &[("t_a", "fail"), ("t_ok", "pass"), ("t_b", "fail")],
+            V::Failed,
+            &[("t_a", TS::Fail), ("t_ok", TS::Pass), ("t_b", TS::Fail)],
         ))
         .unwrap();
         assert_eq!(fp.key, "failed tests: t_a, t_b");
@@ -395,7 +393,7 @@ mod tests {
 
     #[test]
     fn fingerprint_panic_overrides_and_normalizes() {
-        let mut r = run("r", "panic", &[("t", "pass")]);
+        let mut r = run("r", V::Panic, &[("t", TS::Pass)]);
         r.panics = vec!["[   12.345678] Kernel panic - not syncing: rig for pid=99".into()];
         let fp = fingerprint_of(&r).unwrap();
         assert_eq!(fp.key, "panic: Kernel panic - not syncing: rig for pid=N");
@@ -404,9 +402,9 @@ mod tests {
     #[test]
     fn cluster_buckets_by_key_and_tracks_first_seen() {
         let runs = vec![
-            run("0002-a", "timeout", &[]),
-            run("0001-a", "timeout", &[]),
-            run("0003-b", "passed", &[("t", "pass")]),
+            run("0002-a", V::Timeout, &[]),
+            run("0001-a", V::Timeout, &[]),
+            run("0003-b", V::Passed, &[("t", TS::Pass)]),
         ];
         let cs = cluster(&runs);
         assert_eq!(cs.len(), 1);
@@ -417,9 +415,9 @@ mod tests {
 
     #[test]
     fn cluster_orders_by_count_desc() {
-        let r1 = run("a", "failed", &[("x", "fail")]);
-        let r2 = run("b", "failed", &[("x", "fail")]);
-        let r3 = run("c", "failed", &[("y", "fail")]);
+        let r1 = run("a", V::Failed, &[("x", TS::Fail)]);
+        let r2 = run("b", V::Failed, &[("x", TS::Fail)]);
+        let r3 = run("c", V::Failed, &[("y", TS::Fail)]);
         let cs = cluster(&[r1, r2, r3]);
         assert_eq!(cs.len(), 2);
         assert_eq!(cs[0].count, 2);
@@ -429,9 +427,9 @@ mod tests {
     #[test]
     fn flaky_detects_unstable_tests_only_from_trustworthy_runs() {
         let runs = vec![
-            run("1", "passed", &[("t", "pass")]),
-            run("2", "failed", &[("t", "fail")]),
-            run("3", "incomplete", &[("t", "fail")]), // 不可信，不参与
+            run("1", V::Passed, &[("t", TS::Pass)]),
+            run("2", V::Failed, &[("t", TS::Fail)]),
+            run("3", V::Incomplete, &[("t", TS::Fail)]), // 不可信，不参与
         ];
         let flaky = flaky_tests(&runs);
         assert_eq!(flaky.len(), 1);
@@ -443,8 +441,8 @@ mod tests {
     #[test]
     fn stable_test_is_not_flaky() {
         let runs = vec![
-            run("1", "passed", &[("t", "pass")]),
-            run("2", "passed", &[("t", "pass")]),
+            run("1", V::Passed, &[("t", TS::Pass)]),
+            run("2", V::Passed, &[("t", TS::Pass)]),
         ];
         assert!(flaky_tests(&runs).is_empty());
     }

@@ -123,7 +123,7 @@ pub fn build_boot_pair(
         infra_dir,
         progress,
     )?;
-    image::pack_initramfs(&initramfs_dir, &artifacts_dir.join("initrd.img"))?;
+    cpio::pack_dir_gzip(&initramfs_dir, &artifacts_dir.join("initrd.img"))?;
 
     // ---------- rootfs.img: ext4 rootfs with tests ----------
     progress.line("Building rootfs.img (ext4 rootfs)...");

@@ -100,13 +100,15 @@ fn run_clone(
     let ref_name = clone_ref(cli_ref);
     let mut progress = Progress::stdout();
     let view = forge::clone::run(
-        &cfg.project_root,
-        &volume,
-        arch,
-        url,
-        &ref_name,
-        &toolchain_image(),
-        &dockerfile_dir(&cfg),
+        &forge::clone::CloneJob {
+            project_root: &cfg.project_root,
+            volume_name: &volume,
+            arch,
+            url,
+            ref_name: &ref_name,
+            image: &toolchain_image(),
+            dockerfile_dir: &dockerfile_dir(&cfg),
+        },
         &mut progress,
     )?;
     println!("Kernel: cloned {url}@{ref_name} → volume {volume}（.clangd 已按 {} 配好）", arch.name());

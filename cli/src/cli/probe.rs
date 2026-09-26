@@ -67,7 +67,7 @@ pub fn run_probe(
     .extra_opts(&cfg.qemu_extra());
     println!(
         "[LAUNCH] {}",
-        inv.command_line().map_err(anyhow::Error::msg)?
+        inv.command_line()?
     );
     let (mut child, mut sup) = inv.spawn_supervised(true)?;
 

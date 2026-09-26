@@ -35,18 +35,29 @@ pub fn render_clangd(template: &str, target: &str) -> String {
     out
 }
 
+/// 完整 clone 任务的输入（一次装配，免长参数表）。
+pub struct CloneJob<'a> {
+    pub project_root: &'a Path,
+    pub volume_name: &'a str,
+    pub arch: Arch,
+    pub url: &'a str,
+    pub ref_name: &'a str,
+    pub image: &'a str,
+    pub dockerfile_dir: &'a Path,
+}
+
 /// 完整 clone：镜像供给 → 幂等建卷（已有内容拒绝）→ git clone --depth 1 →
 /// .clangd 按架构渲染进源码根 → 写 current。返回宿主可见路径。
-pub fn run(
-    project_root: &Path,
-    volume_name: &str,
-    arch: Arch,
-    url: &str,
-    ref_name: &str,
-    image: &str,
-    dockerfile_dir: &Path,
-    progress: &mut Progress,
-) -> anyhow::Result<std::path::PathBuf> {
+pub fn run(job: &CloneJob, progress: &mut Progress) -> anyhow::Result<std::path::PathBuf> {
+    let CloneJob {
+        project_root,
+        volume_name,
+        arch,
+        url,
+        ref_name,
+        image,
+        dockerfile_dir,
+    } = *job;
     toolchain::ensure_image(image, dockerfile_dir, progress)?;
 
     let out = std::process::Command::new("docker")

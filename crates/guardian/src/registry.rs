@@ -21,8 +21,8 @@ pub fn clear() {
     ACTIVE_PGID.store(0, Ordering::SeqCst);
 }
 
-/// 当前活动进程组（0 = 无）。
-pub fn active() -> u32 {
+/// 当前活动进程组（0 = 无；仅供本模块守护/看门狗收割用）。
+fn active() -> u32 {
     ACTIVE_PGID.load(Ordering::SeqCst)
 }
 

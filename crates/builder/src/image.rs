@@ -6,12 +6,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-/// 打包 initramfs：目录 → newc cpio → gzip（`cpio::pack_dir_gzip` 的别名入口，
-/// 保留原函数名以稳住调用方语义）。
-pub fn pack_initramfs(dir: &Path, out: &Path) -> anyhow::Result<()> {
-    crate::cpio::pack_dir_gzip(dir, out)
-}
-
 /// 定位 mke2fs：PATH → Homebrew e2fsprogs keg 路径（keg-only 不进 PATH，
 /// Apple Silicon = /opt/homebrew，Intel = /usr/local）。
 pub fn find_mke2fs() -> Option<PathBuf> {

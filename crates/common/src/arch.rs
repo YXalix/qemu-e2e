@@ -60,8 +60,8 @@ impl Arch {
 
     /// machine 类型。**冻结基线（原 run-qemu.sh 行为）：三架构一律 `virt`**
     /// （脚本从未使用 q35；此处保留单一入口，将来引入 q35 只改这里）。
+    #[allow(unused_variables)]
     pub fn machine(self) -> &'static str {
-        let _ = self;
         "virt"
     }
 

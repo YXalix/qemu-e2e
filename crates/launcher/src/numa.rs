@@ -11,23 +11,23 @@ pub struct NumaTopology {
 }
 
 impl NumaTopology {
-    pub fn parse(smp: &str, nodes: &str, memory_per_node: &str) -> Result<NumaTopology, String> {
+    pub fn parse(smp: &str, nodes: &str, memory_per_node: &str) -> anyhow::Result<NumaTopology> {
         let smp: u32 = smp
             .trim()
             .parse()
-            .map_err(|_| format!("SMP 不是数字: {smp}"))?;
+            .map_err(|_| anyhow::anyhow!("SMP 不是数字: {smp}"))?;
         let nodes: u32 = nodes
             .trim()
             .parse()
-            .map_err(|_| format!("NUMA_NODES 不是数字: {nodes}"))?;
+            .map_err(|_| anyhow::anyhow!("NUMA_NODES 不是数字: {nodes}"))?;
         if nodes == 0 {
-            return Err("NUMA_NODES 不能为 0".into());
+            anyhow::bail!("NUMA_NODES 不能为 0");
         }
         if nodes > 1 && !smp.is_multiple_of(nodes) {
-            return Err(format!("SMP ({smp}) not divisible by NUMA_NODES ({nodes})"));
+            anyhow::bail!("SMP ({smp}) not divisible by NUMA_NODES ({nodes})");
         }
         if memory_per_node.is_empty() {
-            return Err("NUMA_MEMORY 为空".into());
+            anyhow::bail!("NUMA_MEMORY 为空");
         }
         Ok(NumaTopology {
             smp,
@@ -37,8 +37,10 @@ impl NumaTopology {
     }
 
     /// 总内存字符串（run-qemu.sh 的乘法规则：数字前缀 × 节点数，保留单位后缀）。
-    pub fn total_memory(&self) -> Result<String, String> {
-        let (n, unit) = common::units::parse_memory(&self.memory_per_node)?;
+    pub fn total_memory(&self) -> anyhow::Result<String> {
+        // common 零依赖保留 String 错误面，此处上收为 anyhow
+        let (n, unit) = common::units::parse_memory(&self.memory_per_node)
+            .map_err(anyhow::Error::msg)?;
         let total = n.saturating_mul(self.nodes as u64);
         Ok(unit.render(total))
     }
