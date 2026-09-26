@@ -211,16 +211,13 @@ pub(crate) fn run_checks(input: &CheckInput) -> Report {
 
 // ---------------------------------------------------------------- 逐项检查函数
 
-/// 宿主工具表（按平台）。initrd 打包已原生化（builder::cpio），cpio/gzip/
-/// wget/nproc/timeout 不再是硬需求；下载层 wget 缺失时有 curl 回退。
+/// 宿主工具表（平台无关）。make/sed 随 busybox 源码兜底退役；initrd 打包
+/// 已原生化（builder::cpio），cpio/gzip/wget/nproc/timeout 不再是硬需求；
+/// 下载层 wget 缺失时有 curl 回退。
 /// testcases 全走 cargo（build.rs + cc）后 C 编译器统一 zig cc 包装
 /// （builder::cross），cmake 随 CMake 路径退役。
-pub(crate) fn host_tools(host: HostOs) -> &'static [&'static str] {
-    match host {
-        HostOs::Linux => &["tar", "make", "zig", "find", "sed"],
-        // sed 仅 busybox 源码兜底路径使用（非 Linux 宿主该路径直接拒绝）
-        HostOs::Darwin => &["tar", "make", "zig", "find"],
-    }
+pub(crate) fn host_tools() -> &'static [&'static str] {
+    &["tar", "zig", "find"]
 }
 
 /// 下载工具（busybox 供给层）：wget 或 curl 任一（macOS 自带 curl）。
@@ -264,10 +261,10 @@ fn check_config(input: &CheckInput, checks: &mut Vec<Check>) {
     }
 }
 
-// 2. Host tools（按宿主平台分表 + 下载/镜像/交叉工具链）
+// 2. Host tools（平台无关表 + 下载/镜像/交叉工具链）
 fn check_host_tools(input: &CheckInput, checks: &mut Vec<Check>) {
     let host = input.host;
-    let tools = host_tools(host);
+    let tools = host_tools();
     let mut missing: Vec<String> = tools
         .iter()
         .filter(|t| !crate::util::which(t))
@@ -484,7 +481,7 @@ fn check_busybox(input: &CheckInput, checks: &mut Vec<Check>) {
         checks.push(info(
             CheckKind::BusyBox,
             format!(
-                "BusyBox: not cached for {} (release download on first build, source build fallback)",
+                "BusyBox: not cached for {} (GitHub release download on first build)",
                 input.arch.name()
             ),
             Some("busybox (not cached)".into()),

@@ -1,12 +1,12 @@
 //! BusyBox 供给（fetch-busybox.sh 的 Rust 接管）。
-//! 四层供给链（按序尝试，命中即返回）：
-//!   0. 本地缓存 target/build/busybox/bin/busybox-<arch>
+//! 供给链 = GitHub 拉取 + 本地缓存复用（按序尝试，命中即缓存返回）：
+//!   0. 本地缓存 target/build/busybox/bin/busybox-<version>-linux-<arch>
 //!   1. BUSYBOX_DL_URL   显式完整资产 URL（wget/curl）
 //!   2. gh release download（自带认证，私有仓库可用）
 //!   3. 直链 wget/curl（公开 release）
-//!   4. 源码编译兜底（busybox.net → GitHub mirror 归档；仅 Linux 宿主）
 //!
-//! 所有下载做 ELF 魔数校验（\x7fELF）。
+//! 无源码编译兜底：全部未命中即报错（静态二进制统一由
+//! .github/workflows/busybox-release.yml 发布）。所有下载做 ELF 魔数校验。
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,19 +18,25 @@ use crate::util::Progress;
 
 pub(crate) const DEFAULT_VERSION: &str = "1.36.1";
 
+/// 生效版本（BUSYBOX_VERSION / toml [busybox] version，缺省回 DEFAULT_VERSION）。
+pub(crate) fn effective_version(supply: &Supply) -> &str {
+    supply.version.as_deref().unwrap_or(DEFAULT_VERSION)
+}
+
 /// 供给配置（BUSYBOX_* 环境变量优先，回落 virtuoso.toml [busybox] 段）。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Supply {
     pub version: Option<String>,
     pub release_repo: Option<String>,
     pub dl_url: Option<String>,
-    pub force_source_build: bool,
 }
 
-fn cache_bin(build_dir: &Path, arch: Arch) -> PathBuf {
+/// 缓存二进制路径：文件名与 release 资产名同构（busybox-<version>-linux-<arch>），
+/// 版本进缓存键——换版本即未命中，不会误用旧版二进制。
+pub(crate) fn cache_bin(build_dir: &Path, version: &str, arch: Arch) -> PathBuf {
     build_dir
         .join("busybox/bin")
-        .join(format!("busybox-{}", arch.name()))
+        .join(format!("busybox-{version}-linux-{}", arch.name()))
 }
 
 /// 确保目标架构静态 BusyBox 就位，返回其二进制路径。失败即 Err（构建中止）。
@@ -40,57 +46,58 @@ pub(crate) fn ensure(
     supply: &Supply,
     progress: &mut Progress,
 ) -> anyhow::Result<PathBuf> {
-    let version = supply
-        .version
-        .clone()
-        .unwrap_or_else(|| DEFAULT_VERSION.into());
-    let bin = cache_bin(build_dir, arch);
+    let version = effective_version(supply);
+    let bin = cache_bin(build_dir, version, arch);
     let asset = format!("busybox-{version}-linux-{}", arch.name());
     let tag = format!("busybox-v{version}");
 
     if bin.is_file() {
-        progress.line(&format!("BusyBox: cached ({})", arch.name()));
+        progress.line(&format!("BusyBox: cached {version} ({})", arch.name()));
         return Ok(bin);
     }
     std::fs::create_dir_all(build_dir.join("busybox/bin"))?;
 
-    if !supply.force_source_build {
-        // 1) 显式 URL
-        if let Some(url) = &supply.dl_url {
-            if try_wget(url, &bin, &asset, progress) {
-                return Ok(bin);
-            }
-        }
-        // 2/3) release 下载
-        if let Some(repo) = resolve_repo(build_dir, &supply.release_repo) {
-            // 2) gh（认证可用时）
-            if crate::util::which("gh") && gh_auth_ok() {
-                progress.line(&format!("Fetching {asset} via gh from {repo} ({tag})"));
-                let tmp = bin.with_extension("tmp");
-                if gh_download_asset(&repo, &tag, &asset, &tmp) && crate::util::is_elf(&tmp) {
-                    std::fs::rename(&tmp, &bin)?;
-                    crate::util::set_executable(&bin)?;
-                    progress.line(&format!("BusyBox: downloaded via gh ({})", arch.name()));
-                    return Ok(bin);
-                }
-                let _ = std::fs::remove_file(&tmp);
-                progress.line("WARNING: gh release download failed, trying plain wget");
-            }
-            // 3) 直链
-            let url = format!("https://github.com/{repo}/releases/download/{tag}/{asset}");
-            if try_wget(&url, &bin, &asset, progress) {
-                return Ok(bin);
-            }
-            progress.line("WARNING: release download failed, falling back to source build");
-        } else {
-            progress.line("WARNING: no release source available.");
-            progress.line("  Set BUSYBOX_RELEASE_REPO=<owner>/<repo> (env or virtuoso.toml [busybox] release_repo; or push to GitHub with the busybox-release workflow).");
+    // 1) 显式 URL
+    if let Some(url) = &supply.dl_url {
+        if try_wget(url, &bin, &asset, progress) {
+            return Ok(bin);
         }
     }
-
-    // 4) 源码编译兜底
-    build_from_source(build_dir, arch, &version, progress)?;
-    Ok(bin)
+    // 2/3) release 下载
+    let repo = resolve_repo(build_dir, &supply.release_repo);
+    if let Some(repo) = repo {
+        // 2) gh（认证可用时）
+        if crate::util::which("gh") && gh_auth_ok() {
+            progress.line(&format!("Fetching {asset} via gh from {repo} ({tag})"));
+            let tmp = bin.with_extension("tmp");
+            if gh_download_asset(&repo, &tag, &asset, &tmp) && crate::util::is_elf(&tmp) {
+                std::fs::rename(&tmp, &bin)?;
+                crate::util::set_executable(&bin)?;
+                progress.line(&format!("BusyBox: downloaded via gh ({})", arch.name()));
+                return Ok(bin);
+            }
+            let _ = std::fs::remove_file(&tmp);
+            progress.line("WARNING: gh release download failed, trying plain wget");
+        }
+        // 3) 直链
+        let url = format!("https://github.com/{repo}/releases/download/{tag}/{asset}");
+        if try_wget(&url, &bin, &asset, progress) {
+            return Ok(bin);
+        }
+        anyhow::bail!(
+            "BusyBox {asset} 下载失败（{repo} @ {tag}，gh 与直链均未命中）。\n  \
+             本地无源码编译兜底：静态 busybox 统一由 GitHub Release 供给。\n  \
+             - 检查网络/代理，或改用 BUSYBOX_DL_URL=<asset-url> 直连资产\n  \
+             - 仓库自发布：推送 tag busybox-v{version} 触发 .github/workflows/busybox-release.yml"
+        );
+    }
+    anyhow::bail!(
+        "BusyBox {asset} 无供给来源（缓存未命中，也未配置 release 仓库）。\n  \
+         本地无源码编译兜底：静态 busybox 统一由 GitHub Release 供给。\n  \
+         - 配 BUSYBOX_RELEASE_REPO=<owner>/<repo>（env 或 toml [busybox] release_repo）\n  \
+         - 或用 BUSYBOX_DL_URL=<asset-url> 直连资产\n  \
+         - 仓库自发布：推送 tag busybox-v{version} 触发 .github/workflows/busybox-release.yml"
+    );
 }
 
 fn try_wget(url: &str, bin: &Path, asset: &str, progress: &mut Progress) -> bool {
@@ -229,122 +236,4 @@ pub(crate) fn gh_auth_ok() -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
-}
-
-fn build_from_source(
-    build_dir: &Path,
-    arch: Arch,
-    version: &str,
-    progress: &mut Progress,
-) -> anyhow::Result<()> {
-    if crate::HostOs::current() != crate::HostOs::Linux {
-        anyhow::bail!(
-            "BusyBox 源码兜底构建仅支持 Linux 宿主（产出需为 guest 架构 Linux ELF）。\n  \
-             macOS：配置 BUSYBOX_RELEASE_REPO / BUSYBOX_DL_URL 走 release 下载层"
-        );
-    }
-    let host_norm = Arch::parse(std::env::consts::ARCH)
-        .map(|a| a.name())
-        .unwrap_or("unknown");
-    progress.line(&format!(
-        "Building BusyBox {version} from source (host arch: {})...",
-        std::env::consts::ARCH
-    ));
-    let busybox_root = build_dir.join("busybox");
-    std::fs::create_dir_all(&busybox_root)?;
-    let src_dir = busybox_root.join("busybox");
-
-    if !src_dir.is_dir() {
-        let tag = version.replace('.', "_"); // busybox tag: 1.36.1 → 1_36_1
-        let tmp = busybox_root.join("src.tar");
-        let tried = try_archive(
-            &format!("https://busybox.net/downloads/busybox-{version}.tar.bz2"),
-            "-xjf",
-            &format!("busybox-{version}"),
-            &tmp,
-            &busybox_root,
-            &src_dir,
-        ) || try_archive(
-            &format!("https://github.com/mirror/busybox/archive/refs/tags/{tag}.tar.gz"),
-            "-xzf",
-            &format!("busybox-{tag}"),
-            &tmp,
-            &busybox_root,
-            &src_dir,
-        );
-        if !tried {
-            anyhow::bail!("all BusyBox source archives failed");
-        }
-    }
-
-    let run = |mut c: Command| -> anyhow::Result<()> {
-        let status = c.status().with_context(|| "busybox build step failed")?;
-        if !status.success() {
-            anyhow::bail!("busybox build step exited with {status}");
-        }
-        Ok(())
-    };
-    run(mk("make", &["defconfig"], &src_dir))?;
-    // sed 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' —— Rust 等价实现
-    let config_path = src_dir.join(".config");
-    let config = std::fs::read_to_string(&config_path)?;
-    std::fs::write(
-        &config_path,
-        config.replace("# CONFIG_STATIC is not set", "CONFIG_STATIC=y"),
-    )?;
-    let mut make = mk("make", &[], &src_dir);
-    if let Ok(n) = std::thread::available_parallelism() {
-        make.arg(format!("-j{n}"));
-    }
-    run(make)?;
-
-    let bin = cache_bin(build_dir, arch);
-    std::fs::copy(src_dir.join("busybox"), &bin)?;
-    crate::util::set_executable(&bin)?;
-
-    if host_norm != arch.name() {
-        progress.line(&format!(
-            "WARNING: source-built BusyBox is {host_norm} but target ARCH={}.\n  Cross-arch initramfs needs a prebuilt release binary:\n  run the busybox-release workflow, then set BUSYBOX_RELEASE_REPO (env or toml [busybox] release_repo).",
-            arch.name()
-        ));
-    }
-    progress.line(&format!(
-        "BusyBox: built from source ({host_norm} binary cached as busybox-{})",
-        arch.name()
-    ));
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn try_archive(
-    url: &str,
-    tar_flags: &str,
-    sub: &str,
-    tmp: &Path,
-    busybox_root: &Path,
-    dst: &Path,
-) -> bool {
-    if fetch(url, tmp) {
-        let untar = Command::new("tar")
-            .arg(tar_flags)
-            .arg(tmp)
-            .arg("-C")
-            .arg(busybox_root)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        let _ = std::fs::remove_file(tmp);
-        if untar {
-            return std::fs::rename(busybox_root.join(sub), dst).is_ok();
-        }
-    } else {
-        let _ = std::fs::remove_file(tmp);
-    }
-    false
-}
-
-fn mk(bin: &str, args: &[&str], cwd: &Path) -> Command {
-    let mut c = Command::new(bin);
-    c.args(args).current_dir(cwd);
-    c
 }

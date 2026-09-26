@@ -71,11 +71,11 @@ initramfs 先在内存里加载驱动，是唯一出路——这也是 distro �
 
 ### 2.2 BusyBox 二进制的本地供给链（builder::busybox，`virtuoso build --busybox-only`）
 
-按序尝试，命中即缓存到 `target/build/busybox/bin/busybox-<arch>`：
+按序尝试，命中即缓存到 `target/build/busybox/bin/busybox-<version>-linux-<arch>`（版本进缓存键，换版本即重新拉取）：
 
 ```
 0. 本地缓存  →  1. $BUSYBOX_DL_URL  →  2. gh release download（带认证，私有库可用）
-→  3. 直链 wget/curl  →  4. 源码编译兜底（仅 Linux 宿主；交叉时告警）
+→  3. 直链 wget/curl；全部未命中即报错（无源码编译兜底，静态二进制统一由 busybox-release workflow 发布）
 ```
 
 发布仓库推导：`$BUSYBOX_RELEASE_REPO` > 扫描 git remotes 找 github.com 的那个。

@@ -50,7 +50,7 @@ enum Command {
     },
     /// Build initrd/rootfs: C testcases + modules.conf + BusyBox
     Build {
-        /// Only provision the static BusyBox for the current arch (release download first, source fallback)
+        /// Only provision the static BusyBox for the current arch (GitHub release download, cached locally)
         #[arg(long = "busybox-only")]
         busybox_only: bool,
     },

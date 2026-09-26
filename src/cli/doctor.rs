@@ -187,6 +187,7 @@ fn render(groups: &[GroupOut], tty: bool) -> String {
 fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
     let host_arch = Arch::parse(std::env::consts::ARCH);
     let kernel_path = cfg.kernel_path().ok().map(|(kp, _)| kp);
+    let supply = cfg.busybox_supply();
 
     let kernel_img = kernel_path.as_ref().map(|p| p.join(arch.kernel_img()));
     let plan = cfg.component_plan();
@@ -203,11 +204,12 @@ fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
         qemu_bin: which(arch.qemu_bin()).then_some(arch.qemu_bin()),
         qemu_override: cfg.qemu_override().as_deref(),
         modules: &modules,
-        busybox_cached: cfg
-            .build_dir
-            .join("busybox/bin")
-            .join(format!("busybox-{}", arch.name()))
-            .is_file(),
+        busybox_cached: crate::builder::busybox::cache_bin(
+            &cfg.build_dir,
+            crate::builder::busybox::effective_version(&supply),
+            arch,
+        )
+        .is_file(),
         tools_img_exists: cfg.artifacts_dir.join("tools.img").is_file(),
         initrd: Some(&cfg.artifacts_dir.join("initrd.img")),
         vfio_enabled: cfg.vfio().is_some(),

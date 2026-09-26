@@ -309,8 +309,6 @@ impl Config {
                 "BUSYBOX_RELEASE_REPO",
             ),
             dl_url: scalar(toml.and_then(|b| b.dl_url.as_ref()), "BUSYBOX_DL_URL"),
-            force_source_build: env_bool("BUSYBOX_SOURCE_BUILD")
-                .unwrap_or_else(|| toml.and_then(|b| b.force_source_build).unwrap_or(false)),
         }
     }
 }
@@ -578,7 +576,6 @@ pub(crate) struct BusyboxSection {
     pub(crate) version: Option<StrVal>,
     pub(crate) release_repo: Option<StrVal>,
     pub(crate) dl_url: Option<StrVal>,
-    pub(crate) force_source_build: Option<bool>,
 }
 
 /// `[tests]` 段：测例套件的 KO 依赖——给内核特性写测例时，被测模块

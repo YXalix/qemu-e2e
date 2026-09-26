@@ -106,9 +106,9 @@ enabled = true
 # ------------------------------------------------------------- 供给链
 
 # [busybox]
-# 预编译静态 busybox 优先（GitHub Release，见
-# .github/workflows/busybox-release.yml）；下载失败或离线回退源码编译。
+# 静态 busybox 统一由 GitHub Release 供给（见
+# .github/workflows/busybox-release.yml）：下载命中即缓存 target/build 复用，
+# 无本地源码编译，全部未命中（未配仓库/断网）直接报错。
 # version = "1.36.1"
-# release_repo = "owner/repo"        # 发布 busybox-v* 的仓库（owner/repo）
+# release_repo = "owner/repo"        # 发布 busybox-v* 的仓库（owner/repo；缺省扫 git remotes）
 # dl_url = "https://example.com/busybox"   # 或直接给资产 URL
-# force_source_build = false         # true = 强制本地源码编译（气隙环境）

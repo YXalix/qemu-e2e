@@ -51,9 +51,8 @@
 | `version` | BusyBox 版本（如 `"1.36.1"`） |
 | `release_repo` | 预编译 Release 仓库（缺省扫描 git remotes 找 github.com） |
 | `dl_url` | 显式下载 URL（供给链第一优先级） |
-| `force_source_build` | true = 跳过下载，直接源码编译 |
 
-供给链详解见[两段式引导与构建流水线](../internals/boot-pipeline.md)。
+供给链 = GitHub Release 拉取 + 本地缓存复用，无源码编译兜底（全部未命中即报错）。详解见[两段式引导与构建流水线](../internals/boot-pipeline.md)。
 
 ## 架构矩阵
 
