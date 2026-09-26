@@ -12,8 +12,6 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
-
 use crate::cross::CrossSetup;
 use crate::Progress;
 
@@ -28,63 +26,17 @@ pub fn install_rust(
     cross: &CrossSetup,
     progress: &mut Progress,
 ) -> anyhow::Result<()> {
-    if !rust_dir.join("Cargo.toml").is_file() {
-        return Ok(());
-    }
-    if !common::fsutil::which("cargo") {
-        progress.line("  WARNING: rust testcases skipped (cargo not found)");
-        return Ok(());
-    }
-    let triple = arch.rust_musl_triple();
-    if !crate::tools::musl_target_installed(triple) {
-        progress.line(&format!(
-            "  WARNING: rust testcases skipped (rust target {triple} not installed; \
-             run `rustup target add {triple}` to enable)"
-        ));
-        return Ok(());
-    }
-
-    progress.line("Building testcases (cargo: rust entry + C bodies via cc)...");
-    std::fs::create_dir_all(dest_tests)?;
-    let target_dir = rust_dir.join("target");
-    let mut cmd = std::process::Command::new("cargo");
-    cmd.args(["build", "--release", "--target", triple])
-        .current_dir(rust_dir);
-    cross.apply_to_cargo(&mut cmd);
-    let out = cmd.output().context("cargo 启动失败")?;
-    if !out.status.success() {
-        let log = format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-        anyhow::bail!("Rust testcases build failed\n{log}");
-    }
-    for line in String::from_utf8_lossy(&out.stderr)
-        .lines()
-        .filter(|l| l.contains("warning:"))
-    {
-        progress.line(line);
-    }
-
-    let mut installed = 0usize;
-    let release_dir = target_dir.join(triple).join("release");
-    for entry in std::fs::read_dir(&release_dir)?.flatten() {
-        if let Some(bin) = rust_test_binary(&entry.path()) {
-            let name = bin.file_name().unwrap().to_string_lossy().to_string();
-            std::fs::copy(&bin, dest_tests.join(&name))
-                .with_context(|| format!("拷贝 {} 失败", bin.display()))?;
-            common::fsutil::set_executable(&dest_tests.join(&name))?;
-            progress.line(&format!("  Test: {name}"));
-            installed += 1;
-        }
-    }
-    if installed == 0 {
-        anyhow::bail!(
-            "Rust testcases build succeeded but no binaries found under {}",
-            release_dir.display()
-        );
-    }
+    let job = crate::cargo_install::CargoInstall {
+        rust_dir,
+        dest: dest_tests,
+        triple: arch.rust_musl_triple(),
+        cross,
+        label: "rust testcases",
+        item_prefix: "  Test:",
+    };
+    // 返回 0 = workspace 缺失或显式 WARN 降级（cargo/musl target 缺失），不算错；
+    // 构建成功但零产物由 CargoInstall::run 内部 bail。
+    job.run(progress)?;
     Ok(())
 }
 

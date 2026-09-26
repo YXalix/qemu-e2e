@@ -15,8 +15,6 @@
 
 use std::path::Path;
 
-use anyhow::Context;
-
 use crate::cross::CrossSetup;
 use crate::Progress;
 
@@ -27,57 +25,17 @@ pub fn install(
     cross: &CrossSetup,
     progress: &mut Progress,
 ) -> anyhow::Result<bool> {
-    if !rust_dir.join("Cargo.toml").is_file() {
-        return Ok(false);
-    }
-    let triple = arch.rust_musl_triple();
-    if !common::fsutil::which("cargo") {
-        progress.line("  WARNING: tools skipped (cargo not found)");
-        return Ok(false);
-    }
-    if !musl_target_installed(triple) {
-        progress.line(&format!(
-            "  WARNING: tools skipped (rust target {triple} not installed; \
-             run `rustup target add {triple}` to enable)"
-        ));
-        return Ok(false);
-    }
-
-    progress.line("Building VM tools...");
-    let mut cmd = std::process::Command::new("cargo");
-    cmd.args(["build", "--release", "--target", triple])
-        .current_dir(rust_dir);
-    cross.apply_to_cargo(&mut cmd);
-    let out = cmd.output().context("cargo 启动失败")?;
-    if !out.status.success() {
-        let log = format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-        anyhow::bail!("Tools build failed\n{log}");
-    }
-
-    let bin_dir = rust_dir.join("target").join(triple).join("release");
-    std::fs::create_dir_all(dest_bin)?;
-    let mut installed = 0usize;
-    for entry in std::fs::read_dir(&bin_dir)?.flatten() {
-        if let Some(bin) = super::testcase::rust_test_binary(&entry.path()) {
-            let name = bin.file_name().unwrap().to_string_lossy().to_string();
-            std::fs::copy(&bin, dest_bin.join(&name))
-                .with_context(|| format!("拷贝 {} 失败", bin.display()))?;
-            common::fsutil::set_executable(&dest_bin.join(&name))?;
-            progress.line(&format!("  Tool: {name}"));
-            installed += 1;
-        }
-    }
-    if installed == 0 {
-        anyhow::bail!(
-            "Tools build succeeded but no binaries found under {}",
-            bin_dir.display()
-        );
-    }
-    Ok(true)
+    let job = crate::cargo_install::CargoInstall {
+        rust_dir,
+        dest: dest_bin,
+        triple: arch.rust_musl_triple(),
+        cross,
+        label: "VM tools",
+        item_prefix: "  Tool:",
+    };
+    // 返回 0 = workspace 缺失或显式 WARN 降级（cargo/musl target 缺失）；
+    // 构建成功但零产物由 CargoInstall::run 内部 bail。
+    Ok(job.run(progress)? > 0)
 }
 
 /// musl target 是否已随 toolchain 安装（sysroot 的 rustlib 目录存在即视为可用）。

@@ -3,6 +3,7 @@
 //! 消息文本与退出码语义对齐 shell 基线）。
 
 pub mod busybox;
+pub mod cargo_install;
 pub mod cpio;
 pub mod cross;
 pub mod image;

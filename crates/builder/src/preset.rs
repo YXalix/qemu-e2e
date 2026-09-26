@@ -124,12 +124,7 @@ pub fn ensure_image(
     let mut downloaded = false;
     if common::fsutil::which("gh") && busybox::gh_auth_ok() {
         progress.line(&format!("Fetching {asset} via gh ({tag})"));
-        downloaded = Command::new("gh")
-            .args(["release", "download", &tag, "-R", repo, "-p", &asset, "-O"])
-            .arg(&tmp)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+        downloaded = busybox::gh_download_asset(repo, &tag, &asset, &tmp);
     }
     if !downloaded {
         let url = format!("https://github.com/{repo}/releases/download/{tag}/{asset}");

@@ -67,14 +67,7 @@ pub fn ensure(
             if common::fsutil::which("gh") && gh_auth_ok() {
                 progress.line(&format!("Fetching {asset} via gh from {repo} ({tag})"));
                 let tmp = bin.with_extension("tmp");
-                let ok = Command::new("gh")
-                    .args(["release", "download", &tag, "-R", &repo, "-p", &asset, "-O"])
-                    .arg(&tmp)
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false)
-                    && common::fsutil::is_elf(&tmp);
-                if ok {
+                if gh_download_asset(&repo, &tag, &asset, &tmp) && common::fsutil::is_elf(&tmp) {
                     std::fs::rename(&tmp, &bin)?;
                     common::fsutil::set_executable(&bin)?;
                     progress.line(&format!("BusyBox: downloaded via gh ({})", arch.name()));
@@ -113,6 +106,17 @@ fn try_wget(url: &str, bin: &Path, asset: &str, progress: &mut Progress) -> bool
         let _ = std::fs::remove_file(&tmp);
         false
     }
+}
+
+/// gh release 单资产下载到 `dest`（gh 在 PATH 且认证可用时才调用；
+/// 成功 = exit 0）。busybox 与 preset 的 release 供给共用。
+pub(crate) fn gh_download_asset(repo: &str, tag: &str, asset: &str, dest: &Path) -> bool {
+    Command::new("gh")
+        .args(["release", "download", tag, "-R", repo, "-p", asset, "-O"])
+        .arg(dest)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 /// 下载到 `tmp`：wget 优先，缺失回落 curl（macOS 无 wget 但自带 curl）。

@@ -42,26 +42,27 @@ fn engine_report(cfg: &Config, arch: Arch) -> anyhow::Result<Report> {
         String::new()
     };
 
-    Ok(builder::verify::run_checks(
-        cfg.toml.is_some(),
-        kernel_path.as_deref(),
+    Ok(builder::verify::run_checks(&builder::verify::CheckInput {
+        config_file_exists: cfg.toml.is_some(),
+        kernel_path: kernel_path.as_deref(),
         arch,
-        common::HostOs::current(),
-        host_arch.is_some_and(|h| h != arch),
-        kernel_img.as_deref(),
-        which(arch.qemu_bin()).then_some(arch.qemu_bin()),
-        cfg.qemu_override().as_deref(),
-        &modules,
-        cfg.build_dir
+        host: common::HostOs::current(),
+        host_is_cross: host_arch.is_some_and(|h| h != arch),
+        kernel_image: kernel_img.as_deref(),
+        qemu_bin: which(arch.qemu_bin()).then_some(arch.qemu_bin()),
+        qemu_override: cfg.qemu_override().as_deref(),
+        modules: &modules,
+        busybox_cached: cfg
+            .build_dir
             .join("busybox/bin")
             .join(format!("busybox-{}", arch.name()))
             .is_file(),
-        cfg.artifacts_dir.join("tools.img").is_file(),
-        Some(&cfg.artifacts_dir.join("initrd.img")),
-        cfg.vfio().is_some(),
-        cfg.pmem_size().is_some(),
-        preset.as_deref().map(|_| preset_version.as_str()),
-    ))
+        tools_img_exists: cfg.artifacts_dir.join("tools.img").is_file(),
+        initrd: Some(&cfg.artifacts_dir.join("initrd.img")),
+        vfio_enabled: cfg.vfio().is_some(),
+        pmem_enabled: cfg.pmem_size().is_some(),
+        preset_version: preset.as_deref().map(|_| preset_version.as_str()),
+    }))
 }
 
 /// docker 供给模式附加检查（forge 活动卷）：状态文件存在 = 活动卷开启，
@@ -91,7 +92,12 @@ fn docker_report(cfg: &Config, report: &mut Report) {
     ));
 }
 
-// ---------------------------------------------------------------- 引擎消息 → 组件分组
+// ---------------------------------------------------------------- 引擎检查 → 组件分组
+//
+// 分组唯一依据是 CheckKind（引擎自带），无消息文本反解；Pass/Info 行取
+// 引擎预计算的 summary 紧凑短语，Fail/Warn 行取 label 剥离后的全文。
+
+use builder::verify::CheckKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Group {
@@ -101,7 +107,6 @@ enum Group {
     Qemu,
     Modules,
     Artifacts,
-    Other,
 }
 
 impl Group {
@@ -113,12 +118,11 @@ impl Group {
             Group::Qemu => "QEMU",
             Group::Modules => "Modules",
             Group::Artifacts => "Artifacts",
-            Group::Other => "Other",
         }
     }
 }
 
-/// 固定呈现顺序（Other 恒最后，无内容则不渲染）。
+/// 固定呈现顺序。
 const GROUP_ORDER: &[Group] = &[
     Group::Config,
     Group::Toolchain,
@@ -126,37 +130,22 @@ const GROUP_ORDER: &[Group] = &[
     Group::Qemu,
     Group::Modules,
     Group::Artifacts,
-    Group::Other,
 ];
 
-/// 引擎检查消息的已知前缀 → 分组。
-const PREFIXES: &[(&str, Group)] = &[
-    ("Configuration", Group::Config),
-    ("Host tools", Group::Toolchain),
-    ("Cross-compile", Group::Toolchain),
-    ("Kernel modules", Group::Modules),
-    ("Kernel preset", Group::Kernel),
-    ("Kernel docker", Group::Kernel),
-    ("Kernel source", Group::Kernel),
-    ("Kernel image", Group::Kernel),
-    ("KERNEL_PATH", Group::Kernel),
-    ("QEMU binary", Group::Qemu),
-    ("qemu-img", Group::Qemu),
-    ("BusyBox", Group::Artifacts),
-    ("Tools image", Group::Artifacts),
-    ("Initrd", Group::Artifacts),
-    ("Components", Group::Modules),
-];
-
-/// 消息 → (分组, 剥掉前缀后的正文)；未识别前缀归 Other 原样保留
-/// （引擎未来新增检查不至于在 doctor 里丢行）。
-fn classify(msg: &str) -> (Group, &str) {
-    for (prefix, group) in PREFIXES {
-        if let Some(rest) = msg.strip_prefix(prefix) {
-            return (*group, rest.trim_start_matches([':', ' ']));
-        }
+/// 引擎检查主题 → 一屏分组（穷尽匹配：引擎新增 kind 时此处编译期报错）。
+fn group_of(kind: CheckKind) -> Group {
+    match kind {
+        CheckKind::Config => Group::Config,
+        CheckKind::HostTools | CheckKind::CrossCompile => Group::Toolchain,
+        CheckKind::KernelPreset
+        | CheckKind::KernelPath
+        | CheckKind::KernelSource
+        | CheckKind::KernelImage
+        | CheckKind::KernelDocker => Group::Kernel,
+        CheckKind::QemuBinary | CheckKind::QemuImg => Group::Qemu,
+        CheckKind::Modules | CheckKind::Components => Group::Modules,
+        CheckKind::BusyBox | CheckKind::ToolsImage | CheckKind::Initrd => Group::Artifacts,
     }
-    (Group::Other, msg)
 }
 
 /// 组内最严重级别（Info 视同 Pass：可选工具缺失不降级）。
@@ -171,88 +160,6 @@ fn worst(a: Level, b: Level) -> Level {
         a
     } else {
         b
-    }
-}
-
-/// Pass/Info 检查的组内紧凑短语；Fail/Warn 不走这里（原样保留修复提示）。
-fn short_detail(msg: &str) -> String {
-    let (_, rest) = classify(msg);
-    // 可选项（qemu-img）与 Kernel source 行重复的裸路径不进体检行
-    if msg.starts_with("qemu-img") || msg.starts_with("KERNEL_PATH") {
-        return String::new();
-    }
-    // "Kernel source: /p (v6.6.0)" → "v6.6.0"
-    if msg.starts_with("Kernel source") {
-        if let Some((_, tail)) = rest.split_once(" (v") {
-            return format!("v{}", tail.trim_end_matches(')'));
-        }
-    }
-    // "Kernel preset: mainline v6.12.8 (…)" → "mainline v6.12.8"
-    if msg.starts_with("Kernel preset") {
-        return rest
-            .split_once(" (")
-            .map(|(head, _)| head.to_string())
-            .unwrap_or_else(|| rest.to_string());
-    }
-    if msg.starts_with("Kernel modules") && rest.starts_with("preset") {
-        return "modules built-in".into();
-    }
-    // docker 供给组：engine 行无信息量跳过；volume/image 压成短语
-    if msg.starts_with("Kernel docker: engine") {
-        return String::new();
-    }
-    if msg.starts_with("Kernel docker: volume") {
-        let v = rest
-            .split_whitespace()
-            .nth(1) // rest 以 "volume <名> …" 开头，取卷名
-            .unwrap_or("");
-        return format!("docker volume {v}");
-    }
-    if msg.starts_with("Kernel docker: toolchain image") {
-        return if rest.contains("not pulled") {
-            "toolchain image (not pulled)".into()
-        } else {
-            "toolchain image".into()
-        };
-    }
-    if msg.starts_with("Host tools") {
-        return "host tools".into();
-    }
-    if msg.starts_with("BusyBox") {
-        return if rest.starts_with("cached") {
-            "busybox".into()
-        } else {
-            "busybox (not cached)".into()
-        };
-    }
-    if msg.starts_with("Tools image") {
-        return if rest.starts_with("exists") {
-            "tools.img".into()
-        } else {
-            "tools.img (not built)".into()
-        };
-    }
-    if msg.starts_with("Initrd") {
-        return if rest.starts_with("not built") {
-            "initrd (not built)".into()
-        } else {
-            basenameify(rest)
-        };
-    }
-    rest.to_string()
-}
-
-/// "/p/target/artifacts/initrd.img (12M)" → "initrd.img (12M)"。
-fn basenameify(rest: &str) -> String {
-    fn name(p: &str) -> &str {
-        std::path::Path::new(p)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(p)
-    }
-    match rest.split_once(' ') {
-        Some((p, tail)) => format!("{} {tail}", name(p)),
-        None => name(rest).to_string(),
     }
 }
 
@@ -282,18 +189,21 @@ fn group_checks(report: &Report) -> Vec<GroupOut> {
         })
         .collect();
     for chk in &report.checks {
-        let (g, _) = classify(&chk.msg);
-        let s = slot(&mut out, g);
+        let s = slot(&mut out, group_of(chk.kind));
         s.level = worst(s.level, chk.level);
         match chk.level {
             Level::Pass | Level::Info => {
-                let short = short_detail(&chk.msg);
-                if !short.is_empty() && !s.lines.iter().any(|(_, l)| *l == short) {
-                    s.lines.push((chk.level, short));
+                if let Some(short) = &chk.summary {
+                    if !s.lines.iter().any(|(_, l)| l == short) {
+                        s.lines.push((chk.level, short.clone()));
+                    }
                 }
             }
             Level::Fail | Level::Warn => {
-                s.lines.push((chk.level, classify(&chk.msg).1.to_string()));
+                s.lines.push((
+                    chk.level,
+                    builder::verify::detail(chk.kind, &chk.msg).to_string(),
+                ));
             }
         }
     }
@@ -422,12 +332,14 @@ pub fn run_doctor(arch_override: Option<&str>, json: bool, verbose: bool) -> any
 #[cfg(test)]
 mod tests {
     use super::*;
-    use builder::verify::Check;
+    use builder::verify::{detail, Check, CheckKind};
 
-    fn check(level: Level, msg: &str) -> Check {
+    fn check(level: Level, kind: CheckKind, msg: &str, summary: Option<&str>) -> Check {
         Check {
             level,
+            kind,
             msg: msg.into(),
+            summary: summary.map(str::to_string),
         }
     }
 
@@ -443,61 +355,27 @@ mod tests {
     }
 
     #[test]
-    fn classify_maps_every_engine_prefix() {
-        for (msg, want, rest) in [
-            (
-                "Configuration: virtuoso.toml found",
-                Group::Config,
-                "virtuoso.toml found",
-            ),
-            (
-                "Host tools: all found (wget …)",
-                Group::Toolchain,
-                "all found (wget …)",
-            ),
-            (
-                "Cross-compile: ARCH=arm64 differs",
-                Group::Toolchain,
-                "ARCH=arm64 differs",
-            ),
-            ("KERNEL_PATH: /k", Group::Kernel, "/k"),
-            ("Kernel source: /k (v6.6)", Group::Kernel, "/k (v6.6)"),
-            ("Kernel image: Image (42M)", Group::Kernel, "Image (42M)"),
-            (
-                "Kernel docker: engine ok",
-                Group::Kernel,
-                "engine ok",
-            ),
-            (
-                "Kernel docker: volume ksrc-oe66 reachable (/v) [arch arm64]",
-                Group::Kernel,
-                "volume ksrc-oe66 reachable (/v) [arch arm64]",
-            ),
-            (
-                "QEMU binary: qemu-system-aarch64",
-                Group::Qemu,
-                "qemu-system-aarch64",
-            ),
-            ("qemu-img: available", Group::Qemu, "available"),
-            (
-                "Kernel modules: 1/2 found, missing: x",
-                Group::Modules,
-                "1/2 found, missing: x",
-            ),
-            (
-                "BusyBox: cached (arm64)",
-                Group::Artifacts,
-                "cached (arm64)",
-            ),
-            ("Tools image: exists", Group::Artifacts, "exists"),
-            (
-                "Initrd: /a/initrd.img (12M)",
-                Group::Artifacts,
-                "/a/initrd.img (12M)",
-            ),
-            ("Future check: ???", Group::Other, "Future check: ???"),
+    fn group_of_covers_every_kind() {
+        // 穷尽性由 group_of 的 match 保证（新增 kind 编译期报错）；
+        // 这里钉死每个 kind 的预期分组，防止无意挪组破坏一屏布局。
+        for (kind, want) in [
+            (CheckKind::Config, Group::Config),
+            (CheckKind::HostTools, Group::Toolchain),
+            (CheckKind::CrossCompile, Group::Toolchain),
+            (CheckKind::KernelPreset, Group::Kernel),
+            (CheckKind::KernelPath, Group::Kernel),
+            (CheckKind::KernelSource, Group::Kernel),
+            (CheckKind::KernelImage, Group::Kernel),
+            (CheckKind::KernelDocker, Group::Kernel),
+            (CheckKind::QemuBinary, Group::Qemu),
+            (CheckKind::QemuImg, Group::Qemu),
+            (CheckKind::Modules, Group::Modules),
+            (CheckKind::Components, Group::Modules),
+            (CheckKind::BusyBox, Group::Artifacts),
+            (CheckKind::ToolsImage, Group::Artifacts),
+            (CheckKind::Initrd, Group::Artifacts),
         ] {
-            assert_eq!(classify(msg), (want, rest), "msg={msg}");
+            assert_eq!(group_of(kind), want, "kind={kind:?}");
         }
     }
 
@@ -509,69 +387,43 @@ mod tests {
     }
 
     #[test]
-    fn short_detail_compacts_known_passes() {
+    fn detail_strips_kind_label() {
         assert_eq!(
-            short_detail("Configuration: virtuoso.toml found"),
-            "virtuoso.toml found"
+            detail(CheckKind::QemuBinary, "QEMU binary: qemu-system-arm not found"),
+            "qemu-system-arm not found"
         );
-        assert_eq!(
-            short_detail("Host tools: all found (wget tar gcc)"),
-            "host tools"
-        );
-        assert_eq!(short_detail("Kernel source: /k (v6.6.0)"), "v6.6.0");
-        assert_eq!(short_detail("Kernel image: Image (42M)"), "Image (42M)");
-        assert_eq!(short_detail("qemu-img: available"), "");
-        assert_eq!(short_detail("KERNEL_PATH: /k"), "");
-        assert_eq!(short_detail("Kernel docker: engine ok"), "");
-        assert_eq!(
-            short_detail("Kernel docker: volume ksrc-oe66 reachable (/v) [arch arm64]"),
-            "docker volume ksrc-oe66"
-        );
-        assert_eq!(
-            short_detail("Kernel docker: toolchain image ghcr.io/x/virtuoso-kernel:latest"),
-            "toolchain image"
-        );
-        assert_eq!(
-            short_detail("Kernel docker: toolchain image not pulled yet (auto-pull …)"),
-            "toolchain image (not pulled)"
-        );
-        assert_eq!(
-            short_detail("Kernel modules: none required"),
-            "none required"
-        );
-        assert_eq!(short_detail("BusyBox: cached (arm64)"), "busybox");
-        assert_eq!(
-            short_detail("BusyBox: not cached for arm64 (…)"),
-            "busybox (not cached)"
-        );
-        assert_eq!(
-            short_detail("Tools image: exists (attached as /dev/vdb)"),
-            "tools.img"
-        );
-        assert_eq!(
-            short_detail("Tools image: not built yet (run `virtuoso build`)"),
-            "tools.img (not built)"
-        );
-        assert_eq!(
-            short_detail("Initrd: /a/b/initrd.img (12M)"),
-            "initrd.img (12M)"
-        );
-        assert_eq!(
-            short_detail("Initrd: not built yet (run `virtuoso build`)"),
-            "initrd (not built)"
-        );
+        assert_eq!(detail(CheckKind::BusyBox, "BusyBox: cached (arm64)"), "cached (arm64)");
+        // 未以 label 开头的消息原样保留（防御性）
+        assert_eq!(detail(CheckKind::Config, "bare text"), "bare text");
     }
 
     #[test]
     fn group_checks_fails_lead_and_warn_keeps_full_text() {
         let groups = group_checks(&report(vec![
-            check(Level::Pass, "Configuration: virtuoso.toml found"),
+            check(
+                Level::Pass,
+                CheckKind::Config,
+                "Configuration: virtuoso.toml found",
+                Some("virtuoso.toml found"),
+            ),
             check(
                 Level::Fail,
+                CheckKind::QemuBinary,
                 "QEMU binary: qemu-system-arm not found (install qemu-system-arm)",
+                None,
             ),
-            check(Level::Warn, "Kernel modules: 2/3 found, missing: nd_btt"),
-            check(Level::Pass, "Kernel image: Image (42M)"),
+            check(
+                Level::Warn,
+                CheckKind::Modules,
+                "Kernel modules: 2/3 found, missing: nd_btt",
+                None,
+            ),
+            check(
+                Level::Pass,
+                CheckKind::KernelImage,
+                "Kernel image: Image (42M)",
+                Some("Image (42M)"),
+            ),
         ]));
         let qemu = groups.iter().find(|g| g.group == Group::Qemu).unwrap();
         assert_eq!(qemu.level, Level::Fail);
@@ -590,17 +442,62 @@ mod tests {
     #[test]
     fn group_checks_healthy_report_is_one_line_per_group() {
         let groups = group_checks(&report(vec![
-            check(Level::Pass, "Configuration: virtuoso.toml found"),
-            check(Level::Pass, "Host tools: all found (wget tar gcc)"),
-            check(Level::Pass, "KERNEL_PATH: /k"),
-            check(Level::Pass, "Kernel source: /k (v6.6.0)"),
-            check(Level::Pass, "Kernel image: Image (42M)"),
-            check(Level::Pass, "QEMU binary: qemu-system-aarch64"),
-            check(Level::Info, "qemu-img: available"),
-            check(Level::Info, "Kernel modules: none required"),
-            check(Level::Pass, "BusyBox: cached (arm64)"),
-            check(Level::Info, "Tools image: exists (attached as /dev/vdb)"),
-            check(Level::Info, "Initrd: /a/initrd.img (12M)"),
+            check(
+                Level::Pass,
+                CheckKind::Config,
+                "Configuration: virtuoso.toml found",
+                Some("virtuoso.toml found"),
+            ),
+            check(
+                Level::Pass,
+                CheckKind::HostTools,
+                "Host tools: all found (wget tar gcc)",
+                Some("host tools"),
+            ),
+            check(Level::Pass, CheckKind::KernelPath, "KERNEL_PATH: /k", None),
+            check(
+                Level::Pass,
+                CheckKind::KernelSource,
+                "Kernel source: /k (v6.6.0)",
+                Some("v6.6.0"),
+            ),
+            check(
+                Level::Pass,
+                CheckKind::KernelImage,
+                "Kernel image: Image (42M)",
+                Some("Image (42M)"),
+            ),
+            check(
+                Level::Pass,
+                CheckKind::QemuBinary,
+                "QEMU binary: qemu-system-aarch64",
+                Some("qemu-system-aarch64"),
+            ),
+            check(Level::Info, CheckKind::QemuImg, "qemu-img: available", None),
+            check(
+                Level::Info,
+                CheckKind::Modules,
+                "Kernel modules: none required",
+                Some("none required"),
+            ),
+            check(
+                Level::Pass,
+                CheckKind::BusyBox,
+                "BusyBox: cached (arm64)",
+                Some("busybox"),
+            ),
+            check(
+                Level::Info,
+                CheckKind::ToolsImage,
+                "Tools image: exists (attached as /dev/vdb)",
+                Some("tools.img"),
+            ),
+            check(
+                Level::Info,
+                CheckKind::Initrd,
+                "Initrd: /a/initrd.img (12M)",
+                Some("initrd.img (12M)"),
+            ),
         ]));
         let rendered = render(&groups, false);
         let lines: Vec<&str> = rendered.lines().collect();
