@@ -13,10 +13,8 @@ serde_json.workspace = true
 toml = "0.8"
 common.workspace = true
 judge.workspace = true
-guardian.workspace = true
 launcher.workspace = true
 builder.workspace = true
-tracker.workspace = true
 forge.workspace = true
 
 [workspace]
@@ -25,8 +23,6 @@ members = [
     "crates/builder",
     "crates/launcher",
     "crates/judge",
-    "crates/guardian",
-    "crates/tracker",
     "crates/forge",
 ]
 exclude = [
@@ -48,6 +44,4 @@ common = { path = "crates/common" }
 builder = { path = "crates/builder" }
 launcher = { path = "crates/launcher" }
 judge = { path = "crates/judge" }
-guardian = { path = "crates/guardian" }
-tracker = { path = "crates/tracker" }
 forge = { path = "crates/forge" }

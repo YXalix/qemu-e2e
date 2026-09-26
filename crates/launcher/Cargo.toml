@@ -6,5 +6,6 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
-guardian.workspace = true
 common.workspace = true
+ctrlc.workspace = true
+libc.workspace = true

@@ -3,7 +3,7 @@
 //! 本 crate 只保留 clap 定义与子命令分发：命令实现在 `cli`（kernel/fetch/
 //! build/vm/doctor），运行工件与呈现命令在 `runs`（rundir/render），类型化
 //! 配置在 `config`。领域逻辑全部在库 crate（common/builder/launcher/judge/
-//! guardian/tracker/forge）。
+//! forge）。
 //!
 //! 设计文档：docs/architecture/overview.md
 
@@ -203,7 +203,7 @@ enum KernelAction {
 
 fn main() {
     let cli = Cli::parse();
-    guardian::registry::install_ctrlc_guard();
+    launcher::install_ctrlc_guard();
     match cli::dispatch(cli.command) {
         Ok(code) => std::process::exit(code),
         Err(e) => {

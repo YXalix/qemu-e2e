@@ -1,5 +1,5 @@
 //! 分诊命令的终端呈现：triage / cluster。
-//! 聚类语义在 tracker，解析与判定在 judge，本模块只做扫描、IO 与打印。
+//! 聚类语义在 judge::tracker，解析与判定在 judge，本模块只做扫描、IO 与打印。
 
 use common::fmt::human_size_ls;
 use common::time::format_utc;
@@ -111,9 +111,9 @@ pub fn run_triage(cfg: &Config, run_spec: Option<&str>, json: bool) -> anyhow::R
     Ok(if v.verdict == Verdict::Passed { 0 } else { 1 })
 }
 
-// ---------------------------------------------------------------- 跨 run 分诊（tracker 呈现层）
+// ---------------------------------------------------------------- 跨 run 分诊（judge::tracker 呈现层）
 
-fn load_summaries(cfg: &Config) -> anyhow::Result<Vec<tracker::RunSummary>> {
+fn load_summaries(cfg: &Config) -> anyhow::Result<Vec<judge::tracker::RunSummary>> {
     let dirs = list_run_dirs(&cfg.project_root);
     if dirs.is_empty() {
         anyhow::bail!(
@@ -126,17 +126,17 @@ fn load_summaries(cfg: &Config) -> anyhow::Result<Vec<tracker::RunSummary>> {
         .filter_map(|d| {
             load_verdict_or_parse(&d)
                 .ok()
-                .map(tracker::RunSummary::from)
+                .map(judge::tracker::RunSummary::from)
         })
         .collect())
 }
 
 /// `virtuoso cluster`：跨 run 失败指纹聚类 + flaky 用例清单。
-/// 聚类语义在 tracker；此处只做扫描与呈现。
+/// 聚类语义在 judge::tracker；此处只做扫描与呈现。
 pub fn run_cluster(cfg: &Config, json: bool) -> anyhow::Result<i32> {
     let summaries = load_summaries(cfg)?;
-    let clusters = tracker::cluster(&summaries);
-    let flaky = tracker::flaky_tests(&summaries);
+    let clusters = judge::tracker::cluster(&summaries);
+    let flaky = judge::tracker::flaky_tests(&summaries);
 
     let failed_runs = summaries
         .iter()

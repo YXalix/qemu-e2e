@@ -1,8 +1,8 @@
 //! tracker — 跨 run 分诊语义：失败指纹聚类与 flaky 识别。
 //!
 //! 职责：对**最小化运行摘要**（`RunSummary`）做失败指纹聚类与 flaky 识别。
-//! 本 crate 只承载语义；IO 与呈现（runs 目录扫描、报告打印）在 cli 的 runs 层
-//! —— verdict.json schema 由 `judge::report::VerdictReport` 单点定义，
+//! 本模块只承载语义；IO 与呈现（runs 目录扫描、报告打印）在 cli 的 runs 层
+//! —— verdict.json schema 由 `crate::report::VerdictReport` 单点定义，
 //! `RunSummary` 从它 `From` 投影而来。
 //!
 //! 输入刻意收敛为 `RunSummary`（而非 verdict.json 全文），使聚类规则与
@@ -12,22 +12,22 @@ use serde::Serialize;
 
 // ---------------------------------------------------------------- 输入摘要
 
-/// 一次运行的最小摘要（由 `judge::report::VerdictReport` 投影而来）。
+/// 一次运行的最小摘要（由 `crate::report::VerdictReport` 投影而来）。
 /// verdict/status 直接复用 judge 的类型化枚举（serde 形状 = 冻结字符串），
 /// 魔法串比较在编译期对齐 judge 语义。
 #[derive(Debug, Clone, Serialize)]
 pub struct RunSummary {
     pub run_id: String,
     pub arch: String,
-    pub verdict: judge::Verdict,
+    pub verdict: crate::Verdict,
     /// (test_name, status)
-    pub tests: Vec<(String, judge::TestStatus)>,
+    pub tests: Vec<(String, crate::TestStatus)>,
     pub panics: Vec<String>,
     pub oops: Vec<String>,
 }
 
-impl From<judge::report::VerdictReport> for RunSummary {
-    fn from(report: judge::report::VerdictReport) -> Self {
+impl From<crate::report::VerdictReport> for RunSummary {
+    fn from(report: crate::report::VerdictReport) -> Self {
         RunSummary {
             run_id: report.run_id,
             arch: report.arch,
@@ -48,7 +48,7 @@ impl From<judge::report::VerdictReport> for RunSummary {
 /// 失败指纹：verdict 类 + 归一化证据。`None` = 通过/未知结果的运行（无需指纹）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Fingerprint {
-    pub verdict: judge::Verdict,
+    pub verdict: crate::Verdict,
     pub key: String,
 }
 
@@ -98,7 +98,7 @@ pub fn normalize_line(line: &str) -> String {
 /// - failed → 归一化失败的测试名集合（排序，跨 run 可比）；
 /// - 其余（incomplete/interrupted/build_failed）→ 仅 verdict 类。
 pub fn fingerprint_of(run: &RunSummary) -> Option<Fingerprint> {
-    use judge::Verdict;
+    use crate::Verdict;
     if run.verdict == Verdict::Passed || run.verdict == Verdict::Unknown {
         return None;
     }
@@ -112,7 +112,7 @@ pub fn fingerprint_of(run: &RunSummary) -> Option<Fingerprint> {
         let mut names: Vec<String> = run
             .tests
             .iter()
-            .filter(|(_, s)| *s == judge::TestStatus::Fail)
+            .filter(|(_, s)| *s == crate::TestStatus::Fail)
             .map(|(n, _)| normalize_line(n))
             .collect();
         if names.is_empty() {
@@ -134,7 +134,7 @@ pub fn fingerprint_of(run: &RunSummary) -> Option<Fingerprint> {
 /// 同一指纹的历史聚合桶。
 #[derive(Debug, Clone, Serialize)]
 pub struct Cluster {
-    pub verdict: judge::Verdict,
+    pub verdict: crate::Verdict,
     pub key: String,
     /// 指纹首现（run_id 前缀是定宽 unix_ms，min/max 即首现/末现）
     pub first_run_id: String,
@@ -191,7 +191,7 @@ pub struct Flaky {
 }
 
 pub fn flaky_tests(runs: &[RunSummary]) -> Vec<Flaky> {
-    use judge::{TestStatus, Verdict};
+    use crate::{TestStatus, Verdict};
     let mut passed: Vec<(String, Vec<String>)> = Vec::new();
     let mut failed: Vec<(String, Vec<String>)> = Vec::new();
     for run in runs {
@@ -237,7 +237,7 @@ pub fn flaky_tests(runs: &[RunSummary]) -> Vec<Flaky> {
 mod tests {
     use super::*;
 
-    fn run(id: &str, verdict: judge::Verdict, tests: &[(&str, judge::TestStatus)]) -> RunSummary {
+    fn run(id: &str, verdict: crate::Verdict, tests: &[(&str, crate::TestStatus)]) -> RunSummary {
         RunSummary {
             run_id: id.into(),
             arch: "arm64".into(),
@@ -252,7 +252,7 @@ mod tests {
         }
     }
 
-    use judge::{TestStatus as TS, Verdict as V};
+    use crate::{TestStatus as TS, Verdict as V};
 
     #[test]
     fn normalize_strips_timestamps_and_folds_numbers() {

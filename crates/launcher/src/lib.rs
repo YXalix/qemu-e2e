@@ -5,7 +5,11 @@
 //! （已删除的 shell 基线）上，由 qemu.rs 的 `argv_*` 单测把守；
 //! `QEMU=echo virtuoso shell` 可打印 argv 人工对照。架构矩阵定义在
 //! common::Arch —— builder（交叉前缀）与 cli 共同复用。
+//!
+//! 进程治理（原 guardian crate）并入本 crate：启动与收割是一体的生命周期，
+//! `guardian` 模块承载进程组 RAII、Ctrl-C 守护与墙钟看门狗。
 
+pub mod guardian;
 pub mod numa;
 pub mod qemu;
 
@@ -13,6 +17,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub use common::{Arch, HostOs};
+pub use guardian::{ProcessGroupGuard, Supervised};
+pub use guardian::registry::{install_ctrlc_guard, spawn_watchdog};
 pub use numa::NumaTopology;
 pub use qemu::{Accel, QemuInvocation};
 

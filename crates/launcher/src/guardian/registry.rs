@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::signal_group;
+use super::signal_group;
 
 static ACTIVE_PGID: AtomicU32 = AtomicU32::new(0);
 

@@ -65,7 +65,7 @@ pub fn run_probe(
     // KILL 进程组 → 串口与 socket 双双 EOF，两条线程自然汇合。
     let timed_out = Arc::new(AtomicBool::new(false));
     let watchdog =
-        guardian::registry::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
+        launcher::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
     let serial_log = run.path.join("serial.log");
     let stderr_log = run.path.join("qemu-stderr.log");
     let pump = std::thread::spawn(move || {

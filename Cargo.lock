@@ -209,15 +209,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "guardian"
-version = "0.1.0"
-dependencies = [
- "common",
- "ctrlc",
- "libc",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -266,7 +257,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "common",
- "guardian",
+ "ctrlc",
+ "libc",
 ]
 
 [[package]]
@@ -459,14 +451,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
-name = "tracker"
-version = "0.1.0"
-dependencies = [
- "judge",
- "serde",
-]
-
-[[package]]
 name = "unicode-ident"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -487,13 +471,11 @@ dependencies = [
  "clap",
  "common",
  "forge",
- "guardian",
  "judge",
  "launcher",
  "serde",
  "serde_json",
  "toml",
- "tracker",
 ]
 
 [[package]]

@@ -7,6 +7,7 @@ use std::process::{Child, Command, Stdio};
 
 use common::{Arch, HostOs};
 
+use crate::guardian::Supervised;
 use crate::numa::NumaTopology;
 pub use crate::{DataDisk, PmemSpec};
 
@@ -339,7 +340,7 @@ impl QemuInvocation {
         Ok(parts.join(" "))
     }
 
-    /// spawn QEMU：独立进程组（pgid = 返回的 child pid，交给 guardian 收割）。
+    /// spawn QEMU：独立进程组（pgid = 返回的 child pid，交给 guardian 模块收割）。
     /// `piped` = true 时 stdout/stderr 管道化（test 路径捕获串口），
     /// false 时继承宿主 stdio（交互 shell / debug）。
     pub fn spawn(self, piped: bool) -> anyhow::Result<(Child, u32)> {
@@ -377,9 +378,9 @@ impl QemuInvocation {
     }
 
     /// spawn 并登记监管：注册表 + 收割守卫一步到位（取代调用方四步样板）。
-    pub fn spawn_supervised(self, piped: bool) -> anyhow::Result<(Child, guardian::Supervised)> {
+    pub fn spawn_supervised(self, piped: bool) -> anyhow::Result<(Child, Supervised)> {
         let (child, pgid) = self.spawn(piped)?;
-        Ok((child, guardian::Supervised::adopt(pgid)))
+        Ok((child, Supervised::adopt(pgid)))
     }
 }
 

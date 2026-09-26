@@ -1,6 +1,6 @@
 //! VM 会话命令：shell / test。
-//! 启动 DSL 在 launcher；收割与看门狗在 guardian；判定在 judge。
-//! 本模块做接线：构建（builder）→ 启动（launcher）→ 超时收割（guardian）→
+//! 启动 DSL、进程治理与看门狗在 launcher；判定在 judge。
+//! 本模块做接线：构建（builder）→ 启动（launcher）→ 超时收割 →
 //! 判定与工件（judge + runs）。
 
 use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc};
@@ -156,7 +156,7 @@ fn test_once(
         )));
     }
 
-    // ---- 启动（launcher；收割与判定在 guardian/judge）----
+    // ---- 启动（launcher；判定在 judge）----
     let started = Instant::now();
     let inv = build_invocation(&LaunchPlan {
         cfg,
@@ -173,7 +173,7 @@ fn test_once(
     // 墙钟看门狗：到点 KILL 进程组（等价 timeout --signal=KILL 的 124 语义）
     let timed_out = Arc::new(AtomicBool::new(false));
     let watchdog =
-        guardian::registry::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
+        launcher::spawn_watchdog(sup.pgid(), timeout_secs, Arc::clone(&timed_out));
 
     let pumped = runs::pump_child(
         &mut child,
