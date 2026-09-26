@@ -4,7 +4,7 @@ name: docs
 # - 触发：main 上 docs/** 或本工作流变更；或手动 workflow_dispatch。
 # - 仓库需一次性开启：Settings → Pages → Source = GitHub Actions。
 # - 线上地址：https://yxalix.github.io/virtuoso/
-# - 本地预览：virtuoso docs --serve。
+# - 本地预览：mdbook serve docs。
 
 on:
   push:

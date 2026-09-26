@@ -12,7 +12,7 @@ pub mod qemu;
 use std::path::PathBuf;
 use std::process::Command;
 
-pub use common::{Arch, HostOs, ALL_ARCHES};
+pub use common::{Arch, HostOs};
 pub use numa::NumaTopology;
 pub use qemu::{Accel, QemuInvocation};
 

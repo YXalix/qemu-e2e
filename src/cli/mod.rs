@@ -3,15 +3,13 @@
 //! - doctor  → `cli::doctor`（体检唯一入口：一屏呈现 + --verbose 全量；引擎投影 engine_report 同文件）
 //! - build   → `cli::build`（build / clean / skill）
 //! - kernel  → `cli::kernel`（容器化内核供给：clone/defconfig/build/cc*/卷管理；逻辑在 forge）
-//! - vm      → `cli::vm`（shell / test / matrix：启动、看门狗、判定接线）
-//! - docs    → `cli::docs`（mdBook 文档构建 / 本地预览）
-//! - 呈现命令 → `runs::render`（triage / runs / cluster / suggest / replay）
+//! - vm      → `cli::vm`（shell / test：启动、看门狗、判定接线）
+//! - 呈现命令 → `runs::render`（triage / cluster）
 //!
 //! 行为基线（退出码语义）不变：0=通过、124=超时、其余=失败（单点在 judge::exit）。
 
 mod build;
 mod diagnostics;
-mod docs;
 mod doctor;
 mod fetch;
 mod kernel;
@@ -54,7 +52,6 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
         } => vm::run_test(timeout, arch.as_deref(), replay_until_fail, tcg),
         CliCommand::Clean => build::run_clean(),
         CliCommand::Skill { action } => build::run_skill(action),
-        CliCommand::Matrix { arch, tcg, kvm } => vm::run_matrix(arch.as_deref(), tcg, kvm),
         CliCommand::Probe {
             arch,
             timeout,
@@ -66,20 +63,10 @@ pub fn dispatch(cmd: CliCommand) -> anyhow::Result<i32> {
             let cfg = Config::load()?;
             runs::run_triage(&cfg, run.as_deref(), json)
         }
-        CliCommand::Runs { json } => {
-            let cfg = Config::load()?;
-            runs::run_runs(&cfg, json)
-        }
-        CliCommand::Replay { log, json } => runs::run_replay(&log, json),
         CliCommand::Cluster { json } => {
             let cfg = Config::load()?;
             runs::run_cluster(&cfg, json)
         }
-        CliCommand::Suggest { diff, json } => {
-            let cfg = Config::load()?;
-            runs::run_suggest(&cfg, diff, json)
-        }
-        CliCommand::Docs { serve, open } => docs::run_docs(serve, open),
     }
 }
 

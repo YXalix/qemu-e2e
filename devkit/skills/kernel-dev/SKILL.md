@@ -239,7 +239,6 @@ mount + PATH injection) — customize via `infra/init`, not the hook file.
 | Native-speed run | `virtuoso shell --kvm` / default on Apple Silicon | KVM (Linux) / HVF (macOS) only when host arch == target arch; `--tcg` forces pure emulation |
 | Source-level kernel debug | `virtuoso shell --gdb` | Halts at boot waiting for GDB on `:1234` (always TCG) |
 | GDB attach | `gdb-multiarch vmlinux -ex 'target remote :1234'` | Run from kernel tree root; needs `vmlinux` (built with `CONFIG_DEBUG_INFO=y`) |
-| Multi-arch sweep | `virtuoso matrix [--arch a]` | Serial three-arch matrix (default all) |
 | VM-internal probe (AI) | `virtuoso probe --cmd '…'` | virtio-serial agent channel; structured event stream |
 | PCI passthrough | `[components.vfio]` in `virtuoso.toml` | `devices = ["0000:01:00.0"]`; Linux host with IOMMU only |
 

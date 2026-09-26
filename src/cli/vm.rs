@@ -1,4 +1,4 @@
-//! VM 会话命令：shell / test / matrix。
+//! VM 会话命令：shell / test。
 //! 启动 DSL 在 launcher；收割与看门狗在 guardian；判定在 judge。
 //! 本模块做接线：构建（builder）→ 启动（launcher）→ 超时收割（guardian）→
 //! 判定与工件（judge + runs）。
@@ -79,7 +79,7 @@ fn run_vm_session(accel: Accel, gdb_stub: bool) -> anyhow::Result<i32> {
 
 /// CI 模式：构建 → 启动（launcher）→ 超时看门狗（KILL 收割，124）→
 /// judge 判定 → 运行工件。退出码 0=通过、124=超时、其余=失败。
-/// `replay_until_fail > 1` 时返场重试：首个非 passed verdict 即停（tracker）。
+/// `replay_until_fail > 1` 时返场重试：首个非 passed verdict 即停。
 /// accel 缺省走平台规则（macOS 同构 HVF，Linux 恒 TCG）；`--tcg` 强制纯模拟。
 pub fn run_test(
     cli_timeout: Option<u64>,
@@ -121,7 +121,7 @@ fn resolve_timeout(cfg: &Config, cli_timeout: Option<u64>) -> anyhow::Result<u64
     raw.trim().parse().context("QEMU_TIMEOUT must be a number")
 }
 
-/// 单次完整测试（test 与 matrix 共用），返回 (退出码, verdict 字符串)。
+/// 单次完整测试，返回 (退出码, verdict 字符串)。
 /// `accel_override` = None 时按平台规则（--tcg 语义由调用方折算）。
 fn test_once(
     cfg: &Config,
@@ -236,8 +236,7 @@ fn test_once(
     Ok((code, verdict))
 }
 
-/// matrix 单架构一跑：test_once 恒按 --tcg=false 走平台规则，matrix 需要显式
-/// accel —— 复用 test_once 语义但 accel 由调用方给定（复刻 test_once 的启动段）。
+/// 构建失败时落盘的 verdict 元数据（build_failed 成档，退出码 1）。
 fn build_failed_meta(
     run: &runs::RunDir,
     arch: Arch,
@@ -255,48 +254,4 @@ fn build_failed_meta(
         topo: serde_json::Value::Null,
         build_failed: true,
     }
-}
-
-/// 多架构矩阵：三架构（或 --arch 指定）串行执行完整测试，汇总总表。
-/// 同宿主机串行避免资源争抢（CI 多 runner 天然并行）。
-pub fn run_matrix(cli_arch: Option<&str>, kvm: bool, tcg: bool) -> anyhow::Result<i32> {
-    let cfg = Config::load()?;
-    let timeout_secs = resolve_timeout(&cfg, None)?;
-    let arches: Vec<Arch> = match cli_arch.and_then(Arch::parse) {
-        Some(a) => vec![a],
-        None => launcher::ALL_ARCHES.to_vec(),
-    };
-
-    let mut results: Vec<(Arch, i32, String)> = Vec::new();
-    for arch in arches {
-        println!();
-        println!("========== matrix: {} ==========", arch.name());
-        let accel = match resolve_accel(kvm, tcg, arch) {
-            Ok(a) => a,
-            Err(e) => {
-                eprintln!("ERROR: {} — {e:#}", arch.name());
-                results.push((arch, 1, "invalid-args".into()));
-                continue;
-            }
-        };
-        match test_once(&cfg, Some(arch.name()), timeout_secs, Some(accel)) {
-            Ok((code, verdict)) => results.push((arch, code, verdict)),
-            Err(e) => {
-                eprintln!("ERROR: {} — {e:#}", arch.name());
-                results.push((arch, 1, "error".into()));
-            }
-        }
-    }
-
-    println!();
-    println!("========== MATRIX RESULTS ==========");
-    println!("{:<8} {:<12} {:>5}", "ARCH", "VERDICT", "EXIT");
-    let mut all_pass = true;
-    for (arch, code, verdict) in &results {
-        println!("{:<8} {:<12} {:>5}", arch.name(), verdict, code);
-        if *code != 0 {
-            all_pass = false;
-        }
-    }
-    Ok(if all_pass { 0 } else { 1 })
 }

@@ -1,9 +1,9 @@
-//! tracker — 追踪器：可复现性与跨 run 分诊语义（Phase 3）。
+//! tracker — 跨 run 分诊语义：失败指纹聚类与 flaky 识别。
 //!
-//! 职责：对**最小化运行摘要**（`RunSummary`）做失败指纹聚类、flaky 识别与
-//! 补丁↔测试映射。本 crate 只承载语义；IO 与呈现（runs 目录扫描、报告打印）
-//! 在 cli 的 runs 层 —— verdict.json schema 由 `judge::report::VerdictReport`
-//! 单点定义，`RunSummary` 从它 `From` 投影而来。
+//! 职责：对**最小化运行摘要**（`RunSummary`）做失败指纹聚类与 flaky 识别。
+//! 本 crate 只承载语义；IO 与呈现（runs 目录扫描、报告打印）在 cli 的 runs 层
+//! —— verdict.json schema 由 `judge::report::VerdictReport` 单点定义，
+//! `RunSummary` 从它 `From` 投影而来。
 //!
 //! 输入刻意收敛为 `RunSummary`（而非 verdict.json 全文），使聚类规则与
 //! schema 演进解耦。
@@ -41,22 +41,6 @@ impl From<judge::report::VerdictReport> for RunSummary {
             oops: report.oops,
         }
     }
-}
-
-// ---------------------------------------------------------------- diff 提取
-
-/// 从统一 diff 文本提取变更文件路径（+++ b/<path> 行）。
-pub fn paths_from_unified_diff(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for line in text.lines() {
-        if let Some(p) = line.strip_prefix("+++ b/") {
-            let p = p.trim();
-            if !p.is_empty() && p != "/dev/null" && !out.iter().any(|x| x == p) {
-                out.push(p.to_string());
-            }
-        }
-    }
-    out
 }
 
 // ---------------------------------------------------------------- 指纹
@@ -249,101 +233,6 @@ pub fn flaky_tests(runs: &[RunSummary]) -> Vec<Flaky> {
     out
 }
 
-// ---------------------------------------------------------------- 补丁↔测试映射
-
-/// 子系统映射规则：内核树路径前缀 → 推荐最小测试集。
-/// 表随用例集增长而扩充；命中规则按前缀长度降序呈现（更具体在前）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Rule {
-    pub path_prefix: &'static str,
-    pub subsystem: &'static str,
-    pub tests: &'static [&'static str],
-}
-
-/// 缺省映射表（覆盖常见内核子系统；未命中 → 全量回归）。
-pub const DEFAULT_RULES: &[Rule] = &[
-    Rule {
-        path_prefix: "mm/",
-        subsystem: "memory management",
-        tests: &["test-example", "test-rs-example"],
-    },
-    Rule {
-        path_prefix: "kernel/sched/",
-        subsystem: "scheduler",
-        tests: &["test-example", "test-rs-example"],
-    },
-    Rule {
-        path_prefix: "fs/",
-        subsystem: "filesystem / vfs",
-        tests: &["test-example", "test-rs-example"],
-    },
-    Rule {
-        path_prefix: "drivers/virtio/",
-        subsystem: "virtio drivers",
-        tests: &["test-example", "test-rs-example"],
-    },
-    Rule {
-        path_prefix: "drivers/vfio/",
-        subsystem: "vfio passthrough",
-        tests: &["test-example", "test-rs-example"],
-    },
-    Rule {
-        path_prefix: "arch/arm64/",
-        subsystem: "arm64 platform",
-        tests: &["test-example", "test-rs-example"],
-    },
-    Rule {
-        path_prefix: "arch/x86/",
-        subsystem: "x86_64 platform",
-        tests: &["test-example", "test-rs-example"],
-    },
-    Rule {
-        path_prefix: "arch/riscv/",
-        subsystem: "riscv64 platform",
-        tests: &["test-example", "test-rs-example"],
-    },
-    Rule {
-        path_prefix: "include/",
-        subsystem: "core headers (conservative)",
-        tests: &["test-example", "test-rs-example"],
-    },
-];
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Suggestion {
-    pub subsystem: &'static str,
-    pub matched_prefix: String,
-    pub tests: Vec<String>,
-    pub changed_files: Vec<String>,
-}
-
-/// 补丁 ↔ 测试映射：变更路径按前缀匹配规则（可多规则命中，去重合并）。
-/// 无任何命中 → 返回空（调用方呈现"全量回归"建议）。
-pub fn suggest_tests(changed_files: &[String], rules: &[Rule]) -> Vec<Suggestion> {
-    let mut matched: Vec<&Rule> = Vec::new();
-    for f in changed_files {
-        for rule in rules {
-            if f.starts_with(rule.path_prefix) && !matched.contains(&rule) {
-                matched.push(rule);
-            }
-        }
-    }
-    matched.sort_by_key(|r| std::cmp::Reverse(r.path_prefix.len()));
-    matched
-        .into_iter()
-        .map(|rule| Suggestion {
-            subsystem: rule.subsystem,
-            matched_prefix: rule.path_prefix.to_string(),
-            tests: rule.tests.iter().map(|t| (*t).to_string()).collect(),
-            changed_files: changed_files
-                .iter()
-                .filter(|f| f.starts_with(rule.path_prefix))
-                .cloned()
-                .collect(),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,26 +342,5 @@ mod tests {
             run("2", V::Passed, &[("t", TS::Pass)]),
         ];
         assert!(flaky_tests(&runs).is_empty());
-    }
-
-    #[test]
-    fn suggest_maps_and_orders_by_prefix_length() {
-        let files = vec![
-            "mm/hugetlb.c".to_string(),
-            "drivers/virtio/virtio_blk.c".to_string(),
-        ];
-        let s = suggest_tests(&files, DEFAULT_RULES);
-        assert_eq!(s.len(), 2);
-        assert_eq!(s[0].matched_prefix, "drivers/virtio/");
-        assert_eq!(
-            s[0].changed_files,
-            vec!["drivers/virtio/virtio_blk.c".to_string()]
-        );
-        assert!(!s[0].tests.is_empty());
-    }
-
-    #[test]
-    fn suggest_unmatched_is_empty() {
-        assert!(suggest_tests(&["README.md".to_string()], DEFAULT_RULES).is_empty());
     }
 }

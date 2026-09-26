@@ -15,5 +15,5 @@ pub mod time;
 pub mod ui;
 pub mod units;
 
-pub use arch::{Arch, ALL_ARCHES};
+pub use arch::Arch;
 pub use platform::HostOs;

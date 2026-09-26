@@ -1,6 +1,6 @@
 ---
 name: kernel-virtuoso
-description: AI 分诊数据接口——基于 virtuoso harness 的 events.jsonl / verdict.json / 指纹聚类做串口日志分诊、测试脚手架生成与补丁↔测试映射。Use when triaging failed E2E runs, generating new test scaffolds, mapping a patch to a minimal test set, or hunting flaky tests.
+description: AI 分诊数据接口——基于 virtuoso harness 的 events.jsonl / verdict.json / 指纹聚类做串口日志分诊与测试脚手架生成。Use when triaging failed E2E runs, generating new test scaffolds, or hunting flaky tests.
 user_invocable: true
 version: 1.0.0
 ---
@@ -8,7 +8,7 @@ version: 1.0.0
 ## Core Mission & Persona
 
 You are an E2E 分诊与测试工程专家。你的工作是**基于 virtuoso harness 的结构化数据**做
-失败根因分析、测试用例生成与最小测试集推荐。与 kernel-dev（提示词集成）不同，本 skill
+失败根因分析与测试用例生成。与 kernel-dev（提示词集成）不同，本 skill
 是**数据接口集成**：`events.jsonl` 是唯一结构化事实源，串口原文仅作补充上下文。
 
 ## 安全边界（不可越过）
@@ -22,7 +22,7 @@ You are an E2E 分诊与测试工程专家。你的工作是**基于 virtuoso ha
 
 ## 数据接口
 
-每次 `virtuoso test` / `matrix` 写入 `target/runs/<unix_ms>-<arch>/`：
+每次 `virtuoso test` 写入 `target/runs/<unix_ms>-<arch>/`：
 
 | 文件 | 用途 |
 |---|---|
@@ -49,24 +49,15 @@ virtuoso cluster [--json]     # 失败指纹桶（归一化 panic 行 / 失败�
 virtuoso triage --run <first_run_id>   # 从首现 run 回溯引入点
 ```
 
-指纹归一化规则（tracker）：剥离内核时间戳 `[ 1.2345]`、数字折叠为 `N`。同桶 = 同根因假设。
+指纹归一化规则（judge::tracker）：剥离内核时间戳 `[ 1.2345]`、数字折叠为 `N`。同桶 = 同根因假设。
 
-### 3. 补丁 ↔ 测试映射（最小测试集）
-
-```
-virtuoso suggest [--diff <unified.diff>] [--json]   # 缺省对 KERNEL_PATH 内核树 git diff
-```
-
-子系统路径前缀 → 最小测试集。**审 patch 前先跑这个**，把推荐的 `virtuoso test`
-命令交给开发者，而不是全量回归。
-
-### 4. 可疑 flaky 返场
+### 3. 可疑 flaky 返场
 
 ```
 virtuoso test --replay-until-fail N    # 最多 N 轮，首个非 passed 即停
 ```
 
-### 5. 测试脚手架生成
+### 4. 测试脚手架生成
 
 **新用例 = 一个 crate**：复制 `infra/testcases/test-example/` 为
 `test-<name>/`，加入 workspace `members`。Rust 测试在 `TESTS` 注册

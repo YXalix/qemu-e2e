@@ -8,8 +8,6 @@ pub enum Arch {
     Riscv64,
 }
 
-pub const ALL_ARCHES: [Arch; 3] = [Arch::Arm64, Arch::X86_64, Arch::Riscv64];
-
 impl Arch {
     /// 与 verify.sh / run-qemu.sh 相同的别名归一逻辑。
     pub fn parse(s: &str) -> Option<Arch> {

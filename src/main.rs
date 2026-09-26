@@ -119,18 +119,6 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Batch-test the arch matrix (serially)
-    Matrix {
-        /// Target arch; default is the full three-arch matrix
-        #[arg(long)]
-        arch: Option<String>,
-        /// Force TCG emulation (macOS defaults to HVF; Linux already defaults to TCG)
-        #[arg(long)]
-        tcg: bool,
-        /// KVM acceleration (Linux; only when host matches the target arch)
-        #[arg(long)]
-        kvm: bool,
-    },
     /// Triage report for the latest test run (--json emits the verdict)
     Triage {
         /// Specific run (directory name under target/runs); default = latest
@@ -140,44 +128,11 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// List past test runs (newest first; --json emits an array)
-    Runs {
-        /// Machine-readable JSON output
-        #[arg(long)]
-        json: bool,
-    },
-    /// Assert the marker protocol on any serial log offline (no QEMU)
-    Replay {
-        /// Serial log file
-        #[arg(long = "log")]
-        log: PathBuf,
-        /// Machine-readable JSON output
-        #[arg(long)]
-        json: bool,
-    },
-    /// Cluster cross-run failure fingerprints (tracker): flaky tests + first-seen run
+    /// Cluster cross-run failure fingerprints (judge::tracker): flaky tests + first-seen run
     Cluster {
         /// Machine-readable JSON output
         #[arg(long)]
         json: bool,
-    },
-    /// Patch↔test mapping (tracker): changed subsystem paths → minimal test set
-    Suggest {
-        /// Unified diff file; default runs git diff on the KERNEL_PATH tree (incl. staged)
-        #[arg(long = "diff")]
-        diff: Option<PathBuf>,
-        /// Machine-readable JSON output
-        #[arg(long)]
-        json: bool,
-    },
-    /// Docs: build mdBook into target/book (docs/ is the single source)
-    Docs {
-        /// Live preview (mdbook serve on http://localhost:3000)
-        #[arg(long)]
-        serve: bool,
-        /// Open the browser after building
-        #[arg(long)]
-        open: bool,
     },
 }
 

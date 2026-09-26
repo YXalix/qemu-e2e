@@ -29,15 +29,14 @@ virtuoso triage             # 分诊报告（判定以 verdict 为准）
 | `virtuoso doctor` | 一屏环境体检（`--verbose` 全量诊断，`--json` 机器可读） |
 | `virtuoso build` | 重建 initrd.img / rootfs.img / tools.img |
 | `virtuoso shell [--kvm] [--gdb]` | 交互式 VM（BusyBox shell）；`--gdb` GDB stub `:1234` 挂起启动 |
-| `virtuoso matrix [--arch a]` | 多架构矩阵（x86_64 / arm64 / riscv64） |
+| `virtuoso test [--arch a] [--replay-until-fail N]` | 构建 → 启动 → 判定；`--replay-until-fail` flaky 返场 |
 | `virtuoso probe --cmd '…'` | AI 交互通道（virtio-serial agent 命令批） |
-| `virtuoso cluster` / `suggest` | 跨 run 失败聚类 / 补丁→最小测试集 |
-| `virtuoso docs [--serve]` | 文档构建 / 本地预览（mdBook） |
+| `virtuoso triage` / `cluster` | 单次分诊报告 / 跨 run 失败指纹聚类 + flaky 清单 |
 
 ## 文档
 
 `docs/` 是文档唯一事实来源，经 mdBook 发布到 GitHub Pages；本地
-`virtuoso docs` 构建到 `target/book`，push main 自动更新站点。
+`mdbook build docs` 构建，push main 自动更新站点。
 
 - [快速开始](docs/quick-start.md) — 从零到第一个 `verdict: passed`
 - [架构](docs/architecture/overview.md) — 总体架构、核心 crate 设计、[冻结契约](docs/architecture/contracts.md)
