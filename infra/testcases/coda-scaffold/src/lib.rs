@@ -1,9 +1,9 @@
-//! coda-build — 用例 build.rs 的共享实现（coda 测试框架的配套 build-dep）。
+//! coda-scaffold — 用例 build.rs 的脚手架（coda 测试框架的配套 build-dep）。
 //!
 //! 每个用例 crate 的 build.rs 固定一行：
 //!
 //! ```ignore
-//! fn main() { coda_build::run() }
+//! fn main() { coda_scaffold::run() }
 //! ```
 //!
 //! 职责：把用例 `c/*.c` 编入本用例二进制（C over Rust），并把解析出的

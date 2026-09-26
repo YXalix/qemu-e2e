@@ -8,7 +8,7 @@
 - **禁止用 `|| true` 掩盖失败**。
 
 用例统一走一个 cargo workspace（`infra/testcases/`）：**coda（std
-Rust）是框架与入口，C 测试体经用例 crate 的 build.rs（coda-build）编入
+Rust）是框架与入口，C 测试体经用例 crate 的 build.rs（coda-scaffold）编入
 同一静态二进制**（C over Rust）。协议 v1 对 Rust/C 断言一视同仁——同一
 串口文本、同一套计数器（C 宏经 FFI 落回 coda，冻结文本单一来源）。
 
@@ -38,9 +38,9 @@ fn main() {
 }
 ```
 
-3. **C 测试**：`c/` 下放 `.c` 文件（build.rs 经 coda-build 自动收集编译），
+3. **C 测试**：`c/` 下放 `.c` 文件（build.rs 经 coda-scaffold 自动收集编译），
    断言用 `coda.h` 的宏（`PASS/FAIL/SKIP/INFO`），在 `run_c_tests` 里
-   逐个调用。`c/` 为空也无妨——coda-build 会编入空桩兜住符号：
+   逐个调用。`c/` 为空也无妨——coda-scaffold 会编入空桩兜住符号：
 
 ```c
 #include "coda.h"
@@ -68,7 +68,7 @@ virtuoso build && virtuoso test --timeout 30
 > IDE：仓库自带 `.vscode/settings.json`（rust-analyzer 索引本 workspace，
 > 并覆盖用户级 clangd 参数——`--compile-commands-dir` 会把 CDB 查找钉死
 > 在单一路径、关掉沿祖先目录的自动搜索，必须避免）；C 侧 clangd 吃各用例
-> crate 的 coda-build 生成的 `<crate>/compile_commands.json`（跑一次
+> crate 的 coda-scaffold 生成的 `<crate>/compile_commands.json`（跑一次
 > `cargo check` 即生成，交叉构建会被 `virtuoso build` 覆写为 zig 条目，
 > 再跑一次 `cargo check` 恢复 host 版）。
 

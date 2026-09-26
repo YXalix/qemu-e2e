@@ -1,14 +1,14 @@
 [workspace]
 resolver = "2"
 # 用例目录走 glob：新用例 = 丢一个 test-<name>/ 目录进来，无需编辑本文件
-members = ["coda", "coda-build", "test-*"]
+members = ["coda", "coda-scaffold", "test-*"]
 
 # 独立 workspace：测试用例固件不进入 virtuoso 主 workspace 的依赖图
 # （根 Cargo.toml 有对应 exclude）。由 builder::testcase::install_rust 以
 # `cargo build --release --target <musl triple>` 编译，产物拷入 rootfs 的
 # /tests/（init 自动发现）。每个 test-* member = 一个用例二进制；C 测试体
-# 放在用例 crate 的 c/ 下，由该 crate 的一行 build.rs（coda-build）编入同一
-# 二进制；coda = 测试框架，coda-build = build.rs 共享实现。
+# 放在用例 crate 的 c/ 下，由该 crate 的一行 build.rs（coda-scaffold）编入同一
+# 二进制；coda = 测试框架，coda-scaffold = build.rs 共享脚手架。
 
 [profile.release]
 panic = "abort"

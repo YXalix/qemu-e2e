@@ -56,7 +56,7 @@ virtuoso test --replay-until-fail N    # 最多 N 轮，首个非 passed 即停
 `test-*` glob，无需编辑 workspace 文件）。Rust 测试在 `TESTS` 注册
 `("名称", 函数)`，断言用 `coda::check!`，main 只有一行
 `run_and_exit(TESTS)`；C 测试体放 crate 的 `c/` 下（一行 build.rs 经
-coda-build 编入同一二进制），断言用 `coda.h` 的
+coda-scaffold 编入同一二进制），断言用 `coda.h` 的
 `PASS/FAIL/SKIP/INFO` 宏，入口 `run_c_tests()`。产物为 musl 静态 ELF，
 构建时自动装入 rootfs `/tests/`。需要内核模块时在 `virtuoso.toml`
 的 `[tests] require` 声明（优先 `=m` 免内核重建）；只跑部分用例用

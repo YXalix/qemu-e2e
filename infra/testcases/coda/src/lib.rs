@@ -10,7 +10,7 @@
 //! 同配方），产物为纯静态 ELF——VM 内无动态加载器，**不可放松**。
 //! 输出走 std stdout（console 为 tty，按行 flush），退出走 `process::exit`。
 //!
-//! `run_and_exit` 无条件引用 C 段入口 `run_c_tests`——符号由 coda-build
+//! `run_and_exit` 无条件引用 C 段入口 `run_c_tests`——符号由 coda-scaffold
 //! 保证（`c/` 有源码编入真身，为空编入空桩），用例 crate 无需自己声明
 //! `extern "C"`。
 
@@ -26,7 +26,7 @@ static PASSED: AtomicU32 = AtomicU32::new(0);
 static FAILED: AtomicU32 = AtomicU32::new(0);
 static SKIPPED: AtomicU32 = AtomicU32::new(0);
 
-// C 测试段入口（用例 crate 的 `c/*.c` 定义；无 C 源时 coda-build 编入
+// C 测试段入口（用例 crate 的 `c/*.c` 定义；无 C 源时 coda-scaffold 编入
 // 空桩兜住符号）。
 extern "C" {
     fn run_c_tests();

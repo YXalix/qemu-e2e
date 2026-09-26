@@ -98,7 +98,7 @@ virtuoso/
 │   ├── init                    # 测试 init（rootfs 的 PID 1）
 │   ├── init-initramfs          # stage-1 init（initramfs 的 PID 1：mount root= → switch_root）
 │   ├── modules-boot.conf       # 冻结 boot 基础模块集（virtio + ext4 及依赖）
-│   ├── testcases/              # 用例 workspace（coda std 框架 + coda-build 共享 build.rs + test-* 用例 crate，musl 静态）
+│   ├── testcases/              # 用例 workspace（coda std 框架 + coda-scaffold 共享 build.rs + test-* 用例 crate，musl 静态）
 │   └── tools/                  # VM 内工具独立 workspace（std Rust + musl 静态；agent = virtuoso-agent）
 ├── devkit/                     # 内核开发外围工具（非运行路径，均为源资产）
 │   ├── docker/                 # 容器化内核开发环境（macOS 内核供给，ghcr 镜像）

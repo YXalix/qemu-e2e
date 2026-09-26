@@ -32,7 +32,7 @@ kernel/                              # kernel source root
         ├── init                     # PID 1 inside VM: mount → insmod modules.conf → run /tests/*
         ├── init-initramfs           # stage-1 PID 1: mount root= → switch_root
         ├── modules-boot.conf        # frozen boot-critical module set → initramfs
-        ├── testcases/               # test-case workspace: coda (std) + coda-build + test-* crates; C bodies via coda-build, musl-static
+        ├── testcases/               # test-case workspace: coda (std) + coda-scaffold + test-* crates; C bodies via coda-scaffold, musl-static
         └── tools/                   # VM-side tools (musl-static; agent = virtuoso-agent)
 ```
 
@@ -144,7 +144,7 @@ long-lived VS Code devcontainer. This is safe — with these rules:
 Test cases live in one cargo workspace, `infra/testcases/`: **coda
 (std Rust) is the framework and the single entry point; C test bodies are
 compiled into the same static binary by the crate's one-line `build.rs`
-(coda-build)**. Both sides speak the same serial marker protocol and share
+(coda-scaffold)**. Both sides speak the same serial marker protocol and share
 the same counters (C macros land in coda via FFI). `init` auto-discovers
 every binary in `/tests/` — new tests need no wiring.
 
