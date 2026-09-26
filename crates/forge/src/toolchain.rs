@@ -161,9 +161,7 @@ pub fn make_image_target(arch: Arch) -> &'static str {
 }
 
 /// POSIX 单引号转义（宿主视图路径 / URL / ref 进容器 `sh -c` 用）。
-pub fn shell_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', r"'\''"))
-}
+pub use common::shell::quote as shell_quote;
 
 /// compile_commands.json 生成（/ksrc 原始形态，容器内 clangd/devcontainer
 /// 消费）。脚本由内核树自带（从 .cmd 文件聚合，无需 bear）：mainline/
@@ -211,7 +209,9 @@ mod tests {
 
     #[test]
     fn shell_quote_escapes_single_quotes() {
-        assert_eq!(shell_quote("/home/u/ksrc"), "'/home/u/ksrc'");
+        // 语义钉在 common::shell（shlex.quote：安全字符原样，其余整体包裹）
         assert_eq!(shell_quote("it's"), r"'it'\''s'");
+        assert_eq!(shell_quote("a b"), "'a b'");
+        assert_eq!(shell_quote("/home/u/ksrc"), "/home/u/ksrc");
     }
 }

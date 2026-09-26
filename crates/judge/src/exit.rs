@@ -4,8 +4,8 @@
 
 /// 超时退出码（与 `timeout --signal=KILL` 的 124 语义一致）。
 pub const EXIT_TIMEOUT: i32 = 124;
-/// Ctrl-C / 信号中断退出码。
-pub const EXIT_INTERRUPTED: i32 = 130;
+/// Ctrl-C / 信号中断退出码（常量钉在 common::exit —— guardian 不依赖 judge）。
+pub use common::exit::EXIT_INTERRUPTED;
 
 /// 退出码归一：137（SIGKILL）按超时语义归一为 124；无退出码（信号死亡）
 /// 归一为 130；其余保留真实码。

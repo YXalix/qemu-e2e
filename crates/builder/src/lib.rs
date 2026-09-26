@@ -47,32 +47,9 @@ else
     LOG_WARN "tools disk not mounted (/dev/vdb missing or not ext4); tools unavailable"
 fi"#;
 
-/// 进度输出：同时打印到终端，可选追加到运行工件 build.log。
-pub struct Progress {
-    log: Option<std::fs::File>,
-}
-
-impl Progress {
-    pub fn stdout() -> Self {
-        Self { log: None }
-    }
-
-    pub fn with_log(path: &Path) -> anyhow::Result<Self> {
-        let log = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
-        Ok(Self { log: Some(log) })
-    }
-
-    pub fn line(&mut self, msg: &str) {
-        println!("{msg}");
-        if let Some(f) = self.log.as_mut() {
-            use std::io::Write;
-            let _ = writeln!(f, "{msg}");
-        }
-    }
-}
+/// 进度输出：终端恒打，可选同步追加运行工件 build.log
+/// （实现在 common::progress，与 forge 共用同一形态）。
+pub use common::progress::Progress;
 
 /// 构建两段式引导对（build-initrd.sh 的 Rust 接管）：
 /// `target/artifacts/initrd.img`（initramfs：busybox + modules-boot.conf

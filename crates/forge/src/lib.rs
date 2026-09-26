@@ -25,16 +25,6 @@ pub const DEFAULT_IMAGE: &str = "ghcr.io/yxalix/virtuoso-kernel:latest";
 /// clone 缺省 ref。
 pub const DEFAULT_REF: &str = "master";
 
-/// 进度输出（stdout 形态；kernel 命令组无 build.log 需求，不走 builder::Progress
-/// 以免 crate 依赖倒挂）。
-pub struct Progress;
-
-impl Progress {
-    pub fn stdout() -> Self {
-        Self
-    }
-
-    pub fn line(&mut self, msg: &str) {
-        println!("{msg}");
-    }
-}
+/// 进度输出（common::progress::Progress 的 re-export —— kernel 命令组与
+/// builder 共用同一形态，本 crate 不再自留副本）。
+pub use common::progress::Progress;

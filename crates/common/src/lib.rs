@@ -5,9 +5,12 @@
 //! 唯一事实来源（launcher 对外 re-export 以保持启动 DSL 的自洽入口）。
 
 pub mod arch;
+pub mod exit;
 pub mod fmt;
 pub mod fsutil;
 pub mod platform;
+pub mod progress;
+pub mod shell;
 pub mod time;
 pub mod units;
 

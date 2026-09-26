@@ -5,5 +5,5 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-judge = { path = "../judge" }
+serde.workspace = true
+judge.workspace = true

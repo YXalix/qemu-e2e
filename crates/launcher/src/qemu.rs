@@ -331,7 +331,7 @@ impl QemuInvocation {
     /// 单行可复制启动命令（shell 引用；spawn 前展示 / 手动复现用）。
     pub fn command_line(&self) -> Result<String, String> {
         let mut parts = vec![self.qemu_bin()];
-        parts.extend(self.argv()?.iter().map(|a| crate::shell_quote(a)));
+        parts.extend(self.argv()?.iter().map(|a| common::shell::quote(a)));
         Ok(parts.join(" "))
     }
 

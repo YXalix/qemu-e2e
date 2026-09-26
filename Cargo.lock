@@ -212,6 +212,7 @@ dependencies = [
 name = "guardian"
 version = "0.1.0"
 dependencies = [
+ "common",
  "ctrlc",
  "libc",
 ]
@@ -485,7 +486,6 @@ dependencies = [
  "builder",
  "clap",
  "common",
- "ctrlc",
  "forge",
  "guardian",
  "judge",

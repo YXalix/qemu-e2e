@@ -17,3 +17,17 @@ exclude = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+ctrlc = "3"
+common = { path = "crates/common" }
+builder = { path = "crates/builder" }
+launcher = { path = "crates/launcher" }
+judge = { path = "crates/judge" }
+guardian = { path = "crates/guardian" }
+tracker = { path = "crates/tracker" }
+forge = { path = "crates/forge" }

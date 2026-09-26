@@ -5,7 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-anyhow = "1"
+anyhow.workspace = true
 # 纯 Rust 后端（miniz_oxide）：initrd 的 gzip 与平台无关，不引入 C 依赖
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-common = { path = "../common" }
+common.workspace = true

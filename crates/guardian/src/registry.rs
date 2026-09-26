@@ -26,14 +26,15 @@ pub fn active() -> u32 {
     ACTIVE_PGID.load(Ordering::SeqCst)
 }
 
-/// 安装 Ctrl-C 守护：KILL 活动进程组后以 130 退出（与 shell 中断语义一致）。
+/// 安装 Ctrl-C 守护：KILL 活动进程组后以 130 退出（与 shell 中断语义一致；
+/// 常量钉在 common::exit，judge::exit 为唯一语义表）。
 pub fn install_ctrlc_guard() {
     let _ = ctrlc::set_handler(|| {
         let pgid = active();
         if pgid != 0 {
             signal_group(pgid, "KILL");
         }
-        std::process::exit(130);
+        std::process::exit(common::exit::EXIT_INTERRUPTED);
     });
 }
 
